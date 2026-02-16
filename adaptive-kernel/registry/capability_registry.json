@@ -1,0 +1,46 @@
+[
+  {
+    "id": "observe_cpu",
+    "name": "Observe CPU & Memory",
+    "description": "Collect current CPU load, memory usage, and process stats",
+    "inputs": {},
+    "outputs": {"cpu_load": "float", "memory_mb": "float", "process_count": "int"},
+    "cost": 0.01,
+    "risk": "low",
+    "reversible": true,
+    "run_command": "julia -e 'include(\"capabilities/observe_cpu.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "analyze_logs",
+    "name": "Analyze Logs",
+    "description": "Parse and summarize content from a provided log file",
+    "inputs": {"file_path": "string"},
+    "outputs": {"lines": "int", "keywords_found": "int", "summary": "string"},
+    "cost": 0.05,
+    "risk": "low",
+    "reversible": true,
+    "run_command": "julia -e 'include(\"capabilities/analyze_logs.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "write_file",
+    "name": "Write File",
+    "description": "Write data to a sandbox file (sandbox/output.txt)",
+    "inputs": {"content": "string"},
+    "outputs": {"success": "bool", "file_path": "string"},
+    "cost": 0.08,
+    "risk": "medium",
+    "reversible": false,
+    "run_command": "julia -e 'include(\"capabilities/write_file.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "safe_shell",
+    "name": "Safe Shell Execute",
+    "description": "Execute a whitelisted command in a restricted shell",
+    "inputs": {"command": "string"},
+    "outputs": {"stdout": "string", "exit_code": "int", "success": "bool"},
+    "cost": 0.1,
+    "risk": "high",
+    "reversible": false,
+    "run_command": "julia -e 'include(\"capabilities/safe_shell.jl\"); execute(Dict())'"
+  }
+]

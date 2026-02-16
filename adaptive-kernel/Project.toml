@@ -1,0 +1,11 @@
+[package]
+name = "AdaptiveKernel"
+uuid = "550e3c1b-624f-4e5e-b2e5-77e81aaf1db1"
+version = "0.1.0"
+
+[deps]
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+
+[compat]
+julia = "1.8"
+JSON = "0.21"

@@ -1,0 +1,27 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.8'
+      
+      - name: Install dependencies
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      
+      - name: Run unit tests
+        run: |
+          julia --project=. -e 'include("tests/unit_kernel_test.jl")'
+          julia --project=. -e 'include("tests/unit_capability_test.jl")'
+      
+      - name: Run integration test
+        run: julia --project=. -e 'include("tests/integration_simulation_test.jl")'
+      
+      - name: Run harness (5 cycles)
+        run: julia --project=. harness/run.jl --cycles 5
