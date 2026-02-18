@@ -17,7 +17,7 @@ function meta()::Dict{String, Any}
     )
 end
 
-function execute(params::Dict{String, Any})::Dict{String, Any}
+function execute(params::Dict)::Dict{String, Any}
     file_path = get(params, "file_path", "events.log")
     
     # Safe: only read from events.log or sandbox
@@ -30,21 +30,27 @@ function execute(params::Dict{String, Any})::Dict{String, Any}
         )
     end
     
-    # Mock: simulate analyzing a log
-    lines_count = rand(10:50)
+    # Deterministic log analysis: read file if present and compute keyword counts
+    lines_count = 0
+    keyword_count = 0
     keywords = ["error", "warning", "info", "debug"]
-    keyword_count = rand(0:10)
-    
+
     if isfile(file_path)
         lines = readlines(file_path)
         lines_count = length(lines)
-        keyword_count = sum(count(r"error|warning|info", line) for line in lines)
+        for line in lines
+            for kw in keywords
+                if occursin(kw, lowercase(line))
+                    keyword_count += 1
+                end
+            end
+        end
     end
     
     return Dict(
         "success" => true,
         "effect" => "Log analyzed: $lines_count lines",
-        "actual_confidence" => 0.8,
+        "actual_confidence" => 0.9,
         "energy_cost" => 0.05,
         "data" => Dict(
             "lines" => lines_count,

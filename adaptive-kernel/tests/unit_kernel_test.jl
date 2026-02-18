@@ -6,6 +6,9 @@ using Dates
 include("../kernel/Kernel.jl")
 using .Kernel
 
+# Import shared types from Kernel module
+using .Kernel.SharedTypes
+
 @testset "Kernel Unit Tests" begin
     
     @testset "Initialization" begin
@@ -137,29 +140,33 @@ using .Kernel
         @test haskey(stats, "confidence")
         @test haskey(stats, "energy")
         @test haskey(stats, "episodic_memory_size")
-        @test stats["episodic_memory_size"] == 0
+    @test stats["episodic_memory_size"] == 0
     end
-    
 end
 
 @testset "Persistence Unit Tests" begin
     include("../persistence/Persistence.jl")
     using .Persistence
-    
-    # Clean up test files
+
     TEST_LOG = "test_events.log"
+    # Ensure test log path is used
+    set_event_log_file(TEST_LOG)
     rm(TEST_LOG, force=true)
-    
+
     @testset "Event Log Append" begin
         event1 = Dict("type" => "test", "data" => "first")
         event2 = Dict("type" => "test", "data" => "second")
-        
-        # Note: save_event uses hardcoded EVENT_LOG_FILE
-        # For testing, we'd need to refactor Persistence to accept a log path parameter
-        # For now, we verify the module loads
-        @test true
+
+        save_event(event1)
+        save_event(event2)
+
+        events = load_events()
+        @test length(events) >= 2
+        @test events[end]["data"] == "second"
     end
-    
+
+    # Clean up
+    rm(TEST_LOG, force=true)
 end
 
 println("✓ All unit tests passed!")

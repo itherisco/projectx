@@ -181,7 +181,7 @@ end
 }
 ```
 
-3. **Test it**:
+3. **Test it** (from the project root directory):
 
 ```julia
 include("capabilities/my_capability.jl")

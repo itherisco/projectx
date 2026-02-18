@@ -9,6 +9,9 @@ include("../persistence/Persistence.jl")
 using .Kernel
 using .Persistence
 
+# Explicitly import persistence functions to avoid ambiguity
+import .Persistence: init_persistence, save_event, load_events
+
 @testset "Integration: 20-Cycle Simulation" begin
     
     # Clean up before test
@@ -25,7 +28,7 @@ using .Persistence
         "observations" => Dict("test" => 1.0)
     )
     
-    kernel = init_kernel(config)
+    kernel = Kernel.init_kernel(config)
     
     # Mock capabilities
     candidates = [
@@ -35,22 +38,32 @@ using .Persistence
     ]
     
     exec_count = Ref(0)
+    # Deterministic execution function: cap2 considered flaky (returns false), others succeed
     exec_fn = (cap_id) -> begin
         exec_count[] += 1
-        return Dict(
-            "success" => rand() > 0.2,  # 80% success rate
-            "effect" => "Executed $cap_id",
-            "actual_confidence" => Float32(0.7 + 0.2 * rand()),
-            "energy_cost" => Float32(0.02 + 0.05 * rand())
-        )
+        if cap_id == "cap2"
+            return Dict(
+                "success" => false,
+                "effect" => "Simulated failure $cap_id",
+                "actual_confidence" => 0.3f0,
+                "energy_cost" => 0.08f0
+            )
+        else
+            return Dict(
+                "success" => true,
+                "effect" => "Executed $cap_id",
+                "actual_confidence" => 0.85f0,
+                "energy_cost" => 0.03f0
+            )
+        end
     end
     
     perm_fn = (risk) -> risk != "high"
     
-    # Run 20 cycles
+    # Run 20 cycles deterministically
     for i in 1:20
         kernel, action, result = Kernel.step_once(kernel, candidates, exec_fn, perm_fn)
-        
+
         event = Dict(
             "timestamp" => string(now()),
             "cycle" => kernel.cycle,
@@ -59,22 +72,22 @@ using .Persistence
         )
         save_event(event)
     end
-    
+
     # Verify outcomes
     @test kernel.cycle == 20
-    @test exec_count[] >= 15  # Most cycles should execute
-    @test length(kernel.episodic_memory) >= 15
-    
+    @test exec_count[] == 20  # deterministic: one exec per cycle
+    @test length(kernel.episodic_memory) == 20
+
     # Verify persistence
     events = load_events()
     @test length(events) >= 20
-    
+
     # Verify state tracked
     stats = Kernel.get_kernel_stats(kernel)
     @test stats["cycle"] == 20
     @test 0 <= stats["confidence"] <= 1
     @test 0 <= stats["energy"] <= 1
-    
+
     @test !isfile("events.log") || filesize("events.log") > 0
     
 end

@@ -1,0 +1,17 @@
+[package]
+name = "ProjectX"
+uuid = "9a1f1e00-0000-0000-0000-000000000001"
+version = "0.1.0"
+authors = ["ProjectX Team"]
+julia = "1.8"
+
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+Functors = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
+
+[compat]
+Distributions = "0.25"
+Flux = "0.14"
+Functors = "0.4"
+julia = "1.8"

@@ -17,7 +17,7 @@ function meta()::Dict{String, Any}
     )
 end
 
-function execute(params::Dict{String, Any})::Dict{String, Any}
+function execute(params::Dict)::Dict{String, Any}
     content = get(params, "content", "Logged output")
     
     # Safety: all writes confined to sandbox/

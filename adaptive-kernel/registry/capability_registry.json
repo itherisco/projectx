@@ -42,5 +42,38 @@
     "risk": "high",
     "reversible": false,
     "run_command": "julia -e 'include(\"capabilities/safe_shell.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "safe_http_request",
+    "name": "Safe HTTP Request",
+    "description": "Perform read-only HTTP GET to whitelisted hosts with content filtering",
+    "inputs": {"url": "string", "max_response_size": "int", "timeout": "int"},
+    "outputs": {"status": "int", "body_snippet": "string", "headers": "dict"},
+    "cost": 0.03,
+    "risk": "medium",
+    "reversible": true,
+    "run_command": "julia -e 'include(\"capabilities/safe_http_request.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "observe_network",
+    "name": "Observe Network",
+    "description": "Collect network interface statistics and connection info",
+    "inputs": {},
+    "outputs": {"bytes_sent": "int", "bytes_recv": "int", "connections": "int"},
+    "cost": 0.02,
+    "risk": "low",
+    "reversible": true,
+    "run_command": "julia -e 'include(\"capabilities/observe_network.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "observe_filesystem",
+    "name": "Observe Filesystem",
+    "description": "Monitor filesystem usage and directory contents",
+    "inputs": {"path": "string"},
+    "outputs": {"total_space": "int", "free_space": "int", "file_count": "int"},
+    "cost": 0.02,
+    "risk": "low",
+    "reversible": true,
+    "run_command": "julia -e 'include(\"capabilities/observe_filesystem.jl\"); execute(Dict())'"
   }
 ]

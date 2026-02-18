@@ -1,0 +1,121 @@
+# Brian Configuration Template
+# Copy this file to config.toml and fill in your API keys
+
+# ============================================================================
+# COMMUNICATION CONFIG (Ears/Mouth)
+# ============================================================================
+
+[communication]
+# Speech-to-Text (STT) Provider
+stt_provider = "openai"  # Options: :openai (whisper), :coqui
+stt_api_key = ""  # Your OpenAI API key for Whisper
+
+# Text-to-Speech (TTS) Provider
+tts_provider = "elevenlabs"  # Options: :elevenlabs, :openai
+tts_api_key = ""  # Your ElevenLabs API key
+tts_voice_id = "21m00Tcm4TlvDq8ikWAM"  # Default voice ID
+
+# Vision Language Model (VLM) - optional
+vlm_provider = "openai"  # Options: :openai (gpt4-v), :anthropic (claude-v)
+vlm_api_key = ""  # Your API key
+
+# Safety threshold for auto-confirmation
+require_confirmation_threshold = "TRUST_STANDARD"  # TRUST_RESTRICTED, TRUST_LIMITED, TRUST_STANDARD, TRUST_FULL
+
+# ============================================================================
+# OPENCLAW CONFIG (Tool Container)
+# ============================================================================
+
+[openclaw]
+# Docker endpoint for OpenClaw tools
+endpoint = "http://localhost:3000"
+
+# Optional API key for OpenClaw
+api_key = ""
+
+# Request timeout in seconds
+timeout = 30.0
+
+# Number of retries on failure
+retry_count = 3
+
+# Enable kernel veto checks before tool execution
+kernel_veto_enabled = true
+
+# ============================================================================
+# LLM CONFIG (Brain)
+# ============================================================================
+
+[llm]
+# LLM Provider
+provider = "openai"  # Options: :openai, :anthropic, :local
+
+# API Key
+api_key = ""  # Your OpenAI API key
+
+# Model to use
+model = "gpt-4"  # Options: gpt-4, gpt-3.5-turbo, etc.
+
+# Temperature (0.0 = deterministic, 1.0 = creative)
+temperature = 0.7
+
+# Maximum tokens per response
+max_tokens = 2000
+
+# ============================================================================
+# SYSTEM CONFIG
+# ============================================================================
+
+[system]
+# Vector store path for long-term memory
+vector_store_path = "./brian_vector_store.json"
+
+# Wake word to activate Brian
+wake_word = "Brian"
+
+# Demo mode (skips real audio I/O for testing)
+demo_mode = true
+
+# Log level
+log_level = "info"  # Options: debug, info, warn, error
+
+# ============================================================================
+# KERNEL CONFIG
+# ============================================================================
+
+[kernel]
+# Path to kernel configuration
+config_path = "./adaptive-kernel/registry/capability_registry.json"
+
+# Default goal priority
+default_goal_priority = 0.8
+
+# Self-monitoring intervals (seconds)
+monitoring_interval = 60
+
+# ============================================================================
+# PHRASE CACHE
+# ============================================================================
+
+[phrase_cache]
+# Maximum number of phrases to cache
+max_size = 100
+
+# Common phrases to pre-cache for low-latency responses
+common_phrases = [
+    "On it, Brian",
+    "Right away",
+    "I'm on it",
+    "Consider it done",
+    "Let me check",
+    "Searching now",
+    "One moment please",
+    "I've completed that task",
+    "Sorry, I couldn't do that",
+    "I've noted that for later",
+    "Good morning",
+    "Good afternoon",
+    "Good evening",
+    "How can I help you",
+    "I'm listening"
+]
