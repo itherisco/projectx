@@ -8,6 +8,7 @@ using JSON
 using Dates
 using Statistics
 using UUIDs
+using Base.Threads
 
 # Import shared types
 include("../types.jl")
@@ -17,21 +18,41 @@ using .SharedTypes
 using .SharedTypes: ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleType,
                      add_intent!, update_alignment!, get_alignment_penalty, GoalState, update_goal_progress!
 
-export KernelState, Goal, GoalState, WorldState, init_kernel, step_once, run_loop, request_action, 
+# Export decision types and kernel functions
+export Observation, KernelState, Goal, GoalState, WorldState, init_kernel, step_once, run_loop, request_action, 
        get_kernel_stats, set_kernel_state!, reflect!, reflect_with_event!, get_reflection_events,
        ensure_goal_state!, get_active_goal_state, add_strategic_intent!,
-       run_thought_cycle, ThoughtCycleType
+       run_thought_cycle, ThoughtCycleType, _validate_kernel_metrics,
+       # Decision types for sovereignty
+       APPROVED, DENIED, STOPPED, approve
+
+# Decision types for kernel sovereignty
+@enum Decision APPROVED DENIED STOPPED
+
+struct Observation
+    cpu_load::Float32
+    memory_usage::Float32
+    disk_io::Float32
+    network_latency::Float32
+    file_count::Int
+    process_count::Int
+    custom::Dict{String, Float32}  # Additional typed metrics
+    
+    Observation() = new(0.0f0, 0.0f0, 0.0f0, 0.0f0, 0, 0, Dict{String, Float32}())
+    Observation(cpu::Float32, mem::Float32, disk::Float32, net::Float32, files::Int, procs::Int) = 
+        new(cpu, mem, disk, net, files, procs, Dict{String, Float32}())
+end
 
 struct WorldState
     timestamp::DateTime
-    observations::Dict{String, Any}  # e.g., {"cpu_load" => 0.5, "memory" => 2048}
-    facts::Dict{String, String}      # semantic memory (key=>value pairs)
+    observations::Observation  # Typed struct instead of Dict{String, Any}
+    facts::Dict{String, String}
 end
 
 # Use shared ActionProposal from SharedTypes
 
 mutable struct KernelState
-    cycle::Int
+    cycle::Threads.Atomic{Int}
     goals::Vector{Goal}  # Immutable goals
     goal_states::Dict{String, GoalState}  # Mutable goal progress tracking
     world::WorldState
@@ -45,15 +66,19 @@ mutable struct KernelState
     # IntentVector for strategic inertia (Phase 3)
     intent_vector::IntentVector
     
+    # Kernel sovereignty: track last decision for security assertion
+    last_decision::Decision
+    
     # Mutable for runtime updates only—not structural logic
     KernelState(cycle::Int, goals::Vector{Goal}, world::WorldState, active_goal_id::String) =
-        new(cycle, goals, 
+        new(Threads.Atomic{Int}(cycle), goals, 
             Dict(goal.id => GoalState(goal.id) for goal in goals),  # Initialize goal states
             world, active_goal_id, 
             ReflectionEvent[],  # Now uses typed ReflectionEvent
             Dict("confidence" => 0.8f0, "energy" => 1.0f0, "focus" => 0.5f0),
             nothing, 0.0f0, 0.0f0,
-            IntentVector()  # Initialize strategic intent vector
+            IntentVector(),  # Initialize strategic intent vector
+            DENIED  # Default to DENIED for security
         )
 end
 
@@ -68,11 +93,62 @@ Config keys: "goals" (Vector of goal dicts with id, description, priority), "obs
 """
 function init_kernel(config::Dict)::KernelState
     @info "Initializing kernel with config keys" keys=keys(config)
-    goals = [
-        Goal(g["id"], g["description"], Float32(g["priority"]), now())
-        for g in get(config, "goals", [Goal("default", "Run system nominal", 0.8f0, now())])
-    ]
-    observations = get(config, "observations", Dict{String, Any}())
+    
+    # Handle goals - support both Dict and Goal types
+    goals_config = get(config, "goals", nothing)
+    if goals_config === nothing || isempty(goals_config)
+        goals = [Goal("default", "Run system nominal", 0.8f0, now())]
+    else
+        goals = Goal[]
+        for g in goals_config
+            if g isa Dict
+                # Handle Dict-type goal configs
+                # ID must be a string
+                id_raw = get(g, "id", "goal_$(length(goals))")
+                id = id_raw isa String ? id_raw : string(id_raw)
+                
+                # Description must be a string
+                desc_raw = get(g, "description", "")
+                desc = desc_raw isa String ? desc_raw : string(desc_raw)
+                
+                # Handle priority - must be numeric
+                priority_val = get(g, "priority", 0.5)
+                priority = if priority_val isa Number
+                    Float32(clamp(priority_val, 0.0, 1.0))
+                else
+                    0.5f0  # Default for non-numeric
+                end
+                push!(goals, Goal(id, desc, priority, now()))
+            elseif g isa Goal
+                # Already a Goal object
+                push!(goals, g)
+            end
+        end
+        if isempty(goals)
+            goals = [Goal("default", "Run system nominal", 0.8f0, now())]
+        end
+    end
+    # Create typed Observation from config or default
+    obs_config = get(config, "observations", nothing)
+    
+    # Handle observations - must be a Dict or nothing
+    if obs_config isa Dict
+        observations = if haskey(obs_config, "cpu_load")
+            Observation(
+                Float32(get(obs_config, "cpu_load", 0.0)),
+                Float32(get(obs_config, "memory_usage", 0.0)),
+                Float32(get(obs_config, "disk_io", 0.0)),
+                Float32(get(obs_config, "network_latency", 0.0)),
+                get(obs_config, "file_count", 0),
+                get(obs_config, "process_count", 0)
+            )
+        else
+            Observation()
+        end
+    else
+        # Invalid observations type - use default
+        observations = Observation()
+    end
     world = WorldState(now(), observations, Dict{String, String}())
     active_goal = !isempty(goals) ? goals[1].id : "default"
     @info "Kernel initialized" num_goals=length(goals) active_goal=active_goal
@@ -83,12 +159,35 @@ end
 # Core Reasoning: Evaluate World & Compute Priorities
 # ============================================================================
 
+# P0: Fail-closed validation function for kernel metrics
+function _validate_kernel_metrics(kernel::KernelState)::Bool
+    for (key, value) in kernel.self_metrics
+        if isnan(value) || isinf(value)
+            @error "Invalid metric detected" key=value
+            return false
+        end
+    end
+    # Also validate observation values
+    obs = kernel.world.observations
+    if isnan(obs.cpu_load) || isnan(obs.memory_usage) || isnan(obs.disk_io) || isnan(obs.network_latency)
+        @error "NaN detected in observations"
+        return false
+    end
+    return true
+end
+
 """
     evaluate_world(kernel::KernelState)::Vector{Float32}
 Compute priority scores for active goals given current world state and self metrics.
 Returns normalized [0,1] scores; heuristic: base_priority * confidence * (1 - energy_drain).
 """
 function evaluate_world(kernel::KernelState)::Vector{Float32}
+    # P0: Fail-closed - validate metrics before computation
+    if !_validate_kernel_metrics(kernel)
+        @warn "Kernel metrics invalid - returning safe defaults"
+        return ones(Float32, length(kernel.goals)) ./ max(length(kernel.goals), 1)
+    end
+    
     scores = Float32[]
     confidence = get(kernel.self_metrics, "confidence", 0.8f0)
     energy = get(kernel.self_metrics, "energy", 1.0f0)
@@ -154,9 +253,131 @@ function select_action(kernel::KernelState, capability_candidates::Vector{Dict{S
     )
 end
 
+"""
+    approve(kernel::KernelState, proposal::ActionProposal, world_state::Dict{String, Any})::Decision
+    
+Kernel sovereignty function - evaluates a proposal and returns a decision.
+This is the single choke point for all execution approval.
+
+# Arguments
+- `kernel::KernelState`: Current kernel state
+- `proposal::ActionProposal`: The action proposal from brain (advisory only)
+- `world_state::Dict{String, Any}`: Current world state for evaluation
+
+# Returns
+- `APPROVED`: Action can be executed
+- `DENIED`: Action is not approved
+- `STOPPED`: System should stop entirely
+"""
+function approve(kernel::KernelState, proposal::ActionProposal, world_state::Dict{String, Any})::Decision
+    # P0: Fail-closed - default to DENIED for security
+    kernel.last_decision = DENIED
+    
+    # If proposal is nothing, deny by default
+    if proposal === nothing
+        @debug "Kernel denied: no proposal"
+        return DENIED
+    end
+    
+    # Parse risk level from proposal
+    risk_level = proposal.risk
+    
+    # Evaluate based on self-metrics
+    confidence = get(kernel.self_metrics, "confidence", 0.8f0)
+    energy = get(kernel.self_metrics, "energy", 1.0f0)
+    
+    # Check energy level - if too low, consider STOPPED
+    if energy < 0.1f0
+        @warn "Kernel STOPPED: critically low energy"
+        kernel.last_decision = STOPPED
+        return STOPPED
+    end
+    
+    # High risk actions require high confidence
+    if risk_level >= 0.7f0 && confidence < 0.8f0
+        @warn "Kernel denied: high risk with low confidence" risk=risk_level confidence=confidence
+        kernel.last_decision = DENIED
+        return DENIED
+    end
+    
+    # Evaluate against active goal priorities
+    priority_scores = evaluate_world(kernel)
+    active_idx = findfirst(g -> g.id == kernel.active_goal_id, kernel.goals)
+    active_priority = active_idx !== nothing ? priority_scores[active_idx] : 0.5f0
+    
+    # Require minimum priority for approval
+    if active_priority < 0.1f0
+        @warn "Kernel denied: active goal priority too low" priority=active_priority
+        kernel.last_decision = DENIED
+        return DENIED
+    end
+    
+    # Check risk threshold - reject if too high
+    if risk_level > 0.8f0
+        @warn "Kernel denied: risk too high" risk=risk_level
+        kernel.last_decision = DENIED
+        return DENIED
+    end
+    
+    # All checks passed - approve
+    @debug "Kernel approved" action=proposal.capability_id risk=risk_level confidence=confidence
+    kernel.last_decision = APPROVED
+    return APPROVED
+end
+
+"""
+    approve_with_candidates(kernel::KernelState, proposals::Vector{ActionProposal}, 
+                          capability_candidates::Vector{Dict{String, Any}})::Tuple{Decision, ActionProposal}
+    
+Evaluate multiple proposals and return the best one with decision.
+"""
+function approve_with_candidates(
+    kernel::KernelState, 
+    proposals::Vector{ActionProposal}, 
+    capability_candidates::Vector{Dict{String, Any}}
+)::Tuple{Decision, ActionProposal}
+    
+    # If no proposals, deny
+    if isempty(proposals)
+        kernel.last_decision = DENIED
+        return DENIED, ActionProposal("none", 0.0f0, 0.0f0, 0.0f0, 1.0f0, "No proposals")
+    end
+    
+    # Use select_action to evaluate candidates
+    selected = select_action(kernel, capability_candidates)
+    
+    # Check if selected matches any proposal
+    for proposal in proposals
+        if proposal.capability_id == selected.capability_id
+            # Evaluate this specific proposal
+            decision = approve(kernel, proposal, Dict{String, Any}())
+            return decision, proposal
+        end
+    end
+    
+    # No match found - deny
+    kernel.last_decision = DENIED
+    return DENIED, first(proposals)
+end
+
 # ============================================================================
 # Reflection: Episodic Memory & Self-Model Updates (TYPED - Phase 3)
 # ============================================================================
+
+# P1: Memory budget check to prevent unbounded growth (Edge Case #1 from review)
+const MAX_EPISODIC_MEMORY = 1000  # Maximum number of reflection events to retain
+const MEMORY_PRUNE_BUFFER = 100    # Buffer to prevent frequent pruning at boundary
+
+function _prune_episodic_memory!(kernel::KernelState)
+    # Use >= to handle boundary case (when exactly at MAX_EPISODIC_MEMORY)
+    if length(kernel.episodic_memory) >= MAX_EPISODIC_MEMORY
+        # Keep most recent events with buffer to prevent thrashing
+        keep_count = MAX_EPISODIC_MEMORY - MEMORY_PRUNE_BUFFER
+        keep_count = max(keep_count, 100)  # Always keep at least 100 events
+        kernel.episodic_memory = kernel.episodic_memory[(end-keep_count+1):end]
+        @info "Pruned episodic memory" remaining=length(kernel.episodic_memory) kept=keep_count
+    end
+end
 
 """
     reflect! - Record action outcome and update self-metrics (TYPED VERSION)
@@ -184,7 +405,7 @@ function reflect!(kernel::KernelState, action::ActionProposal, result::Dict{Stri
     
     # Create typed ReflectionEvent (no Any type!)
     event = ReflectionEvent(
-        kernel.cycle,
+        kernel.cycle[],
         action.capability_id,
         action.confidence,
         action.predicted_cost,
@@ -197,6 +418,9 @@ function reflect!(kernel::KernelState, action::ActionProposal, result::Dict{Stri
     )
     
     push!(kernel.episodic_memory, event)
+    
+    # P1: Prune episodic memory to prevent unbounded growth
+    _prune_episodic_memory!(kernel)
     
     # Update self-metrics
     kernel.self_metrics["confidence"] = new_conf
@@ -413,7 +637,7 @@ function analyze_state(
     insights = String[]
     
     # Basic state analysis
-    push!(insights, "Analysis: cycle $(kernel.cycle), active goal: $(kernel.active_goal_id)")
+    push!(insights, "Analysis: cycle $(kernel.cycle[]), active goal: $(kernel.active_goal_id)")
     push!(insights, "Analysis: confidence=$(get(kernel.self_metrics, "confidence", 0.0)), energy=$(get(kernel.self_metrics, "energy", 0.0))")
     
     return insights
@@ -427,13 +651,13 @@ function run_periodic_thought_cycles(kernel::KernelState)::Vector{ThoughtCycle}
     cycles = ThoughtCycle[]
     
     # Run analysis every 10 cycles
-    if kernel.cycle % 10 == 0
+    if kernel.cycle[] % 10 == 0
         tc = run_thought_cycle(kernel, THOUGHT_ANALYSIS, Dict{String, Any}())
         push!(cycles, tc)
     end
     
     # Run doctrine refinement every 50 cycles
-    if kernel.cycle % 50 == 0
+    if kernel.cycle[] % 50 == 0
         tc = run_thought_cycle(kernel, THOUGHT_DOCTRINE_REFINEMENT, Dict{String, Any}())
         push!(cycles, tc)
     end
@@ -447,14 +671,16 @@ end
 
 """
     step_once(kernel::KernelState, capability_candidates::Vector{Dict{String,Any}}, 
-             execute_fn::Function, permission_handler::Function)::Tuple{KernelState, ActionProposal, Dict}
+             execute_fn::Function, permission_handler::Function)::Union{Tuple{KernelState, ActionProposal, Dict}, Tuple{Nothing, ActionProposal, Dict}}
 Single cycle: observe → evaluate → decide → reflect.
 - execute_fn(action)::Dict runs the capability (external).
 - permission_handler(risk)::Bool returns true if action is permitted.
+- Returns nothing for kernel when action is denied (fail-closed design)
 """
 function step_once(kernel::KernelState, capability_candidates::Vector{Dict{String, Any}}, 
-                   execute_fn::Function, permission_handler::Function)::Tuple{KernelState, ActionProposal, Dict}
-    kernel.cycle += 1
+                   execute_fn::Function, permission_handler::Function)::Union{Tuple{KernelState, ActionProposal, Dict}, Tuple{Nothing, ActionProposal, Dict}}
+    # P1: Thread-safe cycle increment using atomic operation
+    Threads.atomic_add!(kernel.cycle, 1)
     kernel.world = WorldState(now(), kernel.world.observations, kernel.world.facts)
     
     # DECIDE: Select action
@@ -464,14 +690,18 @@ function step_once(kernel::KernelState, capability_candidates::Vector{Dict{Strin
     permitted = permission_handler(action.risk)
     
     if !permitted
+        # P0: Fail-closed - denied actions should not execute or return valid kernel state
+        # This prevents corrupted/invalid state from propagating
         result = Dict(
             "success" => false,
-            "effect" => "Action denied by permission handler",
+            "effect" => "Action denied by permission handler - fail-closed",
             "actual_confidence" => 0.0f0,
-            "energy_cost" => 0.0f0
+            "energy_cost" => 0.0f0,
+            "denied" => true
         )
         reflect!(kernel, action, result)
-        return kernel, action, result
+        # Return nothing for kernel to signal invalid state (fail-closed)
+        return nothing, action, result
     end
     
     # EXECUTE: Call capability
@@ -487,12 +717,17 @@ end
 """
     run_loop(kernel::KernelState, capability_candidates::Vector{Dict{String,Any}}, 
             execute_fn::Function, permission_handler::Function, cycles::Int)::KernelState
-Run event loop for N cycles.
+Run event loop for N cycles. Handles fail-closed returns from step_once.
 """
 function run_loop(kernel::KernelState, capability_candidates::Vector{Dict{String, Any}}, 
                   execute_fn::Function, permission_handler::Function, cycles::Int)::KernelState
     for _ in 1:cycles
-        step_once(kernel, capability_candidates, execute_fn, permission_handler)
+        result = step_once(kernel, capability_candidates, execute_fn, permission_handler)
+        # Handle fail-closed: if step_once returns nothing for kernel, stop execution
+        if result[1] === nothing
+            @warn "Action denied - entering fail-closed state"
+            break
+        end
     end
     return kernel
 end
@@ -507,7 +742,7 @@ Return summary stats for monitoring/debugging.
 """
 function get_kernel_stats(kernel::KernelState)::Dict{String, Any}
     return Dict(
-        "cycle" => kernel.cycle,
+        "cycle" => kernel.cycle[],
         "active_goal" => kernel.active_goal_id,
         "confidence" => get(kernel.self_metrics, "confidence", 0.8f0),
         "energy" => get(kernel.self_metrics, "energy", 1.0f0),

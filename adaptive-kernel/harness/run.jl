@@ -132,7 +132,7 @@ function run_harness(cycles::Int=20; unsafe::Bool=false, registry_path::String="
     
     kernel = init_kernel(kernel_config)
     
-    @info "Kernel initialized" cycle=kernel.cycle
+    @info "Kernel initialized" cycle=kernel.cycle[]
     
     # Event loop
     for i in 1:cycles
@@ -152,7 +152,7 @@ function run_harness(cycles::Int=20; unsafe::Bool=false, registry_path::String="
         # Log event
         event = Dict(
             "timestamp" => string(now()),
-            "cycle" => kernel.cycle,
+            "cycle" => kernel.cycle[],
             "type" => "action_executed",
             "action_id" => action.capability_id,
             "success" => get(result, "success", false),
@@ -173,7 +173,7 @@ function run_harness(cycles::Int=20; unsafe::Bool=false, registry_path::String="
     final_stats = Kernel.get_kernel_stats(kernel)
     save_kernel_state(final_stats)
     
-    @info "Event loop complete" cycles=kernel.cycle final_confidence=final_stats["confidence"] final_energy=final_stats["energy"]
+    @info "Event loop complete" cycles=kernel.cycle[] final_confidence=final_stats["confidence"] final_energy=final_stats["energy"]
     
     return kernel
 end

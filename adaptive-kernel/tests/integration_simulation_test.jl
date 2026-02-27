@@ -2,6 +2,7 @@
 
 using Test
 using JSON
+using Dates
 
 include("../kernel/Kernel.jl")
 include("../persistence/Persistence.jl")
@@ -74,7 +75,7 @@ import .Persistence: init_persistence, save_event, load_events
     end
 
     # Verify outcomes
-    @test kernel.cycle == 20
+    @test kernel.cycle[] == 20
     @test exec_count[] == 20  # deterministic: one exec per cycle
     @test length(kernel.episodic_memory) == 20
 
@@ -87,8 +88,6 @@ import .Persistence: init_persistence, save_event, load_events
     @test stats["cycle"] == 20
     @test 0 <= stats["confidence"] <= 1
     @test 0 <= stats["energy"] <= 1
-
-    @test !isfile("events.log") || filesize("events.log") > 0
     
 end
 

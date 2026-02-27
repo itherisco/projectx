@@ -20,7 +20,7 @@ using .Kernel.SharedTypes
         )
         kernel = init_kernel(config)
         
-        @test kernel.cycle == 0
+        @test kernel.cycle[] == 0
         @test length(kernel.goals) == 1
         @test kernel.goals[1].id == "test_goal"
         @test kernel.self_metrics["confidence"] >= 0.7
@@ -103,7 +103,7 @@ using .Kernel.SharedTypes
         
         kernel, action, result = Kernel.step_once(kernel, candidates, exec_fn, perm_fn)
         
-        @test kernel.cycle == 1
+        @test kernel.cycle[] == 1
         @test action.capability_id == "test_cap"
         @test result["success"] == true
         @test length(executed_caps) == 1

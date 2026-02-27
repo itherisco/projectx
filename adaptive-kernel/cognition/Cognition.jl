@@ -11,6 +11,7 @@ using Statistics
 export
     # Types
     CognitionTypes,
+    Perception,  # Typed perception
     
     # Spine
     DecisionSpine,
@@ -46,7 +47,39 @@ export
     
     # Main orchestration
     CognitiveEngine,
-    run_sovereign_cycle
+    run_sovereign_cycle,
+    
+    # Goals
+    GoalSystem,
+    Goal,
+    GoalGraph,
+    GoalStatus,
+    generate_goals,
+    evaluate_goal,
+    should_activate_goal,
+    should_abandon_goal,
+    abandon_goal!,
+    require_kernel_approval,
+    compute_intrinsic_reward,
+    MIN_ACTIVATION_THRESHOLD,
+    MAX_GOALS_ACTIVE,
+    
+    # World Model
+    WorldModel,
+    Trajectory,
+    predict_next_state,
+    predict_reward,
+    predict_risk,
+    simulate_trajectory,
+    simulate_counterfactual,
+    update_causal_graph!,
+    get_causal_parents,
+    infer_user_intent,
+    find_best_action,
+    plan_to_goal,
+    record_experience!,
+    reset_model!,
+    get_model_confidence
 
 # Submodules
 include("types.jl")
@@ -63,6 +96,12 @@ using .PainFeedback
 
 include("reality/RealityIngestion.jl")
 using .RealityIngestion
+
+include("goals/GoalSystem.jl")
+using .GoalSystem
+
+include("worldmodel/WorldModel.jl")
+using .WorldModel
 
 # ============================================================================
 # MAIN COGNITIVE ENGINE
@@ -123,10 +162,11 @@ end
 
 """
     run_sovereign_cycle - Run a complete sovereign cognition cycle
+    Now uses typed Perception instead of Dict{String, Any} for type stability
 """
 function run_sovereign_cycle(
     engine::CognitiveEngine,
-    perception::Dict{String, Any}
+    perception::Perception  # Typed instead of Dict{String, Any}
 )::DecisionCycle
     
     engine.cycle_count += 1

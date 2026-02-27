@@ -165,7 +165,9 @@ function execute(params::Dict)::Dict{String, Any}
         end
         
         # Execute command directly without shell interpretation
-        output = read(Cmd([cmd, args...]), String)
+        # Use backtick syntax for safe command execution (safe against injection)
+        cmd_expr = `$(cmd) $(args...)`
+        output = read(cmd_expr, String)
         
         return Dict(
             "success" => true,

@@ -13,6 +13,8 @@ export
     StrategistAgent,
     AuditorAgent,
     EvolutionEngineAgent,
+    ProposedChange,
+    Perception,  # Typed perception for run_sovereign_cycle
     
     # Agent state
     AgentState,
@@ -40,6 +42,32 @@ export
     # Power metrics
     PowerMetric,
     OptionalityTracker
+
+# ============================================================================
+# PERCEPTION TYPE - Typed perception (replaces Dict{String, Any})
+# ============================================================================
+
+"""
+    Perception - Typed perception input for cognition cycle
+    Replaces Dict{String, Any} for type stability
+"""
+struct Perception
+    system_state::Dict{String, Float32}  # cpu, memory, etc.
+    threat_level::Float32
+    active_goals::Vector{String}
+    recent_outcomes::Vector{Bool}
+    energy_level::Float32
+    confidence::Float32
+    
+    Perception() = new(
+        Dict{String, Float32}(),
+        0.0f0,
+        String[],
+        Bool[],
+        1.0f0,
+        0.8f0
+    )
+end
 
 # ============================================================================
 # AGENT TYPES
@@ -107,6 +135,21 @@ struct AuditorAgent <: CognitiveAgent
 end
 
 """
+    ProposedChange - Typed change proposal for evolution engine (replaces Dict{String, Any})
+"""
+struct ProposedChange
+    id::UUID
+    change_type::String  # "prompt", "heuristic", "scoring"
+    target::String       # Which component to modify
+    description::String
+    expected_impact::Float32
+    proposed_at::DateTime
+    
+    ProposedChange(change_type::String, target::String, description::String, impact::Float32) = 
+        new(uuid4(), change_type, target, description, impact, now())
+end
+
+"""
     EvolutionEngineAgent - Mutates prompts, heuristics, scoring functions
 """
 struct EvolutionEngineAgent <: CognitiveAgent
@@ -114,14 +157,14 @@ struct EvolutionEngineAgent <: CognitiveAgent
     name::String
     mutation_rate::Float64
     state::AgentState
-    proposed_changes::Vector{Dict{String, Any}}
+    proposed_changes::Vector{ProposedChange}  # Typed instead of Dict{String, Any}
     accepted_changes::Int
     
     EvolutionEngineAgent(id::String = "evolution_001") = new(
         id, "EvolutionEngine",
         0.1,  # 10% mutation rate
         AgentState(:idle),
-        Dict{String, Any}[], 0
+        ProposedChange[], 0
     )
 end
 

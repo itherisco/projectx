@@ -40,6 +40,16 @@ function save_event(event::Dict{String, T}) where T
     save_event(Dict{String, Any}(event))
 end
 
+# Handle Dict{Any, Any} (e.g., from stress tests)
+function save_event(event::Dict{Any, Any})
+    # Convert to Dict{String, Any}
+    converted = Dict{String, Any}()
+    for (k, v) in event
+        converted[string(k)] = v
+    end
+    save_event(converted)
+end
+
 """
     load_events()::Vector{Dict{String, Any}}
 Load all events from the event log.

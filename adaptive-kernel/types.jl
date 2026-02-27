@@ -6,8 +6,10 @@ module SharedTypes
 using Dates
 using UUIDs
 
-export ActionProposal, Goal, GoalState, Thought, ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleType,
-       add_intent!, update_alignment!, get_alignment_penalty, update_goal_progress!
+export ActionProposal, Goal, GoalState, Thought, ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleType, ThoughtContext,
+       add_intent!, update_alignment!, get_alignment_penalty, update_goal_progress!,
+       # Integration types
+       IntegrationActionProposal, IntegrationWorldState, IntegrationObservation, Observation
 
 # ============================================================================
 # Action Proposal - Kernel version (for deterministic kernel)
@@ -235,13 +237,29 @@ end
 end
 
 """
+    ThoughtContext - Typed context for thought cycles (replaces Dict{String, Any})
+"""
+struct ThoughtContext
+    goal_id::Union{String, Nothing}
+    priority::Float32
+    confidence::Float32
+    energy::Float32
+    active_goals::Vector{String}
+    recent_actions::Vector{String}
+    
+    ThoughtContext() = new(nothing, 0.5f0, 0.8f0, 1.0f0, String[], String[])
+    ThoughtContext(goal_id::String, priority::Float32, confidence::Float32, energy::Float32) = 
+        new(goal_id, priority, confidence, energy, String[], String[])
+end
+
+"""
     ThoughtCycle - Non-executing internal cognition cycle
     Used for doctrine refinement, simulation, precomputation
 """
 struct ThoughtCycle
     id::UUID
     cycle_type::ThoughtCycleType
-    input_context::Dict{String, Any}  # Typed context for the thought
+    input_context::ThoughtContext  # Typed struct instead of Dict{String, Any}
     output_insights::Vector{String}
     started_at::DateTime
     completed_at::Union{DateTime, Nothing}
@@ -250,7 +268,7 @@ struct ThoughtCycle
     ThoughtCycle(cycle_type::ThoughtCycleType) = new(
         uuid4(),
         cycle_type,
-        Dict{String, Any}(),
+        ThoughtContext(),
         String[],
         now(),
         nothing,
@@ -263,5 +281,117 @@ function complete_thought!(tc::ThoughtCycle, insights::Vector{String})
     tc.completed_at = now()
     # executed remains false - this is critical for non-executing cycles
 end
+
+# ============================================================================
+# INTEGRATION TYPES - Unified types for brain-kernel-jarvis communication
+# ============================================================================
+
+"""
+    IntegrationActionProposal - Universal action proposal format
+    Used as the canonical format for all three brains to communicate.
+    Combines fields from both JarvisTypes.ActionProposal and SharedTypes.ActionProposal.
+"""
+struct IntegrationActionProposal
+    id::UUID
+    capability_id::String
+    confidence::Float32
+    predicted_cost::Float32
+    predicted_reward::Float32
+    risk::Float32              # Unified as Float32 (not String like SharedTypes)
+    reasoning::String
+    impact_estimate::Float32
+    timestamp::DateTime
+end
+
+# Constructor with auto-generated UUID
+function IntegrationActionProposal(
+    capability_id::String,
+    confidence::Float32,
+    cost::Float32,
+    reward::Float32,
+    risk::Float32;
+    reasoning::String = "",
+    impact::Float32 = 0.5f0
+)::IntegrationActionProposal
+    return IntegrationActionProposal(
+        uuid4(),
+        capability_id,
+        confidence,
+        cost,
+        reward,
+        risk,
+        reasoning,
+        impact,
+        now()
+    )
+end
+
+"""
+    IntegrationObservation - Typed observation for integration (replaces Dict{String, Any})
+"""
+struct IntegrationObservation
+    cpu_load::Float32
+    memory_usage::Float32
+    disk_io::Float32
+    network_latency::Float32
+    file_count::Int
+    process_count::Int
+    energy_level::Float32
+    confidence::Float32
+    
+    IntegrationObservation() = new(0.0f0, 0.0f0, 0.0f0, 0.0f0, 0, 0, 1.0f0, 0.8f0)
+end
+
+"""
+    IntegrationWorldState - Unified world state format
+    Combines Jarvis system metrics with Kernel semantic facts.
+"""
+struct IntegrationWorldState
+    timestamp::DateTime
+    
+    # System metrics (from Jarvis)
+    system_metrics::Dict{String, Float32}  # cpu, memory, disk, network
+    
+    # Security state (from Jarvis)
+    severity::Float32
+    threat_count::Int
+    trust_level::Int  # 0-100 scale
+    
+    # Kernel observations (typed)
+    observations::IntegrationObservation
+    
+    # Semantic facts (from Kernel)
+    facts::Dict{String, String}
+    
+    # Metadata
+    cycle::Int
+    last_action_id::Union{String, Nothing}
+end
+
+function IntegrationWorldState(
+    system_metrics::Dict{String, Float32} = Dict{String, Float32}(),
+    severity::Float32 = 0.0f0,
+    threat_count::Int = 0,
+    trust_level::Int = 100,
+    observations::IntegrationObservation = IntegrationObservation(),
+    facts::Dict{String, String} = Dict{String, String}(),
+    cycle::Int = 0,
+    last_action_id::Union{String, Nothing} = nothing
+)::IntegrationWorldState
+    return IntegrationWorldState(
+        now(),
+        system_metrics,
+        severity,
+        threat_count,
+        trust_level,
+        observations,
+        facts,
+        cycle,
+        last_action_id
+    )
+end
+
+# Export Integration types
+export IntegrationActionProposal, IntegrationWorldState
 
 end # module SharedTypes

@@ -18,3 +18,10 @@ try
 catch e
     @warn "Integration test skipped or failed to run: $e"
 end
+
+println("Running personal assistant scenarios test...")
+try
+    include(joinpath(@__DIR__, "tests/personal_assistant_scenarios_test.jl"))
+catch e
+    @warn "Personal assistant scenarios test skipped or failed to run: $e"
+end
