@@ -7,10 +7,11 @@ module SelfModel
 using Statistics
 
 export 
-    SelfModel,
+    SelfModelCore,
     introspect,
     estimate_uncertainty,
     calibrate_confidence!,
+    calibrate_decision!,
     assess_capabilities,
     update_capability!,
     identify_knowledge_boundary,
@@ -18,14 +19,17 @@ export
     check_cognitive_health,
     should_defer_decision,
     explain_reasoning,
-    get_confidence_statement
+    get_confidence_statement,
+    get_calibrated_confidence,
+    get_honest_uncertainty_statement,
+    SelfModel  # Backwards compatibility alias
 
 # ============================================================================
 # SELF-MODEL STRUCT
 # ============================================================================
 
 """
-    SelfModel - Explicit self-representation with capability awareness
+    SelfModelCore - Explicit self-representation with capability awareness
 
 # Fields
 - `capabilities::Dict{Symbol, Float32}` - Capability scores (:reasoning, :planning, :learning, :memory)
@@ -42,7 +46,7 @@ export
 - `uncertainty_estimate::Float32` - Current uncertainty in self-assessment
 - `calibration_error::Float32` - Difference between confidence and actual accuracy
 """
-mutable struct SelfModel
+mutable struct SelfModelCore
     # Capability awareness
     capabilities::Dict{Symbol, Float32}
     capability_confidence::Dict{Symbol, Float32}
@@ -70,7 +74,7 @@ mutable struct SelfModel
     _prediction_history::Vector{Float32}
     _outcome_history::Vector{Bool}
     
-    function SelfModel()
+    function SelfModelCore()
         new(
             # Capabilities with default values
             Dict{Symbol, Float32}(
@@ -112,19 +116,19 @@ end
 # ============================================================================
 
 """
-    introspect(self_model::SelfModel; deep::Bool=false)::Dict{Symbol, Any}
+    introspect(self_model::SelfModelCore; deep::Bool=false)::Dict{Symbol, Any}
     
 Perform self-examination and return comprehensive self-assessment.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to introspect
+- `self_model::SelfModelCore` - The self-model to introspect
 - `deep::Bool=false` - Whether to perform deep introspection
 
 # Returns
 - `Dict{Symbol, Any}` - Comprehensive self-assessment including capabilities, health, and boundaries
 """
 function introspect(
-    self_model::SelfModel;
+    self_model::SelfModelCore;
     deep::Bool=false
 )::Dict{Symbol, Any}
     # Evaluate overall cognitive health
@@ -190,19 +194,19 @@ end
 # ============================================================================
 
 """
-    estimate_uncertainty(self_model::SelfModel, decision::Dict)::Float32
+    estimate_uncertainty(self_model::SelfModelCore, decision::Dict)::Float32
 
 Estimate uncertainty in a decision based on knowledge boundaries and capabilities.
 
 # Arguments
-- `self_model::SelfModel` - The self-model
+- `self_model::SelfModelCore` - The self-model
 - `decision::Dict` - The decision to evaluate (should contain :context, :domain, :required_capabilities)
 
 # Returns
 - `Float32` - Uncertainty estimate between 0.0 (certain) and 1.0 (uncertain)
 """
 function estimate_uncertainty(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     decision::Dict
 )::Float32
     uncertainty = 0.0f0
@@ -242,17 +246,17 @@ function estimate_uncertainty(
 end
 
 """
-    calibrate_confidence!(self_model::SelfModel, predictions::Vector, outcomes::Vector)
+    calibrate_confidence!(self_model::SelfModelCore, predictions::Vector, outcomes::Vector)
 
 Update confidence calibration based on prediction accuracy.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to update
+- `self_model::SelfModelCore` - The self-model to update
 - `predictions::Vector` - Vector of predicted probabilities
 - `outcome::Vector` - Vector of actual outcomes (true/false)
 """
 function calibrate_confidence!(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     predictions::Vector,
     outcomes::Vector
 )
@@ -294,19 +298,19 @@ end
 # ============================================================================
 
 """
-    assess_capabilities(self_model::SelfModel, task_context::Dict)::Dict{Symbol, Float32}
+    assess_capabilities(self_model::SelfModelCore, task_context::Dict)::Dict{Symbol, Float32}
 
 Assess current capabilities for a specific task context.
 
 # Arguments
-- `self_model::SelfModel` - The self-model
+- `self_model::SelfModelCore` - The self-model
 - `task_context::Dict` - Task context containing :task_type, :complexity, :required_capabilities
 
 # Returns
 - `Dict{Symbol, Float32}` - Capability scores for the task
 """
 function assess_capabilities(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     task_context::Dict
 )::Dict{Symbol, Float32}
     scores = Dict{Symbol, Float32}()
@@ -336,17 +340,17 @@ function assess_capabilities(
 end
 
 """
-    update_capability!(self_model::SelfModel, capability::Symbol, performance::Float32)
+    update_capability!(self_model::SelfModelCore, capability::Symbol, performance::Float32)
 
 Update capability estimate based on recent performance.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to update
+- `self_model::SelfModelCore` - The self-model to update
 - `capability::Symbol` - The capability to update (:reasoning, :planning, :learning, :memory)
 - `performance::Float32` - Recent performance metric (0.0-1.0)
 """
 function update_capability!(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     capability::Symbol,
     performance::Float32
 )
@@ -374,19 +378,19 @@ end
 # ============================================================================
 
 """
-    identify_knowledge_boundary(self_model::SelfModel, query::String)::Bool
+    identify_knowledge_boundary(self_model::SelfModelCore, query::String)::Bool
 
 Check if a query falls outside known knowledge boundaries.
 
 # Arguments
-- `self_model::SelfModel` - The self-model
+- `self_model::SelfModelCore` - The self-model
 - `query::String` - The query to check
 
 # Returns
 - `Bool` - true if the query is in an unknown domain, false otherwise
 """
 function identify_knowledge_boundary(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     query::String
 )::Bool
     # Simple heuristic: check if query contains keywords from unknown domains
@@ -436,17 +440,17 @@ function get_domain_keywords(domain::Symbol)::Vector{String}
 end
 
 """
-    update_knowledge!(self_model::SelfModel, domain::Symbol, known::Bool)
+    update_knowledge!(self_model::SelfModelCore, domain::Symbol, known::Bool)
 
 Update knowledge boundaries when a domain is learned or identified as unknown.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to update
+- `self_model::SelfModelCore` - The self-model to update
 - `domain::Symbol` - The domain to update
 - `known::Bool` - true if domain is now known, false if unknown
 """
 function update_knowledge!(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     domain::Symbol,
     known::Bool
 )
@@ -478,18 +482,18 @@ end
 # ============================================================================
 
 """
-    check_cognitive_health(self_model::SelfModel)::Float32
+    check_cognitive_health(self_model::SelfModelCore)::Float32
 
 Evaluate cognitive health based on error rate, latency, and resource availability.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to evaluate
+- `self_model::SelfModelCore` - The self-model to evaluate
 
 # Returns
 - `Float32` - Health score between 0.0 (unhealthy) and 1.0 (healthy)
 """
 function check_cognitive_health(
-    self_model::SelfModel
+    self_model::SelfModelCore
 )::Float32
     # Weight factors for health components
     error_weight = 0.4f0
@@ -520,18 +524,18 @@ function check_cognitive_health(
 end
 
 """
-    should_defer_decision(self_model::SelfModel)::Bool
+    should_defer_decision(self_model::SelfModelCore)::Bool
 
 Check if the system should defer a decision to a human based on low confidence or health.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to evaluate
+- `self_model::SelfModelCore` - The self-model to evaluate
 
 # Returns
 - `Bool` - true if should defer to human, false otherwise
 """
 function should_defer_decision(
-    self_model::SelfModel
+    self_model::SelfModelCore
 )::Bool
     # Check cognitive health
     health = check_cognitive_health(self_model)
@@ -567,19 +571,19 @@ end
 # ============================================================================
 
 """
-    explain_reasoning(self_model::SelfModel, decision::Dict)::String
+    explain_reasoning(self_model::SelfModelCore, decision::Dict)::String
 
 Generate a human-readable explanation for a decision.
 
 # Arguments
-- `self_model::SelfModel` - The self-model
+- `self_model::SelfModelCore` - The self-model
 - `decision::Dict` - The decision to explain
 
 # Returns
 - `String` - Human-readable explanation
 """
 function explain_reasoning(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     decision::Dict
 )::String
     parts = String[]
@@ -633,18 +637,18 @@ function explain_reasoning(
 end
 
 """
-    get_confidence_statement(self_model::SelfModel)::String
+    get_confidence_statement(self_model::SelfModelCore)::String
 
 Generate a confidence statement for user communication.
 
 # Arguments
-- `self_model::SelfModel` - The self-model
+- `self_model::SelfModelCore` - The self-model
 
 # Returns
 - `String` - Confidence statement
 """
 function get_confidence_statement(
-    self_model::SelfModel
+    self_model::SelfModelCore
 )::String
     health = check_cognitive_health(self_model)
     
@@ -680,17 +684,17 @@ end
 # ============================================================================
 
 """
-    update_performance!(self_model::SelfModel, accuracy::Float32, latency_ms::Float32)
+    update_performance!(self_model::SelfModelCore, accuracy::Float32, latency_ms::Float32)
 
 Update performance metrics.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to update
+- `self_model::SelfModelCore` - The self-model to update
 - `accuracy::Float32` - Recent accuracy (0.0-1.0)
 - `latency_ms::Float32` - Decision latency in milliseconds
 """
 function update_performance!(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     accuracy::Float32,
     latency_ms::Float32
 )
@@ -705,17 +709,17 @@ function update_performance!(
 end
 
 """
-    update_resource_health!(self_model::SelfModel, cpu_usage::Float32, memory_usage::Float32)
+    update_resource_health!(self_model::SelfModelCore, cpu_usage::Float32, memory_usage::Float32)
 
 Update resource health based on system metrics.
 
 # Arguments
-- `self_model::SelfModel` - The self-model to update
+- `self_model::SelfModelCore` - The self-model to update
 - `cpu_usage::Float32` - CPU usage (0.0-1.0)
 - `memory_usage::Float32` - Memory usage (0.0-1.0)
 """
 function update_resource_health!(
-    self_model::SelfModel,
+    self_model::SelfModelCore,
     cpu_usage::Float32,
     memory_usage::Float32
 )
@@ -723,6 +727,257 @@ function update_resource_health!(
     # Weight CPU more heavily as it affects decision quality
     resource_usage = cpu_usage * 0.6f0 + memory_usage * 0.4f0
     self_model.resource_health = 1.0f0 - resource_usage
+end
+
+# ============================================================================
+# DYNAMIC CONFIDENCE CALIBRATION - "HONEST UNCERTAINTY"
+# ============================================================================
+
+"""
+    get_calibrated_confidence(self_model::SelfModelCore, decision_context::Dict)::Float32
+
+Calculate dynamically calibrated confidence for a specific decision context.
+This is the "Honest Uncertainty" engine - Jarvis says "I am X% sure".
+
+# Arguments
+- `self_model::SelfModelCore` - The self-model
+- `decision_context::Dict` - Context containing:
+    - `:domain` - Domain of the decision (e.g., :law, :code, :analysis)
+    - `:required_capabilities` - Capabilities needed
+    - `:complexity` - Complexity level (0.0-1.0)
+    - `:data_quality` - Quality of available data (0.0-1.0)
+
+# Returns
+- `Float32` - Calibrated confidence between 0.0 and 1.0
+"""
+function get_calibrated_confidence(
+    self_model::SelfModelCore,
+    decision_context::Dict
+)::Float32
+    # Start with a conservative base
+    base_confidence = 0.5f0
+    
+    # Factor 1: Capability fit (can we do this?)
+    capability_factor = _evaluate_capability_fit(self_model, decision_context)
+    
+    # Factor 2: Domain knowledge (do we know this domain?)
+    domain_factor = _evaluate_domain_knowledge(self_model, decision_context)
+    
+    # Factor 3: Data quality (do we have good data?)
+    data_quality = get(decision_context, :data_quality, 0.5f0)
+    
+    # Factor 4: Calibration accuracy (how reliable are our estimates?)
+    calibration_factor = 1.0f0 - self_model.calibration_error
+    
+    # Factor 5: Current cognitive health
+    health_factor = check_cognitive_health(self_model)
+    
+    # Factor 6: Complexity adjustment
+    complexity = get(decision_context, :complexity, 0.5f0)
+    complexity_factor = 1.0f0 - (complexity * 0.3f0)
+    
+    # Calculate weighted confidence
+    confidence = (
+        base_confidence * 0.1f0 +
+        capability_factor * 0.25f0 +
+        domain_factor * 0.20f0 +
+        data_quality * 0.15f0 +
+        calibration_factor * 0.15f0 +
+        health_factor * 0.10f0 +
+        complexity_factor * 0.05f0
+    )
+    
+    # Apply calibration error penalty
+    confidence = confidence * (1.0f0 - self_model.calibration_error * 0.5f0)
+    
+    # Clamp to valid range
+    return clamp(confidence, 0.05f0, 0.95f0)
+end
+
+"""
+    _evaluate_capability_fit(self_model::SelfModelCore, decision_context::Dict)::Float32
+
+Evaluate how well the system's capabilities match the decision requirements.
+"""
+function _evaluate_capability_fit(
+    self_model::SelfModelCore,
+    decision_context::Dict
+)::Float32
+    required = get(decision_context, :required_capabilities, Symbol[])
+    
+    if isempty(required)
+        return 0.7f0  # Default moderate confidence if no specific requirements
+    end
+    
+    total_score = 0.0f0
+    count = 0
+    
+    for cap in required
+        if cap in keys(self_model.capabilities)
+            cap_score = self_model.capabilities[cap]
+            cap_conf = get(self_model.capability_confidence, cap, 0.5f0)
+            # Weight by both capability level and confidence in that estimate
+            total_score += cap_score * (0.5f0 + cap_conf * 0.5f0)
+            count += 1
+        else
+            # Unknown capability - significant penalty
+            total_score += 0.1f0
+            count += 1
+        end
+    end
+    
+    return count > 0 ? total_score / count : 0.5f0
+end
+
+"""
+    _evaluate_domain_knowledge(self_model::SelfModelCore, decision_context::Dict)::Float32
+
+Evaluate knowledge of the decision domain.
+"""
+function _evaluate_domain_knowledge(
+    self_model::SelfModelCore,
+    decision_context::Dict
+)::Float32
+    domain = get(decision_context, :domain, nothing)
+    
+    if domain === nothing
+        return self_model.knowledge_confidence  # Use general knowledge confidence
+    end
+    
+    if domain in self_model.known_domains
+        # Known domain - factor in knowledge confidence
+        return 0.7f0 + self_model.knowledge_confidence * 0.3f0
+    elseif domain in self_model.unknown_domains
+        # Unknown domain - low confidence
+        return 0.2f0 * self_model.knowledge_confidence
+    else
+        # Uncertain familiarity - moderate penalty
+        return 0.5f0 * self_model.knowledge_confidence
+    end
+end
+
+"""
+    calibrate_decision!(self_model::SelfModelCore, decision_context::Dict, predicted_confidence::Float32, actual_outcome::Bool)
+
+Record a decision outcome to improve future calibration.
+
+# Arguments
+- `self_model::SelfModelCore` - The self-model
+- `decision_context::Dict` - The decision context
+- `predicted_confidence::Float32` - What confidence we reported
+- `actual_outcome::Bool` - Whether the decision was correct
+"""
+function calibrate_decision!(
+    self_model::SelfModelCore,
+    decision_context::Dict,
+    predicted_confidence::Float32,
+    actual_outcome::Bool
+)
+    # Record for general calibration
+    calibrate_confidence!(self_model, [predicted_confidence], [actual_outcome])
+    
+    # Update based on capability performance
+    required = get(decision_context, :required_capabilities, Symbol[])
+    for cap in required
+        if cap in keys(self_model.capabilities)
+            # If outcome was good, capability is likely stronger than thought
+            performance = actual_outcome ? 0.8f0 : 0.3f0
+            update_capability!(self_model, cap, performance)
+        end
+    end
+    
+    # Update domain knowledge
+    domain = get(decision_context, :domain, nothing)
+    if domain !== nothing
+        # If we were confident about a domain and got it wrong, note it
+        if !actual_outcome && predicted_confidence > 0.7f0
+            # Don't mark as unknown immediately, but reduce confidence
+            self_model.knowledge_confidence = max(0.1f0, self_model.knowledge_confidence - 0.05f0)
+        end
+    end
+    
+    # Increment review cycle
+    self_model.cycles_since_review += 1
+end
+
+"""
+    get_honest_uncertainty_statement(self_model::SelfModelCore, decision_context::Dict)::String
+
+Generate a transparent confidence statement for user communication.
+This is the "Honest Uncertainty" feature that makes Jarvis trustworthy.
+
+# Arguments
+- `self_model::SelfModelCore` - The self-model
+- `decision_context::Dict` - The decision context
+
+# Returns
+- `String` - Human-readable statement like "I am 40% sure; let's verify together"
+"""
+function get_honest_uncertainty_statement(
+    self_model::SelfModelCore,
+    decision_context::Dict
+)::String
+    confidence = get_calibrated_confidence(self_model, decision_context)
+    uncertainty = 1.0f0 - confidence
+    
+    # Convert to percentage
+    confidence_pct = round(Int, confidence * 100)
+    uncertainty_pct = round(Int, uncertainty * 100)
+    
+    # Determine statement style based on confidence level
+    if confidence >= 0.8f0
+        # High confidence - but still acknowledge uncertainty
+        statement = "I am $confidence_pct% confident in this interpretation"
+        if uncertainty > 0.1f0
+            statement *= ", though there's $uncertainty_pct% uncertainty I'd like to verify"
+        end
+        statement *= "."
+    elseif confidence >= 0.5f0
+        # Moderate confidence - recommend verification
+        statement = "I am $confidence_pct% confident about this, but there's significant uncertainty ($uncertainty_pct%)."
+        statement *= " Let's verify this together to ensure accuracy."
+    elseif confidence >= 0.3f0
+        # Low confidence - strong recommendation to verify
+        statement = "I'm only $confidence_pct% sure about this - there's a $uncertainty_pct% chance I could be wrong."
+        statement *= " I recommend we verify this together before proceeding."
+    else
+        # Very low confidence - explicit uncertainty
+        statement = "I'm uncertain about this (only $confidence_pct% confident)."
+        statement *= " I need your input or more information to proceed reliably."
+    end
+    
+    # Add contextual factors if uncertainty is high
+    if uncertainty > 0.3f0
+        factors = String[]
+        
+        domain = get(decision_context, :domain, nothing)
+        if domain !== nothing && domain in self_model.unknown_domains
+            push!(factors, "this is outside my known expertise")
+        end
+        
+        required = get(decision_context, :required_capabilities, Symbol[])
+        for cap in required
+            if cap in keys(self_model.capabilities)
+                if self_model.capabilities[cap] < 0.5f0
+                    push!(factors, "my capability in $cap is limited")
+                end
+            end
+        end
+        
+        if self_model.calibration_error > 0.2f0
+            push!(factors, "my calibration needs adjustment")
+        end
+        
+        if self_model.cognitive_health < 0.5f0
+            push!(factors, "my cognitive resources are constrained")
+        end
+        
+        if !isempty(factors)
+            statement *= "\n\nFactors: " * join(factors, ", ") * "."
+        end
+    end
+    
+    return statement
 end
 
 end # module SelfModel

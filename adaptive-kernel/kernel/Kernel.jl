@@ -22,6 +22,10 @@ using .SharedTypes: ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleTyp
 include("observability/SystemObserver.jl")
 using .SysObserver
 
+# Import SelfModel for dynamic confidence calibration ("Honest Uncertainty")
+# Include SelfModel directly as it defines its own module
+include(joinpath(@__DIR__, "..", "cognition", "metacognition", "SelfModel.jl"))
+
 # Export decision types and kernel functions
 export Observation, KernelState, Goal, GoalState, WorldState, init_kernel, step_once, run_loop, request_action, 
        get_kernel_stats, set_kernel_state!, reflect!, reflect_with_event!, get_reflection_events,
@@ -30,7 +34,10 @@ export Observation, KernelState, Goal, GoalState, WorldState, init_kernel, step_
        # Decision types for sovereignty
        APPROVED, DENIED, STOPPED, approve,
        # Phase 3: SystemObserver - re-export from SysObserver
-       SystemObserver, collect_real_observation, observe, get_history, get_average_metrics
+       SystemObserver, collect_real_observation, observe, get_history, get_average_metrics,
+       # SelfModel for dynamic confidence ("Honest Uncertainty")
+       get_dynamic_confidence, get_confidence_statement_for_context, update_kernel_from_self_model!,
+       record_decision_outcome!
 
 # Decision types for kernel sovereignty
 @enum Decision APPROVED DENIED STOPPED
@@ -78,6 +85,9 @@ mutable struct KernelState
     # Phase 3: SystemObserver for real-time telemetry
     system_observer::Union{SystemObserver, Nothing}
     
+    # SelfModel for dynamic confidence calibration ("Honest Uncertainty")
+    self_model::Union{SelfModel.SelfModelCore, Nothing}
+    
     # Mutable for runtime updates only—not structural logic
     KernelState(cycle::Int, goals::Vector{Goal}, world::WorldState, active_goal_id::String) =
         new(Threads.Atomic{Int}(cycle), goals, 
@@ -88,7 +98,8 @@ mutable struct KernelState
             nothing, 0.0f0, 0.0f0,
             IntentVector(),  # Initialize strategic intent vector
             DENIED,  # Default to DENIED for security
-            nothing  # SystemObserver initialized separately
+            nothing,  # SystemObserver initialized separately
+            SelfModel.SelfModelCore()  # Initialize SelfModel for dynamic confidence
         )
 end
 
@@ -192,6 +203,125 @@ function _validate_kernel_metrics(kernel::KernelState)::Bool
         return false
     end
     return true
+end
+
+# ============================================================================
+# Dynamic Confidence Calibration - "Honest Uncertainty" Engine
+# ============================================================================
+
+"""
+    get_dynamic_confidence(kernel::KernelState, decision_context::Dict=Dict())::Float32
+
+Get dynamically calibrated confidence using SelfModel.
+This is the "Honest Uncertainty" engine - replaces hardcoded 0.8f0 default.
+
+# Arguments
+- `kernel::KernelState` - The kernel state
+- `decision_context::Dict` - Optional context for decision-specific confidence
+
+# Returns
+- `Float32` - Calibrated confidence between 0.05 and 0.95
+"""
+function get_dynamic_confidence(
+    kernel::KernelState,
+    decision_context::Dict=Dict()
+)::Float32
+    # Use SelfModel if available
+    if kernel.self_model !== nothing
+        return SelfModel.SelfModelCore.get_calibrated_confidence(kernel.self_model, decision_context)
+    end
+    
+    # Fallback to self_metrics with dynamic adjustment
+    base_confidence = get(kernel.self_metrics, "confidence", 0.5f0)
+    
+    # Adjust based on cognitive health (from self_metrics if available)
+    energy = get(kernel.self_metrics, "energy", 1.0f0)
+    focus = get(kernel.self_metrics, "focus", 0.5f0)
+    
+    # Apply penalties for low energy/focus
+    if energy < 0.3
+        base_confidence *= 0.7
+    elseif energy < 0.5
+        base_confidence *= 0.85
+    end
+    
+    if focus < 0.3
+        base_confidence *= 0.8
+    end
+    
+    return clamp(base_confidence, 0.05f0, 0.95f0)
+end
+
+"""
+    get_confidence_statement_for_context(kernel::KernelState, decision_context::Dict)::String
+
+Generate a transparent confidence statement for a specific decision context.
+This enables Jarvis to say "I am 40% sure; let's verify together".
+
+# Arguments
+- `kernel::KernelState` - The kernel state
+- `decision_context::Dict` - Context containing :domain, :required_capabilities, etc.
+
+# Returns
+- `String` - Human-readable confidence statement
+"""
+function get_confidence_statement_for_context(
+    kernel::KernelState,
+    decision_context::Dict
+)::String
+    if kernel.self_model !== nothing
+        return SelfModel.SelfModelCore.get_honest_uncertainty_statement(kernel.self_model, decision_context)
+    end
+    
+    # Fallback statement without SelfModel
+    confidence = get_dynamic_confidence(kernel, decision_context)
+    confidence_pct = round(Int, confidence * 100)
+    
+    if confidence >= 0.7f0
+        return "I am $confidence_pct% confident in this decision."
+    elseif confidence >= 0.4f0
+        return "I am $confidence_pct% confident. Consider verifying this."
+    else
+        return "I'm only $confidence_pct% confident. I recommend we verify this together."
+    end
+end
+
+"""
+    update_kernel_from_self_model!(kernel::KernelState)
+
+Sync kernel self_metrics with SelfModel for consistent state.
+"""
+function update_kernel_from_self_model!(kernel::KernelState)
+    if kernel.self_model !== nothing
+        # Sync confidence from SelfModel to self_metrics
+        general_context = Dict(:complexity => 0.5f0, :data_quality => 0.5f0)
+        calibrated_conf = get_dynamic_confidence(kernel, general_context)
+        kernel.self_metrics["confidence"] = calibrated_conf
+        
+        # Update capability-based info
+        for (cap, score) in kernel.self_model.capabilities
+            # Could extend self_metrics with capability-specific scores
+        end
+    end
+end
+
+"""
+    record_decision_outcome!(kernel::KernelState, decision_context::Dict, actual_outcome::Bool)
+
+Record decision outcome to improve future confidence calibration.
+"""
+function record_decision_outcome!(
+    kernel::KernelState,
+    decision_context::Dict,
+    actual_outcome::Bool
+)
+    if kernel.self_model !== nothing
+        predicted_conf = get_dynamic_confidence(kernel, decision_context)
+        SelfModel.SelfModelCore.calibrate_decision!(kernel.self_model, decision_context, predicted_conf, actual_outcome)
+        
+        # Also update kernel self_metrics
+        update_kernel_from_self_model!(kernel)
+    end
 end
 
 """
