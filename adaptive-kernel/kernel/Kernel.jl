@@ -1,4 +1,4 @@
-# kernel/Kernel.jl - Adaptive Cognitive Kernel (≤400 lines)
+# kernel/Kernel.jl - Adaptive Cognitive Kernel (~830 lines)
 # Core responsibilities: world state, self state, priorities, action selection, reflection
 # Does NOT contain tool logic, OS logic, UI, skills, or personality.
 
@@ -18,13 +18,19 @@ using .SharedTypes
 using .SharedTypes: ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleType,
                      add_intent!, update_alignment!, get_alignment_penalty, GoalState, update_goal_progress!
 
+# Import SystemObserver for real-time telemetry (Phase 3)
+include("observability/SystemObserver.jl")
+using .SysObserver
+
 # Export decision types and kernel functions
 export Observation, KernelState, Goal, GoalState, WorldState, init_kernel, step_once, run_loop, request_action, 
        get_kernel_stats, set_kernel_state!, reflect!, reflect_with_event!, get_reflection_events,
        ensure_goal_state!, get_active_goal_state, add_strategic_intent!,
        run_thought_cycle, ThoughtCycleType, _validate_kernel_metrics,
        # Decision types for sovereignty
-       APPROVED, DENIED, STOPPED, approve
+       APPROVED, DENIED, STOPPED, approve,
+       # Phase 3: SystemObserver - re-export from SysObserver
+       SystemObserver, collect_real_observation, observe, get_history, get_average_metrics
 
 # Decision types for kernel sovereignty
 @enum Decision APPROVED DENIED STOPPED
@@ -43,7 +49,7 @@ struct Observation
         new(cpu, mem, disk, net, files, procs, Dict{String, Float32}())
 end
 
-struct WorldState
+mutable struct WorldState
     timestamp::DateTime
     observations::Observation  # Typed struct instead of Dict{String, Any}
     facts::Dict{String, String}
@@ -69,6 +75,9 @@ mutable struct KernelState
     # Kernel sovereignty: track last decision for security assertion
     last_decision::Decision
     
+    # Phase 3: SystemObserver for real-time telemetry
+    system_observer::Union{SystemObserver, Nothing}
+    
     # Mutable for runtime updates only—not structural logic
     KernelState(cycle::Int, goals::Vector{Goal}, world::WorldState, active_goal_id::String) =
         new(Threads.Atomic{Int}(cycle), goals, 
@@ -78,7 +87,8 @@ mutable struct KernelState
             Dict("confidence" => 0.8f0, "energy" => 1.0f0, "focus" => 0.5f0),
             nothing, 0.0f0, 0.0f0,
             IntentVector(),  # Initialize strategic intent vector
-            DENIED  # Default to DENIED for security
+            DENIED,  # Default to DENIED for security
+            nothing  # SystemObserver initialized separately
         )
 end
 
@@ -151,8 +161,16 @@ function init_kernel(config::Dict)::KernelState
     end
     world = WorldState(now(), observations, Dict{String, String}())
     active_goal = !isempty(goals) ? goals[1].id : "default"
-    @info "Kernel initialized" num_goals=length(goals) active_goal=active_goal
-    return KernelState(0, goals, world, active_goal)
+    
+    # Create SystemObserver for real-time telemetry (Phase 3)
+    system_observer = SystemObserver(1.0; history_size=100)
+    
+    # Initialize kernel state
+    kernel = KernelState(0, goals, world, active_goal)
+    kernel.system_observer = system_observer
+    
+    @info "Kernel initialized with SystemObserver" num_goals=length(goals) active_goal=active_goal
+    return kernel
 end
 
 # ============================================================================
@@ -180,6 +198,7 @@ end
     evaluate_world(kernel::KernelState)::Vector{Float32}
 Compute priority scores for active goals given current world state and self metrics.
 Returns normalized [0,1] scores; heuristic: base_priority * confidence * (1 - energy_drain).
+Uses real-time system observations from SystemObserver (Phase 3).
 """
 function evaluate_world(kernel::KernelState)::Vector{Float32}
     # P0: Fail-closed - validate metrics before computation
@@ -188,13 +207,35 @@ function evaluate_world(kernel::KernelState)::Vector{Float32}
         return ones(Float32, length(kernel.goals)) ./ max(length(kernel.goals), 1)
     end
     
+    # Phase 3: Collect real-time system observations
+    real_observation = if kernel.system_observer !== nothing
+        observe(kernel.system_observer)
+    else
+        # Fallback to existing observation or defaults
+        kernel.world.observations
+    end
+    
+    # Update world state with real observations
+    kernel.world.observations = Observation(
+        real_observation.cpu_usage,
+        real_observation.memory_usage,
+        real_observation.disk_io,
+        real_observation.network_latency,
+        real_observation.file_count,
+        real_observation.process_count
+    )
+    
     scores = Float32[]
     confidence = get(kernel.self_metrics, "confidence", 0.8f0)
     energy = get(kernel.self_metrics, "energy", 1.0f0)
     
+    # Adjust confidence based on system load (Phase 3)
+    system_load = real_observation.cpu_usage
+    adjusted_confidence = confidence * (1.0f0 - 0.3f0 * system_load)  # Reduce confidence under high load
+    
     for goal in kernel.goals
-        # Heuristic: base priority weighted by confidence and energy availability
-        score = goal.priority * confidence * (0.5f0 + 0.5f0 * energy)
+        # Heuristic: base priority weighted by confidence, energy, and system load
+        score = goal.priority * adjusted_confidence * (0.5f0 + 0.5f0 * energy)
         push!(scores, score)
     end
     # Normalize
@@ -211,8 +252,24 @@ end
 Select best action candidate using heuristic: argmax(priority_score - cost * cost_weight).
 Deterministic: no randomness, fully traceable for audit.
 """
-function select_action(kernel::KernelState, capability_candidates::Vector{Dict{String, Any}})::ActionProposal
-    isempty(capability_candidates) && return ActionProposal("none", 0.0f0, 0.0f0, 0.0f0, "low", "No candidates")
+function select_action(kernel::KernelState, capability_candidates::Vector{<:Any})::ActionProposal
+    # Handle empty candidates
+    if isempty(capability_candidates)
+        return ActionProposal("none", 0.0f0, 0.0f0, 0.0f0, 0.2f0, "No candidates")
+    end
+    
+    # Ensure we have a vector of dicts
+    typed_candidates = if eltype(capability_candidates) <: Dict
+        capability_candidates
+    else
+        # Convert Vector{Any} to Vector{Dict}
+        try
+            convert(Vector{Dict{String, Any}}, capability_candidates)
+        catch
+            # If conversion fails, return a default action
+            return ActionProposal("none", 0.0f0, 0.0f0, 0.0f0, 0.2f0, "Invalid candidates")
+        end
+    end
     
     priority_scores = evaluate_world(kernel)
     active_idx = findfirst(g -> g.id == kernel.active_goal_id, kernel.goals)
@@ -243,12 +300,21 @@ function select_action(kernel::KernelState, capability_candidates::Vector{Dict{S
     end
     
     chosen = capability_candidates[best_idx]
+    # Convert risk string to Float32 value
+    risk_str = get(chosen, "risk", "low")
+    risk_value = if risk_str == "high"
+        0.8f0
+    elseif risk_str == "medium"
+        0.5f0
+    else  # "low" or default
+        0.2f0
+    end
     return ActionProposal(
         get(chosen, "id", "unknown"),
         Float32(get(chosen, "confidence", 0.7)),
         Float32(get(chosen, "cost", 0.1)),
         best_score,
-        get(chosen, "risk", "low"),
+        risk_value,
         "Selected by priority heuristic (score=$(round(best_score, digits=3)))"
     )
 end
@@ -677,14 +743,24 @@ Single cycle: observe → evaluate → decide → reflect.
 - permission_handler(risk)::Bool returns true if action is permitted.
 - Returns nothing for kernel when action is denied (fail-closed design)
 """
-function step_once(kernel::KernelState, capability_candidates::Vector{Dict{String, Any}}, 
+function step_once(kernel::KernelState, capability_candidates::Vector{<:Any}, 
                    execute_fn::Function, permission_handler::Function)::Union{Tuple{KernelState, ActionProposal, Dict}, Tuple{Nothing, ActionProposal, Dict}}
     # P1: Thread-safe cycle increment using atomic operation
     Threads.atomic_add!(kernel.cycle, 1)
     kernel.world = WorldState(now(), kernel.world.observations, kernel.world.facts)
     
+    # Handle empty or any-type candidates array by converting to proper type
+    typed_candidates = if isempty(capability_candidates)
+        Vector{Dict{String, Any}}()
+    elseif eltype(capability_candidates) <: Dict
+        capability_candidates
+    else
+        # Convert Vector{Any} to Vector{Dict{String, Any}}
+        convert(Vector{Dict{String, Any}}, capability_candidates)
+    end
+    
     # DECIDE: Select action
-    action = select_action(kernel, capability_candidates)
+    action = select_action(kernel, typed_candidates)
     
     # PERMISSION CHECK: Verify risk level
     permitted = permission_handler(action.risk)
@@ -704,10 +780,22 @@ function step_once(kernel::KernelState, capability_candidates::Vector{Dict{Strin
         return nothing, action, result
     end
     
-    # EXECUTE: Call capability
-    result = execute_fn(action.capability_id)
+    # EXECUTE: Call capability with error handling
+    try
+        result = execute_fn(action.capability_id)
+    catch e
+        @error "Execution failed" error=e exception=(e, catch_backtrace())
+        # Create failure result - don't propagate exception
+        result = Dict(
+            "success" => false,
+            "effect" => "Execution error: $(string(e))",
+            "actual_confidence" => 0.0f0,
+            "energy_cost" => action.predicted_cost,
+            "error" => string(e)
+        )
+    end
     
-    # REFLECT: Update memory and self-metrics
+    # REFLECT: Update memory and self-metrics (even on execution failure)
     reflect!(kernel, action, result)
     
     kernel.last_action = action

@@ -14,6 +14,7 @@ const VERSION = v"1.0.0"
 export 
     # Core
     SystemIntegrator,
+    JWTAuth,
     JarvisTypes
     
     # Submodules
@@ -54,6 +55,9 @@ export
 # Import all modules
 include("types.jl")
 using .JarvisTypes
+
+include("auth/JWTAuth.jl")
+using .JWTAuth
 
 include("llm/LLMBridge.jl")
 using .LLMBridge

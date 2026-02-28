@@ -180,7 +180,7 @@ end
     valid_confidences = [0.0f0, 0.25f0, 0.5f0, 0.75f0, 1.0f0]
     
     for conf in valid_confidences
-        proposal = ActionProposal("test", conf, 0.1f0, 0.5f0, "low", "test")
+        proposal = ActionProposal("test", conf, 0.1f0, 0.5f0, 0.2f0, "test")
         @test proposal.confidence >= 0.0f0 && proposal.confidence <= 1.0f0  # INVARIANT
     end
     
@@ -314,7 +314,7 @@ end
     @test kernel.episodic_memory[1] isa ReflectionEvent
     
     # Test: Kernel.reflect! creates typed ReflectionEvent
-    action = ActionProposal("test", 0.8f0, 0.1f0, 0.9f0, "low", "test")
+    action = ActionProposal("test", 0.8f0, 0.1f0, 0.9f0, 0.2f0, "test")
     result = Dict{String, Any}(
         "success" => true,
         "effect" => "Goal progressed",
@@ -806,7 +806,7 @@ end
     )
     
     # Perform reflection
-    action = ActionProposal("test", 0.8f0, 0.1f0, 0.9f0, "low", "test")
+    action = ActionProposal("test", 0.8f0, 0.1f0, 0.9f0, 0.2f0, "test")
     result = Dict{String, Any}(
         "success" => true,
         "effect" => "Progress made",

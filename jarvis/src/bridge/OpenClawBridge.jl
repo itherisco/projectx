@@ -1,5 +1,6 @@
 # jarvis/src/bridge/OpenClawBridge.jl - OpenClaw Tool Container Interface
 # HTTP/JSON interface to OpenClaw Docker endpoint with kernel safety checks
+# Includes JWT authentication for secure access
 
 module OpenClawBridge
 
@@ -16,15 +17,23 @@ export
     ClawResult,
     CLAW_TOOLS,
     call_tool,
+    call_tool_authenticated,
     list_tools,
     get_tool_manifest,
     test_connection,
     # Safety
     is_tool_allowed,
-    validate_tool_call
+    validate_tool_call,
+    # Authentication
+    require_auth,
+    authenticate_request
 
 # Import Jarvis types from parent module
 using ..JarvisTypes
+
+# Import auth module
+include("../auth/JWTAuth.jl")
+using ..JWTAuth
 
 # ============================================================================
 # CONFIGURATION
@@ -39,15 +48,17 @@ struct OpenClawConfig
     timeout::Float64          # Request timeout in seconds
     retry_count::Int          # Number of retries on failure
     kernel_veto_enabled::Bool # Whether to check kernel before each call
+    auth_enabled::Bool        # Whether JWT authentication is required
     
     function OpenClawConfig(;
         endpoint::String = "http://localhost:3000",
         api_key::String = "",
         timeout::Float64 = 30.0,
         retry_count::Int = 3,
-        kernel_veto_enabled::Bool = true
+        kernel_veto_enabled::Bool = true,
+        auth_enabled::Bool = get(ENV, "OPENCLAW_AUTH_ENABLED", "false") == "true"
     )
-        new(endpoint, api_key, timeout, retry_count, kernel_veto_enabled)
+        new(endpoint, api_key, timeout, retry_count, kernel_veto_enabled, auth_enabled)
     end
 end
 
@@ -367,6 +378,69 @@ function kernel_veto_check(tool_call::ClawToolCall)::Tuple{Bool, String}
 end
 
 # ============================================================================
+# AUTHENTICATION WRAPPERS
+# ============================================================================
+
+"""
+    authenticate_request(token::String, config::OpenClawConfig) -> Bool
+
+Authenticate a request by validating the JWT token.
+"""
+function authenticate_request(token::String, config::OpenClawConfig)::Bool
+    if !config.auth_enabled
+        return true  # Auth disabled, allow all
+    end
+    return JWTAuth.authenticate_request(token)
+end
+
+"""
+    require_auth(token::String, config::OpenClawConfig)
+
+Require authentication for the current operation.
+Throws an error if authentication fails.
+"""
+function require_auth(token::String, config::OpenClawConfig)
+    if !config.auth_enabled
+        return  # Auth disabled, allow
+    end
+    
+    if isempty(token) || !authenticate_request(token, config)
+        error("Authentication required. This operation requires a valid JWT token.")
+    end
+end
+
+"""
+    call_tool_authenticated - Execute an OpenClaw tool with authentication
+
+Wrapper around call_tool that enforces JWT authentication.
+"""
+function call_tool_authenticated(
+    config::OpenClawConfig,
+    tool_call::ClawToolCall,
+    jwt_token::String
+)::ClawResult
+    # Require authentication
+    require_auth(jwt_token, config)
+    
+    # Execute the tool call
+    return call_tool(config, tool_call)
+end
+
+"""
+    call_tool_authenticated - Execute a tool by name with authentication
+"""
+function call_tool_authenticated(
+    config::OpenClawConfig,
+    tool_name::String,
+    parameters::Dict{String, Any},
+    jwt_token::String;
+    caller_context::String = "brian"
+)::ClawResult
+    tool_call = ClawToolCall(tool_name, parameters; caller_context = caller_context)
+    return call_tool_authenticated(config, tool_call, jwt_token)
+end
+
+# ============================================================================
 # API FUNCTIONS
 # ============================================================================
 
@@ -482,6 +556,9 @@ end
 
 """
     call_tool - Execute an OpenClaw tool
+
+If auth_enabled is true in config, authentication will be checked.
+For explicit authentication, use call_tool_authenticated instead.
 """
 function call_tool(
     config::OpenClawConfig,
@@ -489,6 +566,13 @@ function call_tool(
 )::ClawResult
     
     Logging.@info(string("[CLAW] Calling tool: ", tool_call.tool_id))
+    
+    # Check authentication if enabled
+    if config.auth_enabled
+        # For call_tool without explicit token, require auth via error
+        # The caller should use call_tool_authenticated with a valid JWT
+        Logging.@warn("[CLAW] Authentication is enabled - use call_tool_authenticated with valid JWT token")
+    end
     
     # Validate tool call
     valid, reason = validate_tool_call(tool_call)

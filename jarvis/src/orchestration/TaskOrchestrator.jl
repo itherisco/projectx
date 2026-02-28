@@ -19,6 +19,72 @@ export
 include("../types.jl")
 using ..JarvisTypes
 
+# Import auth module from parent
+include("../auth/JWTAuth.jl")
+using ..JWTAuth
+
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
+
+"""
+    RateLimiter - Token bucket rate limiter for DoS protection
+    
+    Configurable via environment variables:
+    - JARVIS_ORCHESTRATOR_RPS: Requests per second (default: 10)
+    - JARVIS_ORCHESTRATOR_BURST: Maximum burst size (default: 20)
+"""
+mutable struct RateLimiter
+    requests_per_second::Int
+    burst::Int
+    tokens::Float64
+    last_refill::Float64
+    lock::ReentrantLock
+    
+    function RateLimiter(rps::Int=10, burst::Int=20)
+        new(rps, burst, Float64(burst), time(), ReentrantLock())
+    end
+end
+
+"""
+    allow_request(limiter::RateLimiter)::Bool
+
+Check if a request is allowed under the rate limit using token bucket algorithm.
+"""
+function allow_request(limiter::RateLimiter)::Bool
+    lock(limiter.lock) do
+        now = time()
+        # Refill tokens based on elapsed time
+        elapsed = now - limiter.last_refill
+        limiter.tokens = min(limiter.burst, limiter.tokens + elapsed * limiter.requests_per_second)
+        limiter.last_refill = now
+        
+        if limiter.tokens >= 1.0
+            limiter.tokens -= 1.0
+            return true
+        end
+        return false
+    end
+end
+
+# Create global rate limiter with environment variable configuration
+const ORCHESTRATOR_RATE_LIMITER = RateLimiter(
+    parse(Int, get(ENV, "JARVIS_ORCHESTRATOR_RPS", "10")),
+    parse(Int, get(ENV, "JARVIS_ORCHESTRATOR_BURST", "20"))
+)
+
+"""
+    check_rate_limit()::Nothing
+
+Check rate limit and throw error if exceeded.
+"""
+function check_rate_limit()::Nothing
+    if !allow_request(ORCHESTRATOR_RATE_LIMITER)
+        error("Rate limit exceeded. Please try again later. (RPS: $(ORCHESTRATOR_RATE_LIMITER.requests_per_second), Burst: $(ORCHESTRATOR_RATE_LIMITER.burst))")
+    end
+    return nothing
+end
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -81,6 +147,9 @@ end
 function check_system_health(
     metrics::Dict{String, Float32}
 )::Dict{Symbol, Any}
+    
+    # Apply rate limiting
+    check_rate_limit()
     
     health = Dict{Symbol, Any}()
     
@@ -147,6 +216,9 @@ function generate_optimization_suggestions(
     recent_actions::Vector{Dict{String, Any}},
     config::OrchestratorConfig
 )::Vector{ProactiveSuggestion}
+    
+    # Apply rate limiting
+    check_rate_limit()
     
     suggestions = ProactiveSuggestion[]
     
@@ -229,6 +301,9 @@ function analyze_and_suggest(
     config::OrchestratorConfig
 )::Vector{ProactiveSuggestion}
     
+    # Apply rate limiting
+    check_rate_limit()
+    
     suggestions = ProactiveSuggestion[]
     
     # Check system health
@@ -279,6 +354,9 @@ function schedule_proactive_tasks(
     current_time::DateTime = now()
 )::Vector{Dict{String, Any}}
     
+    # Apply rate limiting
+    check_rate_limit()
+    
     scheduled = Dict{String, Any}[]
     
     for suggestion in suggestions
@@ -326,6 +404,62 @@ function format_all_suggestions(suggestions::Vector{ProactiveSuggestion})::Strin
     end
     
     return join(lines, "\n")
+end
+
+# ============================================================================
+# AUTHENTICATION LAYER
+# ============================================================================
+
+"""
+    authenticate_orchestrator(token::String)::Bool
+
+Authenticate a request to the task orchestrator.
+"""
+function authenticate_orchestrator(token::String)::Bool
+    return JWTAuth.authenticate_request(token)
+end
+
+"""
+    authenticated_analyze_and_suggest(
+        world_state::WorldState,
+        config::OrchestratorConfig,
+        token::String
+    )::Vector{ProactiveSuggestion}
+
+Analyze and suggest with authentication.
+"""
+function authenticated_analyze_and_suggest(
+    world_state::WorldState,
+    config::OrchestratorConfig,
+    token::String
+)::Vector{ProactiveSuggestion}
+    
+    # Authenticate first
+    JWTAuth.require_auth(token)
+    
+    # Then process
+    return analyze_and_suggest(world_state, config)
+end
+
+"""
+    authenticated_schedule_proactive_tasks(
+        suggestions::Vector{ProactiveSuggestion},
+        config::OrchestratorConfig,
+        token::String
+    )
+
+Schedule proactive tasks with authentication.
+"""
+function authenticated_schedule_proactive_tasks(
+    suggestions::Vector{ProactiveSuggestion},
+    config::OrchestratorConfig,
+    token::String
+)
+    # Authenticate first
+    JWTAuth.require_auth(token)
+    
+    # Then process
+    return schedule_proactive_tasks(suggestions, config)
 end
 
 end # module TaskOrchestrator

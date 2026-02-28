@@ -269,25 +269,37 @@ end
 """
     parse_risk_string(risk::String)::Float32
 Parse risk string to Float32 value.
-Values chosen to be consistent with float_to_risk_string thresholds:
-- high: >= 0.5
-- medium: >= 0.2 and < 0.5
-- low: < 0.2
+Returns semantically consistent values:
+- "high" or "h": 0.9f0
+- "medium" or "m": 0.5f0  
+- "low" or "l": 0.1f0
+- unknown/empty/invalid: 0.5f0 (default - medium)
+
+These values work symmetrically with float_to_risk_string thresholds:
+- < 0.33: low
+- >= 0.33 and < 0.66: medium
+- >= 0.66: high
 """
 function parse_risk_string(risk::String)::Float32
+    if isempty(risk)
+        return 0.5f0  # Default - empty string treated as unknown
+    end
+    
     risk_lowercase = lowercase(strip(risk))
     if risk_lowercase == "high" || risk_lowercase == "h"
-        return 0.8f0
+        return 0.9f0
     elseif risk_lowercase == "medium" || risk_lowercase == "m"
-        return 0.35f0  # Just under 0.5 threshold, above 0.2
+        return 0.5f0
     elseif risk_lowercase == "low" || risk_lowercase == "l"
-        return 0.1f0  # Below 0.2 threshold
+        return 0.1f0
     else
-        # Try to parse as number
+        # Unknown string - try to parse as number, otherwise use default
         try
-            return Float32(parse(Float64, risk))
+            val = Float32(parse(Float64, risk))
+            # Clamp to valid range [0.0, 1.0]
+            return clamp(val, 0.0f0, 1.0f0)
         catch
-            return 0.3f0  # Default - will be "medium" with current thresholds
+            return 0.5f0  # Default - unknown string treated as medium
         end
     end
 end
@@ -295,12 +307,17 @@ end
 """
     float_to_risk_string(risk::Float32)::String
 Convert Float32 risk value to String representation.
-Uses consistent thresholds: 0.5 for high, 0.2 for medium (matching SystemIntegrator)
+Uses symmetric thresholds matching parse_risk_string:
+- < 0.33: "low"
+- >= 0.33 and < 0.66: "medium"
+- >= 0.66: "high"
+
+This ensures bidirectional consistency with parse_risk_string.
 """
 function float_to_risk_string(risk::Float32)::String
-    if risk >= 0.5f0
+    if risk >= 0.66f0
         return "high"
-    elseif risk >= 0.2f0
+    elseif risk >= 0.33f0
         return "medium"
     else
         return "low"

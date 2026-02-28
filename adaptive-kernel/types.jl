@@ -7,7 +7,7 @@ using Dates
 using UUIDs
 
 export ActionProposal, Goal, GoalState, Thought, ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleType, ThoughtContext,
-       add_intent!, update_alignment!, get_alignment_penalty, update_goal_progress!,
+       add_intent!, update_alignment!, get_alignment_penalty, update_goal_progress!, get_risk_value,
        # Integration types
        IntegrationActionProposal, IntegrationWorldState, IntegrationObservation, Observation
 
@@ -17,14 +17,40 @@ export ActionProposal, Goal, GoalState, Thought, ReflectionEvent, IntentVector, 
 
 """
     ActionProposal represents a selected action with metadata for decision making.
+    
+    # Backward Compatibility Note
+    - `risk` can be either Float32 (new format) or String (legacy format "high"/"medium"/"low")
+    - Use `get_risk_value()` to get numeric risk regardless of format
 """
 struct ActionProposal
     capability_id::String
     confidence::Float32
     predicted_cost::Float32
     predicted_reward::Float32
-    risk::String
+    risk::Union{Float32, String}  # Float32 for kernel comparison, String for legacy compatibility
     reasoning::String
+end
+
+"""
+    get_risk_value(proposal::ActionProposal)::Float32
+Get numeric risk value regardless of whether risk is Float32 or String.
+"""
+function get_risk_value(proposal::ActionProposal)::Float32
+    if proposal.risk isa Float32
+        return proposal.risk
+    else
+        # Convert legacy string risk to Float32
+        risk_str = lowercase(string(proposal.risk))
+        if risk_str == "high" || risk_str == "h"
+            return 0.8f0
+        elseif risk_str == "medium" || risk_str == "m"
+            return 0.5f0
+        elseif risk_str == "low" || risk_str == "l"
+            return 0.2f0
+        else
+            return 0.3f0  # Default
+        end
+    end
 end
 
 # Constructor for backward compatibility (Julia auto-generates positional constructor)

@@ -66,13 +66,13 @@ end
 @testset "SharedTypes to Integration Conversion Tests" begin
     println("\n=== Testing SharedTypes -> Integration Conversion ===")
     
-    # Create a SharedTypes.ActionProposal (with risk as String)
+    # Create a SharedTypes.ActionProposal (with risk as Float32)
     shared_proposal = SharedTypes.ActionProposal(
         "safe_shell",
         0.7f0,
         0.2f0,
         0.6f0,
-        "low",  # Risk as String!
+        0.2f0,  # Risk as Float32 (low)
         "Shell command looks safe"
     )
     
@@ -81,7 +81,7 @@ end
     
     @test integration_proposal isa IntegrationActionProposal
     @test integration_proposal.capability_id == "safe_shell"
-    @test integration_proposal.risk == 0.1f0  # "low" -> 0.1 (below 0.2 threshold)
+    @test integration_proposal.risk == 0.2f0  # 0.2 -> 0.2 (pass-through)
     
     # Test with "high" risk
     shared_proposal_high = SharedTypes.ActionProposal(
@@ -89,12 +89,12 @@ end
         0.5f0,
         0.8f0,
         0.9f0,
-        "high",
+        0.8f0,  # high risk
         "Risky action"
     )
     
     integration_high = Integration.convert_shared_proposal_to_integration(shared_proposal_high)
-    @test integration_high.risk == 0.8f0  # "high" -> 0.8
+    @test integration_high.risk == 0.8f0  # 0.8 -> 0.8
     
     # Test with "medium" risk
     shared_proposal_med = SharedTypes.ActionProposal(
@@ -102,12 +102,12 @@ end
         0.6f0,
         0.4f0,
         0.5f0,
-        "medium",
+        0.5f0,  # medium risk
         "Moderate risk"
     )
     
     integration_med = Integration.convert_shared_proposal_to_integration(shared_proposal_med)
-    @test integration_med.risk == 0.35f0  # "medium" -> 0.35 (consistent with thresholds)
+    @test integration_med.risk == 0.5f0  # 0.5 -> 0.5
     
     println("  + SharedTypes -> Integration conversion works correctly")
 end
@@ -216,7 +216,7 @@ end
         0.8f0,
         0.1f0,
         0.5f0,
-        "low",
+        0.2f0,
         "test reasoning"
     )
     
@@ -258,7 +258,7 @@ end
         0.95f0,
         0.05f0,
         0.9f0,
-        "low",
+        0.2f0,
         "Testing round-trip conversion"
     )
     

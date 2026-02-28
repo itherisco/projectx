@@ -73,6 +73,27 @@ end
 # AGENT TYPES
 # ============================================================================
 
+# Agent status enum - MUST be defined before AgentState
+@enum AgentStatus begin
+    AGENT_IDLE
+    AGENT_THINKING
+    AGENT_PROPOSING
+    AGENT_WAITING
+    AGENT_ERROR
+end
+
+"""
+    AgentState - Runtime state of an agent
+"""
+mutable struct AgentState
+    status::AgentStatus
+    current_task::Union{String, Nothing}
+    processing_since::Union{DateTime, Nothing}
+    error_message::Union{String, Nothing}
+    
+    AgentState(status::AgentStatus = AGENT_IDLE) = new(status, nothing, nothing, nothing)
+end
+
 """
     CognitiveAgent - Base type for all cognitive agents
 """
@@ -91,7 +112,7 @@ struct ExecutorAgent <: CognitiveAgent
     ExecutorAgent(id::String = "executor_001") = new(
         id, "Executor", 
         ["execute_action", "validate_action", "monitor_execution"],
-        AgentState(:idle), 0.75
+        AgentState(AGENT_IDLE), 0.75
     )
 end
 
@@ -109,7 +130,7 @@ struct StrategistAgent <: CognitiveAgent
     StrategistAgent(id::String = "strategist_001") = new(
         id, "Strategist",
         10,  # 10-step planning horizon
-        AgentState(:idle), 0.65,
+        AgentState(AGENT_IDLE), 0.65,
         String[]
     )
 end
@@ -129,7 +150,7 @@ struct AuditorAgent <: CognitiveAgent
     AuditorAgent(id::String = "auditor_001") = new(
         id, "Auditor",
         0.5,  # 50% risk threshold triggers veto
-        AgentState(:idle), 0.70,
+        AgentState(AGENT_IDLE), 0.70,
         String[], 0
     )
 end
@@ -163,7 +184,7 @@ struct EvolutionEngineAgent <: CognitiveAgent
     EvolutionEngineAgent(id::String = "evolution_001") = new(
         id, "EvolutionEngine",
         0.1,  # 10% mutation rate
-        AgentState(:idle),
+        AgentState(AGENT_IDLE),
         ProposedChange[], 0
     )
 end
@@ -171,26 +192,6 @@ end
 # ============================================================================
 # AGENT STATE & METRICS
 # ============================================================================
-
-@enum AgentStatus begin
-    AGENT_IDLE
-    AGENT_THINKING
-    AGENT_PROPOSING
-    AGENT_WAITING
-    AGENT_ERROR
-end
-
-"""
-    AgentState - Runtime state of an agent
-"""
-mutable struct AgentState
-    status::AgentStatus
-    current_task::Union{String, Nothing}
-    processing_since::Union{DateTime, Nothing}
-    error_message::Union{String, Nothing}
-    
-    AgentState(status::AgentStatus = AGENT_IDLE) = new(status, nothing, nothing, nothing)
-end
 
 """
     AgentMetrics - Performance metrics for an agent

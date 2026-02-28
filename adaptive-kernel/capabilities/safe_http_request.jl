@@ -40,12 +40,16 @@ end
 
 # Allowed hosts - extend this list to add more trusted domains
 const WHITELIST = [
-    "example.com",
-    "api.github.com", 
-    "api.ipify.org",
-    "httpbin.org",
-    "jsonplaceholder.typicode.com"
+    "api.ipify.org",      # IP identification service
+    "httpbin.org",        # HTTP testing
+    "jsonplaceholder.typicode.com"  # Mock API
 ]
+
+# Rate limiting: requests per minute
+const HTTP_RATE_LIMIT = 30
+
+# Request/response size limits (1MB max)
+const MAX_REQUEST_SIZE = 1048576  # 1MB
 
 # Allowed content types (whitelist approach for safety)
 const ALLOWED_CONTENT_TYPES = [
@@ -86,8 +90,8 @@ const BLOCKED_CURL_FLAGS = [
 ]
 
 # Default limits
-const DEFAULT_MAX_SIZE = 1024  # 1KB default
-const DEFAULT_TIMEOUT = 3       # 3 seconds
+const DEFAULT_MAX_SIZE = 1048576  # 1MB default (matching MAX_REQUEST_SIZE)
+const DEFAULT_TIMEOUT = 3          # 3 seconds
 
 """
     parse_url_strictly - Parse URL and extract hostname securely

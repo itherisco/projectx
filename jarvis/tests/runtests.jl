@@ -128,21 +128,23 @@ println("\n[3/4] Testing Brain → Kernel → Execution Flow...")
     
     @testset "parse_risk_string converts correctly" begin
         # Test string to Float32 conversion
-        @test Integration.parse_risk_string("high") == 0.8f0
-        @test Integration.parse_risk_string("medium") == 0.35f0
+        # Note: Implementation uses 0.9/0.5/0.1 for high/medium/low
+        @test Integration.parse_risk_string("high") == 0.9f0
+        @test Integration.parse_risk_string("medium") == 0.5f0
         @test Integration.parse_risk_string("low") == 0.1f0
         
         # Test case insensitivity
-        @test Integration.parse_risk_string("HIGH") == 0.8f0
-        @test Integration.parse_risk_string("Medium") == 0.35f0
+        @test Integration.parse_risk_string("HIGH") == 0.9f0
+        @test Integration.parse_risk_string("Medium") == 0.5f0
     end
     
     @testset "float_to_risk_string converts correctly" begin
         # Test Float32 to string conversion
+        # Note: Implementation uses >= 0.66 for high, >= 0.33 and < 0.66 for medium
         @test Integration.float_to_risk_string(0.9f0) == "high"
-        @test Integration.float_to_risk_string(0.5f0) == "high"
-        @test Integration.float_to_risk_string(0.35f0) == "medium"
-        @test Integration.float_to_risk_string(0.2f0) == "medium"
+        @test Integration.float_to_risk_string(0.7f0) == "high"
+        @test Integration.float_to_risk_string(0.5f0) == "medium"
+        @test Integration.float_to_risk_string(0.33f0) == "medium"
         @test Integration.float_to_risk_string(0.1f0) == "low"
         @test Integration.float_to_risk_string(0.0f0) == "low"
     end
@@ -150,13 +152,13 @@ end
 
 @testset "Integration: Cognitive Cycle Components" begin
     
-    @testset "SharedTypes ActionProposal creation (String risk)" begin
+    @testset "SharedTypes ActionProposal creation (Float32 risk)" begin
         proposal = ActionProposal(
             "test_capability",
             0.9f0,    # confidence
             0.1f0,    # predicted_cost
             0.8f0,    # predicted_reward
-            "low",    # risk as String
+            0.2f0,    # risk as Float32 (0.2 = low)
             "Test reasoning for action"
         )
         
@@ -164,7 +166,7 @@ end
         @test proposal.confidence == 0.9f0
         @test proposal.predicted_cost == 0.1f0
         @test proposal.predicted_reward == 0.8f0
-        @test proposal.risk == "low"
+        @test proposal.risk == 0.2f0
     end
     
     @testset "IntegrationActionProposal creation with keyword args" begin

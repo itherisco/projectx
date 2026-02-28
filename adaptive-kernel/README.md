@@ -1,6 +1,6 @@
 # Adaptive Cognitive Kernel
 
-A minimal, auditable adaptive operating system kernel for building safe, intelligent agents. The kernel is ≤400 lines of readable Julia code that maintains world state, evaluates priorities, selects actions deterministically, and reflects on outcomes—all without embedding task logic, OS capabilities, or personality.
+A minimal, auditable adaptive operating system kernel for building safe, intelligent agents. The kernel is ~830 lines of readable Julia code that maintains world state, evaluates priorities, selects actions deterministically, and reflects on outcomes—all without embedding task logic, OS capabilities, or personality.
 
 ## Architecture
 

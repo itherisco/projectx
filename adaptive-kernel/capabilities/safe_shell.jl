@@ -6,17 +6,18 @@ module SafeShell
 export meta, execute
 
 # Whitelist of allowed commands (for security)
-# SECURITY: Removed 'find' - can be used for directory traversal and information disclosure
+# SECURITY: Restricted to read-only, non-information-disclosing commands only
+# Removed: ls, pwd, grep, sort, uniq, cut, tr, tee (file system exposure)
+# Removed: whoami, uname, uptime (system information disclosure)
+# Removed: ps, top, df, du, free (process/memory information)
+# Removed: sha1sum (weaker hash algorithm)
 const WHITELIST = Set([
-    # File operations (read-only)
-    "echo", "ls", "pwd", "cat", "head", "tail", "wc", "grep",
-    "sort", "uniq", "cut", "tr", "tee",
-    # System info (read-only)
-    "date", "whoami", "hostname", "uname", "uptime",
+    # File operations (read-only, safe)
+    "echo", "cat", "head", "tail", "wc",
+    # System info (minimal, non-disclosing)
+    "date", "hostname",
     # Checksums (read-only)
-    "md5sum", "sha256sum", "sha1sum",
-    # Process info (read-only)
-    "ps", "top", "df", "du", "free"
+    "md5sum", "sha256sum"
 ])
 
 # Shell metacharacters that could enable injection

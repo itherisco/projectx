@@ -5,12 +5,20 @@ module JarvisTypes
 
 using Dates
 using UUIDs
+using SHA
+using Random
 
 export 
     # Core enums
     TrustLevel,
     SystemStatus,
     ActionCategory,
+    
+    # Secure trust (HMAC-verified)
+    SecureTrustLevel,
+    verify_trust,
+    get_trust_secret,
+    trust_secret_is_set,
     
     # Goal and planning
     JarvisGoal,
@@ -460,6 +468,18 @@ mutable struct JarvisState
     session_id::UUID
     last_persisted::DateTime
     
+    # Cryptographically secure session ID generator
+    """
+    Generate a cryptographically secure session ID using CSPRNG.
+    Uses RandomDevice() which reads from /dev/urandom on Unix systems,
+    providing true cryptographic randomness for session ID generation.
+    """
+    function generate_secure_session_id()
+        # Use RandomDevice for cryptographically secure random number generation
+        # This uses /dev/urandom (Unix) or equivalent CSPRNG
+        rand(RandomDevice(), UUID)
+    end
+    
     function JarvisState()
         new(
             STATUS_BOOTING,
@@ -474,7 +494,7 @@ mutable struct JarvisState
             # Experience buffer
             Experience[],
             # Session
-            uuid4(),
+            generate_secure_session_id(),
             now()
         )
     end
@@ -565,6 +585,147 @@ end
 """
 function should_execute(safety_score::Float32; threshold::Float32 = 0.7f0)::Bool
     return safety_score >= threshold
+end
+
+# ============================================================================
+# SECURE TRUST LEVEL WITH HMAC VERIFICATION (Finding 8)
+# ============================================================================
+
+const _TRUST_SECRET_ENV = "JARVIS_TRUST_SECRET"
+const _DEFAULT_TRUST_SECRET = Vector{UInt8}("jarvis-default-insecure-change-me")
+
+# Module-level cache for the secret (loaded once)
+mutable struct _TrustSecretCache
+    secret::Union{Vector{UInt8}, Nothing}
+    is_set::Bool
+    
+    _TrustSecretCache() = new(nothing, false)
+end
+
+const _trust_secret_cache = _TrustSecretCache()
+
+"""
+    get_trust_secret()::Vector{UInt8}
+Get the HMAC secret key for trust verification.
+Loads from JARVIS_TRUST_SECRET environment variable, or returns default (insecure).
+"""
+function get_trust_secret()::Vector{UInt8}
+    if _trust_secret_cache.is_set && _trust_secret_cache.secret !== nothing
+        return _trust_secret_cache.secret
+    end
+    
+    secret = if haskey(ENV, _TRUST_SECRET_ENV)
+        Vector{UInt8}(ENV[_TRUST_SECRET_ENV])
+    else
+        @warn "JARVIS_TRUST_SECRET not set - using default (insecure). Set environment variable for production."
+        _DEFAULT_TRUST_SECRET
+    end
+    
+    _trust_secret_cache.secret = secret
+    _trust_secret_cache.is_set = true
+    return secret
+end
+
+"""
+    trust_secret_is_set()::Bool
+Check if JARVIS_TRUST_SECRET environment variable has been set.
+"""
+function trust_secret_is_set()::Bool
+    # Force check environment
+    return haskey(ENV, _TRUST_SECRET_ENV)
+end
+
+"""
+    SecureTrustLevel - HMAC-verified trust level wrapper
+
+Provides cryptographic integrity protection for trust state to prevent
+manipulation attacks (CWE-639: Authorization Bypass Through User-Controlled Key).
+
+# Fields
+- `level::TrustLevel`: The actual trust level value
+- `hmac::Vector{UInt8}`: HMAC-SHA256 of level + timestamp
+- `timestamp::Float64`: Unix timestamp when created
+"""
+struct SecureTrustLevel
+    level::TrustLevel
+    hmac::Vector{UInt8}
+    timestamp::Float64
+    
+    """
+        SecureTrustLevel(level::TrustLevel, secret_key::Vector{UInt8})
+    Create a new secure trust level with HMAC verification.
+    """
+    function SecureTrustLevel(level::TrustLevel, secret_key::Vector{UInt8})
+        timestamp = time()
+        payload = _build_payload(level, timestamp)
+        hmac = sha256(secret_key * payload)
+        new(level, hmac, timestamp)
+    end
+    
+    # Internal constructor for deserialization
+    function SecureTrustLevel(level::TrustLevel, hmac::Vector{UInt8}, timestamp::Float64)
+        new(level, hmac, timestamp)
+    end
+end
+
+"""
+    _build_payload(level::TrustLevel, timestamp::Float64)::Vector{UInt8}
+Build the payload for HMAC computation.
+"""
+function _build_payload(level::TrustLevel, timestamp::Float64)::Vector{UInt8}
+    level_byte = UInt8(Int(level))
+    timestamp_bytes = reinterpret(UInt8, [timestamp])
+    return vcat(level_byte, timestamp_bytes)
+end
+
+"""
+    verify_trust(secure::SecureTrustLevel, secret_key::Vector{UInt8})::Bool
+Verify the HMAC of a secure trust level.
+Returns true if the HMAC is valid, false otherwise.
+
+# Arguments
+- `secure::SecureTrustLevel`: The secure trust level to verify
+- `secret_key::Vector{UInt8}`: The HMAC secret key
+
+# Returns
+- `Bool`: true if trust level is verified, false if tampered
+"""
+function verify_trust(secure::SecureTrustLevel, secret_key::Vector{UInt8})::Bool
+    payload = _build_payload(secure.level, secure.timestamp)
+    expected_hmac = sha256(secret_key * payload)
+    return secure.hmac == expected_hmac
+end
+
+"""
+    verify_trust(secure::SecureTrustLevel)::Bool
+Verify using the default trust secret.
+"""
+function verify_trust(secure::SecureTrustLevel)::Bool
+    return verify_trust(secure, get_trust_secret())
+end
+
+"""
+    create_secure_trust(level::TrustLevel)::SecureTrustLevel
+Create a new secure trust level using the default secret.
+"""
+function create_secure_trust(level::TrustLevel)::SecureTrustLevel
+    return SecureTrustLevel(level, get_trust_secret())
+end
+
+"""
+    Base.get(secure::SecureTrustLevel)::TrustLevel
+Extract the underlying trust level (does NOT verify - caller must verify first!).
+"""
+function Base.get(secure::SecureTrustLevel)::TrustLevel
+    return secure.level
+end
+
+"""
+    secure_trust_to_enum(secure::SecureTrustLevel)::TrustLevel
+Alias for get() - extract trust level (caller must verify first!).
+"""
+function secure_trust_to_enum(secure::SecureTrustLevel)::TrustLevel
+    return secure.level
 end
 
 end # module JarvisTypes

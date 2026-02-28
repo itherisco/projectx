@@ -10,8 +10,37 @@ using JSON
 using Logging
 using Pkg
 
+# ============================================================================
+# SECURITY ERROR TYPES - Flow Integrity (PFI) Pattern
+# ============================================================================
+
+"""
+    SovereigntyViolationError - Fatal security error for kernel sovereignty violations
+    
+    This error implements the Flow Integrity (PFI) pattern where no action proceeds
+    without cryptographic proof of kernel approval. Throwing this error halts the
+    entire thread execution.
+"""
+abstract type SovereigntyError <: Exception end
+
+struct SovereigntyViolationError <: SovereigntyError
+    message::String
+    reason::Symbol  # :verification_failed, :approval_missing, :invalid_proof
+    
+    function SovereigntyViolationError(message::String, reason::Symbol)
+        @assert reason in (:verification_failed, :approval_missing, :invalid_proof) 
+        new(message, reason)
+    end
+end
+
+Base.showerror(io::IO, e::SovereigntyViolationError) = print(io, "SovereigntyViolationError[$(e.reason)]: ", e.message)
+
+# Import auth module
+using .JWTAuth
+
 # Import all submodules
 include("types.jl")
+include("auth/JWTAuth.jl")
 include("llm/LLMBridge.jl")
 include("memory/VectorMemory.jl")
 include("memory/SemanticMemory.jl")
@@ -42,6 +71,20 @@ if BRAIN_MODULE_AVAILABLE
     end
 end
 
+# Try to load NeuralBrainCore for full neural network brain
+const NEURAL_BRAIN_PATH = joinpath(ADAPTIVE_KERNEL_PATH, "brain")
+const NEURAL_BRAIN_AVAILABLE = isdir(NEURAL_BRAIN_PATH)
+
+if NEURAL_BRAIN_AVAILABLE
+    try
+        include(joinpath(NEURAL_BRAIN_PATH, "NeuralBrainCore.jl"))
+        using .NeuralBrainCoreMod
+        @info "NeuralBrainCore module loaded"
+    catch e
+        @warn "Could not load NeuralBrainCore: $e"
+    end
+end
+
 # Try to load ITHERIS Brain module
 # SECURITY: Use concrete type for brain state instead of Any
 # Define abstract types to avoid load order issues while maintaining type safety
@@ -56,6 +99,11 @@ struct BrainWrapper
     # NEW: Brain module for contracts (when available)
     brain_module::Union{AbstractBrainModule, Nothing}
     
+    # NEW: NeuralBrainCore for full neural network brain
+    # Use Union{Any, Nothing} to handle module load order, with comment explaining the design
+    # When NeuralBrainCoreMod is loaded, this will hold NeuralBrainCoreMod.NeuralBrain
+    neural_brain::Union{Any, Nothing}
+    
     config::Dict
     initialized::Bool
     
@@ -63,7 +111,7 @@ struct BrainWrapper
     # It is an ADVISORY PROPOSAL, not an executable action
     
     function BrainWrapper()
-        new(nothing, nothing, Dict(), false)
+        new(nothing, nothing, nothing, Dict(), false)
     end
 end
 
@@ -441,6 +489,23 @@ function _initialize_brain!(system::JarvisSystem)
             end
         end
         
+        # Then, try to initialize NeuralBrainCore for full neural network brain
+        if isdefined(SystemIntegrator, :NeuralBrainCoreMod)
+            try
+                system.brain.neural_brain = NeuralBrainCoreMod.NeuralBrain(
+                    latent_dim=128,
+                    num_actions=6,
+                    learning_rate=0.001f0,
+                    target_update_freq=100,
+                    ensemble_size=5
+                )
+                println("  - NeuralBrainCore: INITIALIZED (full neural network brain)")
+            catch e
+                @warn "NeuralBrainCore initialization failed: $e"
+                system.brain.neural_brain = nothing
+            end
+        end
+        
         # Then, try to load ITHERIS BrainCore for actual neural inference
         if ITHERIS_AVAILABLE && isdefined(SystemIntegrator, :ITHERISCore)
             # Initialize actual ITHERIS BrainCore
@@ -465,18 +530,33 @@ function _initialize_brain!(system::JarvisSystem)
             system.brain.initialized = true
             println("  - ITHERIS BrainCore: INITIALIZED (neural inference enabled)")
         else
-            # No ITHERIS available - use degraded mode with explicit warning
-            system.brain.config = Dict(
-                "model_path" => nothing,
-                "confidence_threshold" => 0.5,
-                "advisory_mode" => true,
-                "execution_bypass_blocked" => true,
-                "fallback_mode" => true,
-                "neural_inference" => false
-            )
-            system.brain.initialized = true
-            println("  - ITHERIS BrainCore: NOT FOUND (using degraded heuristics mode)")
-            @warn "ITHERIS BrainCore not available - neural inference disabled"
+            # No ITHERIS available - use NeuralBrainCore if available, otherwise degraded mode
+            if system.brain.neural_brain !== nothing
+                # NeuralBrainCore is available - mark as initialized
+                system.brain.config = Dict(
+                    "model_path" => nothing,
+                    "confidence_threshold" => 0.5,
+                    "advisory_mode" => true,
+                    "execution_bypass_blocked" => true,
+                    "neural_inference" => true,
+                    "brain_type" => "NeuralBrainCore"
+                )
+                system.brain.initialized = true
+                println("  - Using NeuralBrainCore for neural inference")
+            else
+                # No neural brain available - use degraded mode with explicit warning
+                system.brain.config = Dict(
+                    "model_path" => nothing,
+                    "confidence_threshold" => 0.5,
+                    "advisory_mode" => true,
+                    "execution_bypass_blocked" => true,
+                    "fallback_mode" => true,
+                    "neural_inference" => false
+                )
+                system.brain.initialized = true
+                println("  - ITHERIS BrainCore: NOT FOUND (using degraded heuristics mode)")
+                @warn "ITHERIS BrainCore not available - neural inference disabled"
+            end
         end
     catch e
         @warn "Could not initialize ITHERIS Brain: $e"
@@ -752,6 +832,57 @@ function _brain_infer(system::JarvisSystem, perception::PerceptionVector)::Union
             # CRITICAL: Return nothing instead of safe fallback
             # Let kernel decide with its own heuristics
             return nothing
+        end
+    end
+    
+    # Try to use NeuralBrainCore for full neural network brain
+    if isdefined(SystemIntegrator, :NeuralBrainCoreMod) && system.brain.neural_brain !== nothing
+        try
+            # Convert PerceptionVector to Float32 vector for neural brain
+            perception_vec = Float32[
+                perception.cpu_load,
+                perception.memory_usage,
+                perception.disk_io,
+                perception.network_latency,
+                perception.overall_severity,
+                perception.threat_count,
+                perception.file_count,
+                perception.change_rate,
+                perception.process_count,
+                perception.energy_level,
+                perception.confidence,
+                perception.user_activity
+            ]
+            
+            # Use NeuralBrainCore for inference
+            neural_result = NeuralBrainCoreMod.forward_pass(
+                system.brain.neural_brain,
+                perception_vec
+            )
+            
+            # Check confidence threshold
+            if neural_result.confidence < BRAIN_CONFIDENCE_THRESHOLD
+                @warn "NeuralBrainCore confidence below threshold" 
+                    confidence=neural_result.confidence 
+                    threshold=BRAIN_CONFIDENCE_THRESHOLD
+                return nothing  # Let kernel decide with heuristic
+            end
+            
+            # Convert BrainInferenceResult to ActionProposal
+            primary_action = first(neural_result.proposed_actions)
+            
+            return ActionProposal(
+                primary_action,
+                neural_result.confidence,
+                0.1f0,
+                neural_result.value_estimate,
+                neural_result.uncertainty;
+                reasoning = "NeuralBrainCore inference: $(neural_result.reasoning)",
+                impact = 0.3f0
+            )
+        catch e
+            @error "NeuralBrainCore inference failed - trying fallback" error=e
+            # Continue to other brain options
         end
     end
     
@@ -1516,45 +1647,6 @@ function _create_executable_action(proposal::Union{ActionProposal, Nothing}, sys
 end
 
 """
-    _handle_kernel_reflect - Call Kernel.reflect!() with complete reflection data
-"""
-function _handle_kernel_reflect(
-    system::JarvisSystem,
-    proposal::Union{ActionProposal, Nothing},
-    result::Dict{String, Any}
-)
-    # Skip if kernel not initialized
-    if !system.kernel.initialized || system.kernel.state === nothing
-        return
-    end
-    
-    # Skip if proposal is nothing
-    if proposal === nothing
-        return
-    end
-    
-    try
-        # Convert proposal to kernel format
-        kernel_proposal = _convert_to_kernel_proposal(proposal)
-        
-        # Build complete reflection data
-        reflection_result = Dict{String, Any}(
-            "success" => get(result, "success", false),
-            "effect" => get(result, "result", ""),
-            "actual_confidence" => proposal.confidence,
-            "energy_cost" => proposal.predicted_cost
-        )
-        
-        # Call Kernel.reflect!()
-        Kernel.reflect!(system.kernel.state, kernel_proposal, reflection_result)
-        
-        @debug "Kernel reflection completed" action=proposal.capability_id
-    catch e
-        @warn "Kernel reflection failed" error=e
-    end
-end
-
-"""
     _update_memory - Store cycle results in memory for future reference
     
     This is the T=6 step in the cognitive cycle:
@@ -1741,6 +1833,36 @@ function _execute_action(
         return Dict("success" => false, "reason" => "no_action")
     end
     
+    # ============================================================================
+    # PHASE 1: KERNEL SOVEREIGNTY ENFORCEMENT
+    # CRITICAL: Verify kernel approval BEFORE any execution
+    # ============================================================================
+    
+    # Check 1: Kernel state must exist (fail-closed)
+    if system.kernel.state === nothing
+        @error "Kernel state is nothing - refusing execution"
+        return Dict(
+            "success" => false, 
+            "reason" => "Kernel not ready",
+            "error" => "Kernel state is nothing - sovereignty enforcement active"
+        )
+    end
+    
+    # Check 2: Kernel must have approved the action
+    if system.kernel.state.last_decision != Kernel.APPROVED
+        @warn "Action not approved by kernel" decision=system.kernel.state.last_decision
+        return Dict(
+            "success" => false, 
+            "reason" => "Kernel approval required",
+            "error" => "Kernel has not approved this action",
+            "last_decision" => string(system.kernel.state.last_decision)
+        )
+    end
+    
+    # ============================================================================
+    # END KERNEL SOVEREIGNTY ENFORCEMENT
+    # ============================================================================
+    
     # SECURITY CHECK 1: Verify kernel approval flag
     kernel_approved = get(action.execution_context, "kernel_approved", false)
     if !kernel_approved
@@ -1770,7 +1892,16 @@ function _execute_action(
             end
             @debug "Sovereignty assertion passed" last_decision=last_decision
         catch e
-            @warn "Could not verify sovereignty assertion" error=e
+            # PFI (Flow Integrity) PATTERN: Fail-closed
+            # Any error in sovereignty verification is treated as a fatal security violation.
+            # No action proceeds without cryptographic proof of kernel approval.
+            @error "FATAL: Sovereignty verification failed - halting thread execution" error=typeof(e)
+            # Throw a custom error that halts the entire thread
+            throw(SovereigntyViolationError(
+                "Sovereignty assertion failed: kernel state could not be verified. " *
+                "Thread execution halted for security. Error: $(typeof(e))",
+                :verification_failed
+            ))
         end
     end
     
@@ -1784,14 +1915,24 @@ function _execute_action(
         "timestamp" => string(now())
     ))
     
-    # Execute based on capability type
+    # Execute based on capability type with error handling
     # First, try the capability registry
-    result = _execute_capability(capability_id, Dict{String, Any}())
-    
-    # If capability registry failed or not available, use built-in fallback
-    if !get(result, "success", false) || isempty(result)
-        @debug "Falling back to built-in capability" capability=capability_id
-        result = _execute_builtin_capability(capability_id)
+    try
+        result = _execute_capability(capability_id, Dict{String, Any}())
+        
+        # If capability registry failed or not available, use built-in fallback
+        if !get(result, "success", false) || isempty(result)
+            @debug "Falling back to built-in capability" capability=capability_id
+            result = _execute_builtin_capability(capability_id)
+        end
+    catch e
+        @error "Action execution failed" error=e exception=(e, catch_backtrace())
+        # Return failure result instead of propagating exception
+        result = Dict(
+            "success" => false,
+            "result" => "Execution error: $(string(e))",
+            "error" => string(e)
+        )
     end
     
     # Add execution metadata to result
@@ -2149,20 +2290,6 @@ function shutdown(system::JarvisSystem)
     println("✓ Jarvis System shutdown complete")
 end
 
-function _log_event(system::JarvisSystem, event_type::String, data::Dict{String, Any})
-    log_entry = Dict(
-        "timestamp" => string(now()),
-        "type" => event_type,
-        "data" => data
-    )
-    
-    # Append to events log
-    open(system.config.events_log_path, "a") do f
-        JSON.print(f, log_entry)
-        println(f)
-    end
-end
-
 # ============================================================================
 # Logger utility
 # ============================================================================
@@ -2178,6 +2305,91 @@ function (l::Logger)(level::Symbol, message::String)
     open(l.filepath, "a") do f
         println(f, "[$timestamp] $level: $message")
     end
+end
+
+# ============================================================================
+# AUTHENTICATION LAYER
+# ============================================================================
+
+"""
+    configure_authentication(enabled::Bool, secret::String)
+
+Configure JWT authentication for the Jarvis system.
+"""
+function configure_authentication(enabled::Bool, secret::String)
+    ENV["JARVIS_AUTH_ENABLED"] = string(enabled)
+    ENV["JARVIS_JWT_SECRET"] = secret
+    config = JWTAuth.AuthConfig(enabled=enabled, jwt_secret=secret)
+    JWTAuth.configure_auth!(config)
+end
+
+"""
+    authenticate_request(token::String)::Bool
+
+Authenticate a request by validating the JWT token.
+"""
+function authenticate_request(token::String)::Bool
+    return JWTAuth.authenticate_request(token)
+end
+
+"""
+    authenticated_process_user_request(
+        system::JarvisSystem,
+        user_input::String,
+        token::String
+    )::Dict{String, Any}
+
+Process a user request with authentication.
+"""
+function authenticated_process_user_request(
+    system::JarvisSystem,
+    user_input::String,
+    token::String
+)::Dict{String, Any}
+    
+    # Authenticate the request first
+    JWTAuth.require_auth(token)
+    
+    # Then process the request
+    return process_user_request(system, user_input)
+end
+
+"""
+    authenticated_run_cycle(
+        system::JarvisSystem,
+        token::String
+    )::CycleResult
+
+Run a cognitive cycle with authentication.
+"""
+function authenticated_run_cycle(
+    system::JarvisSystem,
+    token::String
+)::CycleResult
+    
+    # Authenticate the request first
+    JWTAuth.require_auth(token)
+    
+    # Then run the cycle
+    return run_cycle(system)
+end
+
+"""
+    generate_access_token(username::String; roles::Vector{String}=["user"])::String
+
+Generate a JWT access token for testing/development.
+"""
+function generate_access_token(username::String; roles::Vector{String}=["user"])::String
+    return JWTAuth.generate_token(username, username; roles=roles)
+end
+
+"""
+    is_authentication_enabled()::Bool
+
+Check if authentication is enabled.
+"""
+function is_authentication_enabled()::Bool
+    return JWTAuth.is_auth_enabled()
 end
 
 end # module SystemIntegrator

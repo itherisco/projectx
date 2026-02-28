@@ -12,6 +12,7 @@ using Pkg
 using Sockets
 using Mmap
 using Libdl
+using MbedTLS
 
 # Try to import optional audio dependencies
 const PORTAUDIO_AVAILABLE = try
@@ -61,6 +62,10 @@ export
 # Import Jarvis types from parent module
 using ..JarvisTypes
 
+# Import auth module
+include("../auth/JWTAuth.jl")
+using ..JWTAuth
+
 # Re-export TrustLevel enum values for convenience
 const TRUST_STANDARD = JarvisTypes.TRUST_STANDARD
 const TRUST_LIMITED = JarvisTypes.TRUST_LIMITED
@@ -94,7 +99,7 @@ struct CommunicationConfig
     
     function CommunicationConfig(;
         stt_provider::Symbol = :openai,
-        stt_api_key::String = "AIzaSyBwWCX8w2iJRiqyOPa5LEdXprzC7xHpGsI",
+        stt_api_key::String = get(ENV, "JARVIS_STT_API_KEY", ""),
         tts_provider::Symbol = :elevenlabs,
         tts_api_key::String = "",
         tts_voice_id::String = "21m00Tcm4TlvDq8ikWAM",
@@ -280,10 +285,13 @@ function _whisper_transcribe(audio_data::Vector{UInt8}, config::CommunicationCon
     ))
     
     # Note: OpenAI uses multipart form data in reality, simplified here
+    # SECURITY: Explicit TLS certificate validation enabled
+    tls_config = SSLConfig(true)
     response = HTTP.post(
         "https://api.openai.com/v1/audio/transcriptions",
         headers,
-        body
+        body;
+        tls_config=tls_config
     )
     
     data = JSON.parse(String(response.body))
@@ -330,10 +338,13 @@ function _elevenlabs_tts(text::String, config::CommunicationConfig)::Vector{UInt
         "model_id" => "eleven_monolingual_v1"
     ))
     
+    # SECURITY: Explicit TLS certificate validation enabled
+    tls_config = SSLConfig(true)
     response = HTTP.post(
         "https://api.elevenlabs.io/v1/text-to-speech/$(config.tts_voice_id)",
         headers,
-        body
+        body;
+        tls_config=tls_config
     )
     
     return Vector{UInt8}(response.body)
@@ -351,10 +362,13 @@ function _openai_tts(text::String, config::CommunicationConfig)::Vector{UInt8}
         "voice" => "alloy"
     ))
     
+    # SECURITY: Explicit TLS certificate validation enabled
+    tls_config = SSLConfig(true)
     response = HTTP.post(
         "https://api.openai.com/v1/audio/speech",
         headers,
-        body
+        body;
+        tls_config=tls_config
     )
     
     return Vector{UInt8}(response.body)
@@ -726,10 +740,13 @@ function _gpt4v_analyze(image_data::Vector{UInt8}, prompt::String, config::Commu
         "max_tokens" => 1000
     ))
     
+    # SECURITY: Explicit TLS certificate validation enabled
+    tls_config = SSLConfig(true)
     response = HTTP.post(
         "https://api.openai.com/v1/chat/completions",
         headers,
-        body
+        body;
+        tls_config=tls_config
     )
     
     data = JSON.parse(String(response.body))
@@ -770,10 +787,13 @@ function _claudev_analyze(image_data::Vector{UInt8}, prompt::String, config::Com
         ]
     ))
     
+    # SECURITY: Explicit TLS certificate validation enabled
+    tls_config = SSLConfig(true)
     response = HTTP.post(
         "https://api.anthropic.com/v1/messages",
         headers,
-        body
+        body;
+        tls_config=tls_config
     )
     
     data = JSON.parse(String(response.body))
@@ -821,6 +841,87 @@ function check_trust_level(
     else
         return false, "blocked"
     end
+end
+
+# ============================================================================
+# AUTHENTICATION LAYER
+# ============================================================================
+
+"""
+    authenticate_voice_input(token::String)::Bool
+
+Authenticate a voice input request.
+"""
+function authenticate_voice_input(token::String)::Bool
+    return JWTAuth.authenticate_request(token)
+end
+
+"""
+    authenticated_process_voice_input(
+        audio_data::Vector{UInt8},
+        config::CommunicationConfig,
+        token::String
+    )::String
+
+Process voice input with authentication.
+"""
+function authenticated_process_voice_input(
+    audio_data::Vector{UInt8},
+    config::CommunicationConfig,
+    token::String
+)::String
+    
+    # Authenticate first
+    JWTAuth.require_auth(token)
+    
+    # Then process voice input
+    return process_voice_input(audio_data, config)
+end
+
+"""
+    authenticated_generate_voice_output(
+        text::String,
+        config::CommunicationConfig,
+        token::String
+    )::Vector{UInt8}
+
+Generate voice output with authentication.
+"""
+function authenticated_generate_voice_output(
+    text::String,
+    config::CommunicationConfig,
+    token::String
+)::Vector{UInt8}
+    
+    # Authenticate first
+    JWTAuth.require_auth(token)
+    
+    # Then generate voice
+    return generate_voice_output(text, config)
+end
+
+"""
+    authenticated_process_image(
+        image_data::Vector{UInt8},
+        prompt::String,
+        config::CommunicationConfig,
+        token::String
+    )::String
+
+Process image with authentication.
+"""
+function authenticated_process_image(
+    image_data::Vector{UInt8},
+    prompt::String,
+    config::CommunicationConfig,
+    token::String
+)::String
+    
+    # Authenticate first
+    JWTAuth.require_auth(token)
+    
+    # Then process image
+    return process_image(image_data, prompt, config)
 end
 
 end # module CommunicationBridge

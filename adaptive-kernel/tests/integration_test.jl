@@ -36,7 +36,7 @@ candidate = Dict(
 )
 
 # Test permission handler that denies everything
-deny_all(risk::String) = false
+deny_all(risk::Union{Float32, String}) = false
 
 # Execute function that should never be called if permission denied
 execute_called = Ref(false)
@@ -84,7 +84,13 @@ high_risk_candidate = Dict(
 )
 
 # Permission handler that blocks high risk
-block_high_risk(risk::String) = risk != "high"
+block_high_risk(risk::Union{Float32, String}) = begin
+    if risk isa Float32
+        return risk < 0.5  # Allow if risk < 0.5
+    else
+        return risk != "high"  # Block if risk is "high"
+    end
+end
 
 execute_called2 = Ref(false)
 execute_fn2(action_id::String) = begin
@@ -125,7 +131,7 @@ execute_fn3(action_id::String) = begin
     Dict{String, Any}("success" => true)
 end
 
-always_allow(risk::String) = true
+always_allow(risk::Union{Float32, String}) = true
 
 # Even with permission to execute, if no candidates, nothing executes
 kernel3, action3, result3 = step_once(

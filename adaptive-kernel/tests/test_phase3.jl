@@ -72,7 +72,7 @@ using ..DecisionSpine
         config = Dict("goals" => [Dict("id" => "test", "description" => "Test", "priority" => 0.8)])
         kernel = init_kernel(config)
         
-        action = ActionProposal("test_cap", 0.8f0, 0.1f0, 0.5f0, "low", "test")
+        action = ActionProposal("test_cap", 0.8f0, 0.1f0, 0.5f0, 0.2f0, "test")
         result = Dict("success" => true, "effect" => "Test", "actual_confidence" => 0.9f0, "energy_cost" => 0.05f0)
         
         event = reflect!(kernel, action, result)
@@ -87,7 +87,7 @@ using ..DecisionSpine
         config = Dict("goals" => [Dict("id" => "test", "description" => "Test", "priority" => 0.8)])
         kernel = init_kernel(config)
         
-        action = ActionProposal("test_cap", 0.8f0, 0.1f0, 0.5f0, "low", "test")
+        action = ActionProposal("test_cap", 0.8f0, 0.1f0, 0.5f0, 0.2f0, "test")
         result = Dict("success" => true, "effect" => "Test", "actual_confidence" => 0.9f0, "energy_cost" => 0.05f0)
         
         event = reflect!(kernel, action, result)
@@ -140,7 +140,7 @@ end
         config = Dict("goals" => [Dict("id" => "test", "description" => "Test", "priority" => 0.8)])
         kernel = init_kernel(config)
         
-        action = ActionProposal("test_cap", 0.8f0, 0.1f0, 0.5f0, "low", "test")
+        action = ActionProposal("test_cap", 0.8f0, 0.1f0, 0.5f0, 0.2f0, "test")
         result = Dict("success" => true, "effect" => "Test", "actual_confidence" => 0.9f0, "energy_cost" => 0.05f0)
         
         # Initial progress

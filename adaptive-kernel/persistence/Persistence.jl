@@ -5,11 +5,169 @@ module Persistence
 using JSON
 using Dates
 using Logging
+using SHA
+using Base64
+using Nettle
 
-export save_event, load_events, init_persistence, get_last_state, set_event_log_file
+export save_event, load_events, init_persistence, get_last_state, set_event_log_file, encrypt_log, decrypt_log
 
 const EVENT_LOG_FILE_DEFAULT = "events.log"
 const EVENT_LOG_FILE = Ref(get(ENV, "ADAPTIVE_KERNEL_EVENT_LOG", EVENT_LOG_FILE_DEFAULT))
+
+"""
+    _try_load_key_from_config()::String
+Try to load encryption key from config file.
+"""
+function _try_load_key_from_config()::String
+    # Try common config locations
+    config_paths = [
+        joinpath(dirname(@__DIR__), "config.toml"),
+        joinpath(dirname(@__DIR__), "..", "config.toml"),
+        joinpath(pwd(), "config.toml"),
+        "./config.toml"
+    ]
+    
+    for config_path in config_paths
+        if isfile(config_path)
+            try
+                # Try to read config and look for encryption key
+                content = read(config_path, String)
+                # Look for event_log_key or encryption_key in the config
+                for line in split(content, '\n')
+                    line = strip(line)
+                    if startswith(line, "event_log_key") || startswith(line, "encryption_key")
+                        # Extract value after = sign
+                        parts = split(line, "=")
+                        if length(parts) >= 2
+                            value = strip(parts[2])
+                            # Remove quotes if present
+                            value = strip(value, '"')
+                            value = strip(value, '\'')
+                            if !isempty(value) && value != "your-secret-key-here"
+                                return value
+                            end
+                        end
+                    end
+                end
+            catch
+                # Continue to next config path
+            end
+        end
+    end
+    
+    return ""
+end
+
+# Event log encryption key derived from JARVIS_EVENT_LOG_KEY environment variable
+# Format: base64-encoded 32-byte key (for AES-256)
+# If not set, tries to load from config file, otherwise warning is issued
+const EVENT_LOG_KEY = let
+    key_str = get(ENV, "JARVIS_EVENT_LOG_KEY", "")
+    if isempty(key_str)
+        # Try to load from config if available
+        key_str = _try_load_key_from_config()
+    end
+    if isempty(key_str)
+        nothing
+    else
+        # Support both raw key and base64-encoded key
+        try
+            # Try base64 first
+            base64decode(key_str)
+        catch
+            # If not base64, use SHA-256 hash of the key string
+            sha256(key_str)
+        end
+    end
+end
+
+# Nonce counter for AES-GCM (incremented for each encryption)
+const NONCE_COUNTER = Threads.Atomic{UInt64}(0)
+
+"""
+    get_next_nonce()::Vector{UInt8}
+Generate a unique 12-byte nonce for AES-GCM from atomic counter + timestamp.
+"""
+function get_next_nonce()::Vector{UInt8}
+    counter = Threads.atomic_add!(NONCE_COUNTER, UInt64(1))
+    timestamp = time() % UInt64(1e9)  # Use lower 9 digits of timestamp
+    
+    # Combine counter and timestamp into 12 bytes
+    nonce = Vector{UInt8}(12)
+    nonce[1:8] = reinterpret(UInt8, [counter])
+    nonce[9:12] = reinterpret(UInt8, [timestamp])
+    
+    return nonce
+end
+
+"""
+    encrypt_log(plaintext::String)::String
+Encrypt plaintext using AES-256-GCM with a unique nonce per encryption.
+Returns base64-encoded nonce || ciphertext || auth_tag.
+If no key is configured, returns plaintext unchanged.
+"""
+function encrypt_log(plaintext::String)::String
+    if EVENT_LOG_KEY === nothing
+        @warn "No encryption key configured - storing plaintext"
+        return plaintext
+    end
+    
+    # Ensure we have a 32-byte key for AES-256
+    key = EVENT_LOG_KEY
+    if length(key) < 32
+        key = sha256(key)  # Expand short keys to 32 bytes
+    end
+    
+    # Generate unique nonce
+    nonce = get_next_nonce()
+    
+    # Encrypt using AES-256-GCM (Nettle's gcm_encrypt returns nonce || ciphertext || tag)
+    ciphertext = gcm_encrypt("AES256", key, nonce, Vector{UInt8}(plaintext))
+    
+    # Prepend nonce to ciphertext for storage
+    return base64encode(nonce * ciphertext)
+end
+
+"""
+    decrypt_log(ciphertext_b64::String)::String
+Decrypt base64-encoded ciphertext using AES-256-GCM.
+Returns plaintext on success, throws error on authentication failure.
+If no key is configured, returns ciphertext unchanged (for backwards compatibility).
+"""
+function decrypt_log(ciphertext_b64::String)::String
+    if EVENT_LOG_KEY === nothing
+        # No key configured - check if it's actually plaintext (JSON)
+        # If it looks like plaintext JSON, return as-is for backwards compatibility
+        try
+            JSON.parse(ciphertext_b64)
+            return ciphertext_b64  # It's valid JSON, treat as plaintext
+        catch
+            error("Cannot decrypt: no key configured and data is not plaintext JSON")
+        end
+    end
+    
+    # Ensure we have a 32-byte key for AES-256
+    key = EVENT_LOG_KEY
+    if length(key) < 32
+        key = sha256(key)
+    end
+    
+    # Decode base64
+    data = base64decode(ciphertext_b64)
+    
+    # Extract nonce (12 bytes) and ciphertext+tag
+    if length(data) < 12 + 16  # nonce + minimum tag size
+        error("Invalid ciphertext: too short")
+    end
+    
+    nonce = data[1:12]
+    ciphertext_with_tag = data[13:end]
+    
+    # Decrypt using AES-256-GCM (auth tag verified automatically)
+    plaintext = gcm_decrypt("AES256", key, nonce, ciphertext_with_tag)
+    
+    return String(plaintext)
+end
 
 """
     init_persistence()
@@ -29,8 +187,10 @@ Append an event to the append-only log (JSONL format).
 """
 function save_event(event::Dict{String, Any})
     init_persistence()
+    plaintext = JSON.json(event)
+    encrypted = encrypt_log(plaintext)
     open(EVENT_LOG_FILE[], "a") do io
-        println(io, JSON.json(event))
+        println(io, encrypted)
     end
 end
 
@@ -65,9 +225,11 @@ function load_events()::Vector{Dict{String, Any}}
     for line in readlines(logpath)
         if !isempty(strip(line))
             try
-                push!(events, JSON.parse(line))
+                # Try to decrypt first; if not encrypted, decrypt_log returns unchanged
+                decrypted = decrypt_log(line)
+                push!(events, JSON.parse(decrypted))
             catch e
-                @warn "Skipped malformed JSON line: $(e)"
+                @warn "Skipped malformed JSON line: $e"
             end
         end
     end

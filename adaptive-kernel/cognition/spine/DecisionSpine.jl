@@ -14,7 +14,7 @@ include("../types.jl")
 using ..SharedTypes
 
 # Import agent types (forward declaration)
-include("../cognition/types.jl")
+include("../types.jl")
 using ..CognitionTypes
 
 # Import submodules (Phase 3 decomposition)
