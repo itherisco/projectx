@@ -1,6 +1,7 @@
 # cognition/agents/EvolutionEngine.jl - Evolution Engine Agent
 # Mutates prompts, heuristics, scoring functions
 # Proposes system changes (never executes directly)
+# CRITICAL: All mutations are validated against security invariants
 
 module EvolutionEngine
 
@@ -15,6 +16,10 @@ using ..CognitionTypes
 # Import spine
 include("../spine/DecisionSpine.jl")
 using ..DecisionSpine
+
+# CRITICAL: Import PolicyValidator for security invariant checking
+include("PolicyValidator.jl")
+using ..PolicyValidator
 
 export EvolutionEngineAgent, generate_proposal, propose_mutation
 
@@ -180,7 +185,36 @@ function propose_mutation(
         ))
     end
     
-    return mutations
+    # CRITICAL SECURITY FIX: Filter out mutations that violate security invariants
+    # All proposed mutations must pass PolicyValidator before being returned
+    safe_mutations = _filter_security_violations(mutations)
+    
+    return safe_mutations
+end
+
+"""
+    _filter_security_violations - Filter out mutations that violate security invariants
+    
+    CRITICAL: This prevents the Evolution Engine from proposing dangerous mutations
+    that could disable security controls, bypass authentication, or weaken trust.
+"""
+function _filter_security_violations(mutations::Vector{Dict{String, Any}})::Vector{Dict{String, Any}}
+    safe_mutations = Dict{String, Any}[]
+    
+    for mutation in mutations
+        result = validate_mutation(mutation)
+        
+        if result.is_valid
+            push!(safe_mutations, mutation)
+        else
+            @warn "Evolution Engine: Blocked security-violating mutation" 
+                  reason=result.reason 
+                  mutation_type=get(mutation, "type", "unknown")
+                  mutation_target=get(mutation, "target", "unknown")
+        end
+    end
+    
+    return safe_mutations
 end
 
 """

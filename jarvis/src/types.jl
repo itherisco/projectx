@@ -8,6 +8,9 @@ using UUIDs
 using SHA
 using Random
 
+# CRITICAL SECURITY FIX: Use SecureKeystore instead of ENV for secrets
+include("config/SecureKeystore.jl")
+
 export 
     # Core enums
     TrustLevel,
@@ -607,18 +610,22 @@ const _trust_secret_cache = _TrustSecretCache()
 """
     get_trust_secret()::Vector{UInt8}
 Get the HMAC secret key for trust verification.
-Loads from JARVIS_TRUST_SECRET environment variable, or returns default (insecure).
+Loads from SecureKeystore, or returns default (insecure).
+
+CRITICAL SECURITY FIX: Now uses SecureKeystore instead of ENV variables.
 """
 function get_trust_secret()::Vector{UInt8}
     if _trust_secret_cache.is_set && _trust_secret_cache.secret !== nothing
         return _trust_secret_cache.secret
     end
     
-    secret = if haskey(ENV, _TRUST_SECRET_ENV)
-        Vector{UInt8}(ENV[_TRUST_SECRET_ENV])
-    else
-        @warn "JARVIS_TRUST_SECRET not set - using default (insecure). Set environment variable for production."
-        _DEFAULT_TRUST_SECRET
+    # CRITICAL: Try SecureKeystore first (secure local storage)
+    secret = SecureKeystore.get_trust_secret()
+    
+    if secret === nothing || isempty(secret)
+        # Fall back to ENV only as last resort (with warning)
+        @warn "JARVIS_TRUST_SECRET not in SecureKeystore - using default (insecure). Migrate to SecureKeystore for production."
+        secret = haskey(ENV, _TRUST_SECRET_ENV) ? Vector{UInt8}(ENV[_TRUST_SECRET_ENV]) : _DEFAULT_TRUST_SECRET
     end
     
     _trust_secret_cache.secret = secret

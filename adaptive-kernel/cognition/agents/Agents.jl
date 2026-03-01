@@ -25,12 +25,18 @@ export
     # Evolution Engine
     EvolutionEngineAgent,
     create_evolution_engine,
-    propose_mutation
+    propose_mutation,
+    
+    # Policy Validator (for security invariant checking)
+    PolicyValidator,
+    validate_mutation,
+    validate_proposed_changes
 
 # Submodules
 include("Executor.jl")
 include("Strategist.jl")
 include("Auditor.jl")
 include("EvolutionEngine.jl")
+include("PolicyValidator.jl")
 
 end # module Agents

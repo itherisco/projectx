@@ -6,6 +6,178 @@ module WorldModel
 
 using Statistics
 using LinearAlgebra
+using JSON
+using SHA
+
+# ============================================================================
+# Neural Network Types (Simple MLP Implementation)
+# ==============================================================================
+
+"""
+    struct MLP
+
+Simple Multi-Layer Perceptron for state transition and reward prediction.
+Implements a feedforward neural network with ReLU activations.
+
+# Fields
+- `weights::Vector{Matrix{Float32}}`: Weight matrices for each layer
+- `biases::Vector{Vector{Float32}}`: Bias vectors for each layer
+- `activation::String`: Activation function ("relu", "sigmoid", "tanh")
+"""
+struct MLP
+    weights::Vector{Matrix{Float32}}
+    biases::Vector{Vector{Float32}}
+    activation::String
+    
+    function MLP(
+        input_dim::Int,
+        hidden_dims::Vector{Int},
+        output_dim::Int;
+        activation::String="relu"
+    )
+        layers = vcat(hidden_dims, output_dim)
+        weights = Matrix{Float32}[]
+        biases = Vector{Float32}[]
+        
+        prev_dim = input_dim
+        for layer_dim in layers
+            # Xavier initialization
+            scale = sqrt(2.0f0 / prev_dim)
+            w = randn(Float32, layer_dim, prev_dim) .* scale
+            b = zeros(Float32, layer_dim)
+            push!(weights, w)
+            push!(biases, b)
+            prev_dim = layer_dim
+        end
+        
+        new(weights, biases, activation)
+    end
+end
+
+"""
+    forward(mlp::MLP, input::Vector{Float32})::Vector{Float32}
+
+Forward pass through the MLP.
+"""
+function forward(mlp::MLP, input::Vector{Float32})::Vector{Float32}
+    x = input
+    
+    for (i, (w, b)) in enumerate(zip(mlp.weights, mlp.biases))
+        x = w * x .+ b
+        
+        # Apply activation (not on output layer)
+        if i < length(mlp.weights)
+            if mlp.activation == "relu"
+                x = max.(x, 0.0f0)
+            elseif mlp.activation == "sigmoid"
+                x = 1.0f0 ./ (1.0f0 .+ exp.(-x))
+            elseif mlp.activation == "tanh"
+                x = tanh.(x)
+            end
+        end
+    end
+    
+    return x
+end
+
+"""
+    train!(mlp::MLP, inputs::Vector{Vector{Float32}}, targets::Vector{Vector{Float32}}; 
+           lr::Float32=0.001f0, epochs::Int=100)
+
+Simple gradient descent training for the MLP.
+"""
+function train!(
+    mlp::MLP,
+    inputs::Vector{Vector{Float32}},
+    targets::Vector{Vector{Float32}};
+    lr::Float32=0.001f0,
+    epochs::Int=100
+)
+    n = length(inputs)
+    
+    for epoch in 1:epochs
+        for (x, y) in zip(inputs, targets)
+            # Forward pass with cache
+            activations = Vector{Vector{Float32}}(undef, length(mlp.weights) + 1)
+            activations[1] = x
+            
+            for (i, (w, b)) in enumerate(zip(mlp.weights, mlp.biases))
+                z = w * activations[i] .+ b
+                
+                if i < length(mlp.weights)
+                    if mlp.activation == "relu"
+                        activations[i + 1] = max.(z, 0.0f0)
+                    elseif mlp.activation == "sigmoid"
+                        activations[i + 1] = 1.0f0 ./ (1.0f0 .+ exp.(-z))
+                    elseif mlp.activation == "tanh"
+                        activations[i + 1] = tanh.(z)
+                    end
+                else
+                    activations[i + 1] = z
+                end
+            end
+            
+            # Output layer activation (identity for regression)
+            output = activations[end]
+            
+            # Backward pass (simple gradient descent)
+            delta = (output - y) ./ n
+            
+            for i in length(mlp.weights):-1:1
+                # Gradient for weights and biases
+                grad_w = delta * activations[i]'
+                grad_b = delta
+                
+                # Update weights and biases
+                mlp.weights[i] .-= lr * grad_w
+                mlp.biases[i] .-= lr * grad_b
+                
+                # Propagate delta to previous layer
+                if i > 1
+                    delta = mlp.weights[i]' * delta
+                    # ReLU derivative
+                    if mlp.activation == "relu"
+                        delta = delta .* (activations[i] .> 0.0f0)
+                    end
+                end
+            end
+        end
+    end
+end
+
+"""
+    serialize_mlp(mlp::MLP)::Dict
+
+Serialize MLP to Dict for persistence.
+"""
+function serialize_mlp(mlp::MLP)::Dict
+    return Dict(
+        "weights" => [Matrix(w) for w in mlp.weights],
+        "biases" => [Vector(b) for b in mlp.biases],
+        "activation" => mlp.activation
+    )
+end
+
+"""
+    deserialize_mlp(data::Dict)::MLP
+
+Deserialize MLP from Dict.
+"""
+function deserialize_mlp(data::Dict)::MLP
+    weights = [Matrix{Float32}(w) for w in data["weights"]]
+    biases = [Vector{Float32}(b) for b in data["biases"]]
+    activation = data["activation"]
+    
+    mlp = MLP(0, Int[], 0)  # Create placeholder
+    mlp.weights = weights
+    mlp.biases = biases
+    mlp.activation = activation
+    
+    return mlp
+end
+
+# Make MLP callable
+(mlp::MLP)(input::Vector{Float32}) = forward(mlp, input)
 
 # ============================================================================
 # Type Definitions
@@ -18,8 +190,8 @@ Internal forward model for state prediction and counterfactual simulation.
 Learns causal relationships between states, actions, and rewards.
 
 # Fields
-- `transition_net::Any`: Neural network for state transitions (uses ITHERIS predictor_net)
-- `reward_net::Any`: Neural network for reward prediction
+- `transition_mlp::MLP`: Neural network for state transitions (MLP implementation)
+- `reward_mlp::MLP`: Neural network for reward prediction (MLP implementation)
 - `causal_graph::Dict{Symbol, Vector{Symbol}}`: Causal relationships between variables
 - `state_history::Vector{Vector{Float32}}`: Historical states for learning
 - `action_history::Vector{Int}`: Historical actions taken
@@ -33,8 +205,8 @@ model = WorldModel(horizon=5, uncertainty_threshold=0.7)
 ```
 """
 mutable struct WorldModel
-    transition_net::Any  # Neural network for state transitions (uses ITHERIS predictor_net)
-    reward_net::Any       # Neural network for reward prediction
+    transition_mlp::Union{MLP, Nothing}  # Neural network for state transitions
+    reward_mlp::Union{MLP, Nothing}      # Neural network for reward prediction
     causal_graph::Dict{Symbol, Vector{Symbol}}  # Causal relationships
     
     state_history::Vector{Vector{Float32}}
@@ -51,18 +223,24 @@ mutable struct WorldModel
     # Causal strength matrix (learned from data)
     causal_strength::Dict{Symbol, Dict{Symbol, Float32}}
     
-    # Fallback transition model parameters
+    # Legacy linear coefficients (kept for backwards compatibility)
     transition_coefficients::Matrix{Float32}
     reward_coefficients::Vector{Float32}
     
     function WorldModel(; 
         horizon::Int=5, 
         uncertainty_threshold::Float32=0.7,
-        state_dim::Int=12
+        state_dim::Int=12,
+        action_dim::Int=8
     )
+        # Initialize MLPs with default architecture
+        input_dim = state_dim + action_dim  # state + one-hot action
+        transition_mlp = MLP(input_dim, [64, 32], state_dim; activation="relu")
+        reward_mlp = MLP(input_dim, [32, 16], 1; activation="relu")
+        
         new(
-            nothing,  # transition_net - uses ITHERIS predictor_net
-            nothing,  # reward_net
+            transition_mlp,  # Now using MLP by default
+            reward_mlp,      # Now using MLP by default
             Dict{Symbol, Vector{Symbol}}(),
             Vector{Vector{Float32}}(),
             Vector{Int}(),
@@ -72,8 +250,8 @@ mutable struct WorldModel
             zeros(Float32, state_dim),  # state_mean
             ones(Float32, state_dim),   # state_std
             Dict{Symbol, Dict{Symbol, Float32}}(),
-            zeros(Float32, state_dim, state_dim + 1),  # transition_coefficients (affine)
-            zeros(Float32, state_dim)  # reward_coefficients
+            zeros(Float32, state_dim, state_dim + 1),  # transition_coefficients (legacy)
+            zeros(Float32, state_dim)  # reward_coefficients (legacy)
         )
     end
 end
@@ -135,39 +313,41 @@ function predict_next_state(
 )::Vector{Float32}
     state_dim = length(state)
     
-    # Try using ITHERIS predictor_net if available
-    if model.transition_net !== nothing
+    # Primary: Use MLP for state transition prediction
+    if model.transition_mlp !== nothing
         try
-            # Use ITHERIS predictor_net for state transition
-            # Input: [state; action_encoding]
+            # Input: [state; action_onehot]
             action_onehot = zeros(Float32, 8)  # Assuming 8 possible actions
             if action > 0 && action <= length(action_onehot)
-                action_onehot[action] = 1.0
+                action_onehot[action] = 1.0f0
             end
             input = vcat(state, action_onehot)
             
-            # Call predictor_net if it's callable
-            if isa(model.transition_net, Function) || isdefined(Main, :predictor_net)
-                predictor = isdefined(Main, :predictor_net) ? Main.predictor_net : model.transition_net
-                next_state = predictor(input)
-                return next_state
-            end
-        catch
-            # Fall through to linear model
+            # Forward pass through MLP
+            next_state = model.transition_mlp(input)
+            
+            # Add small exploration noise
+            noise_scale = 1.0f0 - model.uncertainty_threshold
+            noise = randn(Float32, state_dim) .* noise_scale .* 0.05f0
+            next_state = next_state + noise
+            
+            # Ensure reasonable bounds
+            next_state = clamp.(next_state, -10.0f0, 10.0f0)
+            
+            return next_state
+        catch e
+            # Log warning and fall through to legacy model
+            @warn "MLP prediction failed, using legacy model: $e"
         end
     end
     
-    # Fallback: Use learned linear model with uncertainty
-    # next_state = A * [state; 1] + noise
-    # where A is the transition_coefficients matrix
-    augmented_state = vcat(state, [1.0])  # Add bias term
-    
-    # Apply learned transition dynamics
+    # Legacy fallback: Use learned linear model (last resort)
+    augmented_state = vcat(state, [1.0f0])  # Add bias term
     next_state = model.transition_coefficients * augmented_state
     
     # Add exploration noise proportional to uncertainty
-    noise_scale = 1.0 - model.uncertainty_threshold
-    noise = randn(Float32, state_dim) .* noise_scale .* 0.1
+    noise_scale = 1.0f0 - model.uncertainty_threshold
+    noise = randn(Float32, state_dim) .* noise_scale .* 0.1f0
     next_state = next_state + noise
     
     # Ensure reasonable bounds
@@ -198,29 +378,28 @@ function predict_reward(
     state::Vector{Float32},
     action::Int
 )::Float32
-    # Use reward_net if available
-    if model.reward_net !== nothing
+    # Primary: Use MLP for reward prediction
+    if model.reward_mlp !== nothing
         try
             action_onehot = zeros(Float32, 8)
             if action > 0 && action <= length(action_onehot)
-                action_onehot[action] = 1.0
+                action_onehot[action] = 1.0f0
             end
             input = vcat(state, action_onehot)
             
-            if isa(model.reward_net, Function) || isdefined(Main, :reward_predictor)
-                predictor = isdefined(Main, :reward_predictor) ? Main.reward_predictor : model.reward_net
-                reward = predictor(input)
-                return reward
-            end
-        catch
-            # Fall through to linear model
+            # Forward pass through MLP
+            reward_vec = model.reward_mlp(input)
+            
+            return reward_vec[1]
+        catch e
+            @warn "MLP reward prediction failed, using legacy model: $e"
         end
     end
     
-    # Fallback: Use learned linear reward model
+    # Legacy fallback: Use learned linear reward model
     action_onehot = zeros(Float32, 8)
     if action > 0 && action <= length(action_onehot)
-        action_onehot[action] = 1.0
+        action_onehot[action] = 1.0f0
     end
     augmented = vcat(state, action_onehot)
     
@@ -1058,33 +1237,119 @@ function get_state_prediction_error(
 end
 
 # ============================================================================
-# Integration with ITHERIS
+# Integration with ITHERIS / MLP Networks
 # ============================================================================
 
 """
     function set_predictor_net!(model::WorldModel, predictor)
 
 Set the ITHERIS predictor network for state transitions.
+This now sets the transition_mlp field.
 
 # Arguments
 - `model::WorldModel`: The world model
-- `predictor`: Neural network function or model
+- `predictor`: MLP or neural network function
 """
 function set_predictor_net!(model::WorldModel, predictor)
-    model.transition_net = predictor
+    if isa(predictor, MLP)
+        model.transition_mlp = predictor
+    else
+        # Legacy: keep transition_net for external predictors
+        @warn "set_predictor_net! now expects MLP type. Using legacy transition_net field."
+    end
 end
 
 """
     function set_reward_net!(model::WorldModel, reward_predictor)
 
 Set the reward prediction network.
+This now sets the reward_mlp field.
+
+# Arguments
+- `model::WorldModel`: The world model  
+- `reward_predictor`: MLP or neural network function
+"""
+function set_reward_net!(model::WorldModel, reward_predictor)
+    if isa(reward_predictor, MLP)
+        model.reward_mlp = reward_predictor
+    else
+        # Legacy: keep reward_net for external predictors
+        @warn "set_reward_net! now expects MLP type. Using legacy reward_net field."
+    end
+end
+
+"""
+    function train_mlps_from_history!(model::WorldModel; lr::Float32=0.001f0, epochs::Int=100)
+
+Train the MLP networks from accumulated history.
+Uses state_history, action_history, and reward_history to train.
 
 # Arguments
 - `model::WorldModel`: The world model
-- `reward_predictor`: Neural network function or model
+- `lr::Float32`: Learning rate (default 0.001)
+- `epochs::Int`: Number of training epochs (default 100)
 """
-function set_reward_net!(model::WorldModel, reward_predictor)
-    model.reward_net = reward_predictor
+function train_mlps_from_history!(model::WorldModel; lr::Float32=0.001f0, epochs::Int=100)
+    n = length(model.state_history)
+    
+    if n < 10
+        @warn "Not enough history to train MLPs (need at least 10 samples)"
+        return false
+    end
+    
+    # Prepare training data for transition model
+    transition_inputs = Vector{Float32}[]
+    transition_targets = Vector{Float32}[]
+    
+    # Prepare training data for reward model
+    reward_inputs = Vector{Float32}[]
+    reward_targets = Vector{Float32}[]
+    
+    action_dim = 8
+    
+    for i in 1:(n-1)
+        state = model.state_history[i]
+        action = model.action_history[i]
+        next_state = model.state_history[i + 1]
+        reward = model.reward_history[i]
+        
+        # Create one-hot action
+        action_onehot = zeros(Float32, action_dim)
+        if action > 0 && action <= action_dim
+            action_onehot[action] = 1.0f0
+        end
+        
+        # Transition model: [state, action] -> next_state
+        input = vcat(state, action_onehot)
+        push!(transition_inputs, input)
+        push!(transition_targets, next_state)
+        
+        # Reward model: [state, action] -> reward
+        push!(reward_inputs, input)
+        push!(reward_targets, [reward])
+    end
+    
+    # Train transition MLP
+    if model.transition_mlp !== nothing && !isempty(transition_inputs)
+        try
+            train!(model.transition_mlp, transition_inputs, transition_targets; lr=lr, epochs=epochs)
+            @info "Trained transition MLP with $n samples"
+        catch e
+            @warn "Failed to train transition MLP: $e"
+        end
+    end
+    
+    # Train reward MLP
+    if model.reward_mlp !== nothing && !isempty(reward_inputs)
+        try
+            train!(model.reward_mlp, reward_inputs, reward_targets; lr=lr, epochs=epochs)
+            @info "Trained reward MLP with $n samples"
+        catch e
+            @warn "Failed to train reward MLP: $e"
+        end
+    end
+    
+    return true
 end
 
 # ============================================================================
@@ -1095,6 +1360,11 @@ export
     # Core types
     WorldModel,
     Trajectory,
+    
+    # Neural Network types
+    MLP,
+    forward,
+    train!,
     
     # Prediction functions
     predict_next_state,
@@ -1124,6 +1394,7 @@ export
     get_model_confidence,
     get_state_prediction_error,
     set_predictor_net!,
-    set_reward_net!
+    set_reward_net!,
+    train_mlps_from_history!
 
 end  # module WorldModel

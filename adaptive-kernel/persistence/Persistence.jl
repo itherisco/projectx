@@ -9,7 +9,7 @@ using SHA
 using Base64
 using Nettle
 
-export save_event, load_events, init_persistence, get_last_state, set_event_log_file, encrypt_log, decrypt_log
+export save_event, load_events, init_persistence, get_last_state, set_event_log_file, encrypt_log, decrypt_log, save_encrypted_state, load_encrypted_state
 
 const EVENT_LOG_FILE_DEFAULT = "events.log"
 const EVENT_LOG_FILE = Ref(get(ENV, "ADAPTIVE_KERNEL_EVENT_LOG", EVENT_LOG_FILE_DEFAULT))
@@ -274,6 +274,90 @@ Set the event log file path for persistence (useful for tests).
 function set_event_log_file(path::String)
     EVENT_LOG_FILE[] = path
     init_persistence()
+end
+
+# ============================================================================
+# Encrypted State Serialization (Multi-session Continuity)
+# ============================================================================
+
+const STATE_FILE = Ref("kernel_state.enc")
+
+"""
+    set_state_file(path::String)
+Set the encrypted state file path.
+"""
+function set_state_file(path::String)
+    STATE_FILE[] = path
+end
+
+"""
+    save_encrypted_state(state::Dict{String, Any})
+Serialize and encrypt kernel state for multi-session continuity.
+Uses AES-256-GCM encryption with unique nonces.
+"""
+function save_encrypted_state(state::Dict{String, Any})
+    if EVENT_LOG_KEY === nothing
+        @warn "No encryption key configured - cannot save encrypted state"
+        return false
+    end
+    
+    # Serialize state to JSON
+    plaintext = JSON.json(state)
+    
+    # Encrypt using AES-256-GCM
+    encrypted = encrypt_log(plaintext)
+    
+    # Write to file atomically
+    temp_file = STATE_FILE[] * ".tmp"
+    try
+        open(temp_file, "w") do io
+            println(io, encrypted)
+        end
+        # Atomic rename
+        mv(temp_file, STATE_FILE[], force=true)
+        @info "Saved encrypted kernel state"
+        return true
+    catch e
+        @error "Failed to save encrypted state: $e"
+        isfile(temp_file) && rm(temp_file, force=true)
+        return false
+    end
+end
+
+"""
+    load_encrypted_state()::Union{Dict{String, Any}, Nothing}
+Load and decrypt kernel state from encrypted storage.
+Returns nothing if no state file exists or decryption fails.
+"""
+function load_encrypted_state()::Union{Dict{String, Any}, Nothing}
+    state_path = STATE_FILE[]
+    
+    if !isfile(state_path)
+        @info "No encrypted state file found"
+        return nothing
+    end
+    
+    if EVENT_LOG_KEY === nothing
+        @warn "No encryption key configured - cannot load encrypted state"
+        return nothing
+    end
+    
+    try
+        encrypted = readline(state_path)
+        if isempty(strip(encrypted))
+            return nothing
+        end
+        
+        # Decrypt
+        plaintext = decrypt_log(encrypted)
+        state = JSON.parse(plaintext)
+        
+        @info "Loaded encrypted kernel state"
+        return state
+    catch e
+        @error "Failed to load encrypted state: $e"
+        return nothing
+    end
 end
 
 end  # module

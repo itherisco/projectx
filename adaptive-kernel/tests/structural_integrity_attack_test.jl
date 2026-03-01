@@ -377,4 +377,4 @@ function run_all_tests()
     println("2. NaN values accepted in ActionProposal - breaks decision logic")
     println("3. Hardcoded default secret 'jarvis-default-insecure-change-me'")
     println("4. Inf values accepted - causes arithmetic overflows")
-    println("5. Memory module has no thread synchronization")
+    # Memory module has no thread synchronization

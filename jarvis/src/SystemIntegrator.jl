@@ -35,6 +35,23 @@ end
 
 Base.showerror(io::IO, e::SovereigntyViolationError) = print(io, "SovereigntyViolationError[$(e.reason)]: ", e.message)
 
+"""
+    KernelOfflineException - Fatal error when kernel is unreachable
+    
+    This exception implements the Sovereign Agent "Kill Switch" protocol.
+    When the kernel goes offline, the system must freeze. There is no
+    graceful degradation - this is fatal for a Sovereign Agent.
+"""
+struct KernelOfflineException <: SovereigntyError
+    message::String
+    
+    function KernelOfflineException(message::String)
+        new(message)
+    end
+end
+
+Base.showerror(io::IO, e::KernelOfflineException) = print(io, "CRITICAL: KernelOfflineException - ", e.message)
+
 # Import auth module
 using .JWTAuth
 
@@ -1479,33 +1496,15 @@ function _kernel_approval(
             )
         catch e
             @error "Kernel approval failed: $e"
-            # Fall back to local approval
+            # CRITICAL SECURITY FIX: No more fallback - hard halt instead
         end
     end
     
-    # Fallback: Local kernel approval (when Adaptive Kernel unavailable)
-    # Deterministic formula: score = confidence × (reward - risk)
-    score = proposal.confidence * (proposal.predicted_reward - risk_score)
-    
-    # Check trust level for safety
-    if system.state.trust_level < TRUST_STANDARD && risk_score > 0.3f0
-        # Low trust - only allow low-risk actions
-        @warn "Kernel DENIED (low trust)" action=proposal.capability_id trust=system.state.trust_level
-        return nothing
-    end
-    
-    # Score threshold check
-    if score < 0.1f0
-        @warn "Kernel DENIED (low score)" action=proposal.capability_id score=score
-        return nothing
-    end
-    
-    return ExecutableAction(
-        proposal,
-        score,
-        now(),
-        Dict{String, Any}("kernel_approved" => true, "risk_score" => risk_score, "fallback" => true)
-    )
+    # CRITICAL SECURITY FIX: Rip out the fallback math formula
+    # For a Sovereign Agent, graceful degradation is FATAL.
+    # If the Kernel goes offline, the system must freeze. Period.
+    # This replaces the vulnerable fallback formula that could be exploited.
+    throw(KernelOfflineException("Kernel unreachable - sovereign execution impossible. System halted."))
 end
 
 """
@@ -1520,26 +1519,13 @@ function _kernel_approval_new(
     world_state::Dict{String, Any}
 )::Kernel.Decision
     
-    # If kernel is not initialized, use fallback
+    # KILL SWITCH PROTOCOL: Hard halt when kernel is unreachable
+    # For a Sovereign Agent, graceful degradation is FATAL.
+    # If the Kernel goes offline, the system must freeze. Period.
     if !system.kernel.initialized || system.kernel.state === nothing
-        # Fallback: local approval
-        if proposal === nothing
-            return Kernel.DENIED
-        end
-        
-        risk_score = _compute_risk_score(proposal, system.state)
-        score = proposal.confidence * (proposal.predicted_reward - risk_score)
-        
-        # Check trust level
-        if system.state.trust_level < TRUST_STANDARD && risk_score > 0.3f0
-            return Kernel.DENIED
-        end
-        
-        if score < 0.1f0
-            return Kernel.DENIED
-        end
-        
-        return Kernel.APPROVED
+        @error "CRITICAL: Kernel unreachable. Sovereign execution is impossible."
+        # We do NOT fall back to local approval. We trigger a hard halt.
+        throw(KernelOfflineException("System halted to preserve sovereignty. Reboot required."))
     end
     
     # Use Kernel.approve() for sovereignty
@@ -1573,9 +1559,22 @@ function _kernel_approval_new(
         
         return decision
     catch e
+        # ERROR SWALLOWING FIX: Push alert to user instead of silently dropping the task
+        error_message = "Action blocked: Internal Kernel computation error - $(typeof(e)): $(e)"
         @error "Kernel.approve() failed: $e" exception=(e, catch_backtrace())
-        # Fall back to local approval on error
-        return Kernel.DENIED
+        
+        # Store error in system state for retrieval
+        system.state.last_error = error_message
+        
+        # Log critical event for audit trail
+        _log_event(system, "kernel_error", Dict(
+            "action" => proposal !== nothing ? proposal.capability_id : "none",
+            "error" => error_message,
+            "timestamp" => string(now())
+        ))
+        
+        # Throw instead of silently returning DENIED - the error must surface to user
+        throw(KernelOfflineException(error_message))
     end
 end
 
@@ -2315,12 +2314,21 @@ end
     configure_authentication(enabled::Bool, secret::String)
 
 Configure JWT authentication for the Jarvis system.
+
+CRITICAL SECURITY FIX: Now uses SecureKeystore instead of ENV variables.
 """
 function configure_authentication(enabled::Bool, secret::String)
-    ENV["JARVIS_AUTH_ENABLED"] = string(enabled)
-    ENV["JARVIS_JWT_SECRET"] = secret
+    # CRITICAL: Store secrets in SecureKeystore instead of ENV
+    # ENV["JARVIS_AUTH_ENABLED"] = string(enabled)  # REMOVED - insecure
+    # ENV["JARVIS_JWT_SECRET"] = secret  # REMOVED - insecure
+    
+    # Use SecureKeystore for secure storage
+    SecureKeystore.store_secret!("JARVIS_JWT_SECRET", secret)
+    
     config = JWTAuth.AuthConfig(enabled=enabled, jwt_secret=secret)
     JWTAuth.configure_auth!(config)
+    
+    @info "Authentication configured securely using SecureKeystore"
 end
 
 """

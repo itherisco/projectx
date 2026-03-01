@@ -2,31 +2,34 @@ module Memory
 
 export MemoryStore, ingest_episode!, compress_memory!, failure_catalog, get_adjustments, decay_memory!
 
-using Dates, JSON
+using Dates, JSON, Base.Threads
 
 mutable struct MemoryStore
     episodes::Vector{Dict{String,Any}}
     failures::Vector{Dict{String,Any}}
     capability_stats::Dict{String, Dict{String,Any}}  # success_count, fail_count, avg_error
     last_compaction::DateTime
-    MemoryStore() = new(Dict{String,Any}[], Dict{String,Any}[], Dict{String, Dict{String,Any}}(), now())
+    stats_lock::ReentrantLock  # Lock for thread-safe capability_stats mutations
+    MemoryStore() = new(Dict{String,Any}[], Dict{String,Any}[], Dict{String, Dict{String,Any}}(), now(), ReentrantLock())
 end
 
 function ingest_episode!(ms::MemoryStore, episode::Dict{String,Any})
     push!(ms.episodes, episode)
-    # update capability stats
-    aid = get(episode, "action_id", "unknown")
-    stats = get(ms.capability_stats, aid, Dict("success" => 0, "fail" => 0, "sum_error" => 0.0, "count" => 0))
-    if get(episode, "result", false)
-        stats["success"] = stats["success"] + 1
-    else
-        stats["fail"] = stats["fail"] + 1
-        push!(ms.failures, Dict("action" => aid, "cycle" => episode["cycle"], "context" => get(episode, "context", Dict())))
+    # Thread-safe update of capability stats
+    lock(ms.stats_lock) do
+        aid = get(episode, "action_id", "unknown")
+        stats = get(ms.capability_stats, aid, Dict("success" => 0, "fail" => 0, "sum_error" => 0.0, "count" => 0))
+        if get(episode, "result", false)
+            stats["success"] = stats["success"] + 1
+        else
+            stats["fail"] = stats["fail"] + 1
+            push!(ms.failures, Dict("action" => aid, "cycle" => episode["cycle"], "context" => get(episode, "context", Dict())))
+        end
+        pe = Float64(get(episode, "prediction_error", 0.0))
+        stats["sum_error"] = stats["sum_error"] + pe
+        stats["count"] = stats["count"] + 1
+        ms.capability_stats[aid] = stats
     end
-    pe = Float64(get(episode, "prediction_error", 0.0))
-    stats["sum_error"] = stats["sum_error"] + pe
-    stats["count"] = stats["count"] + 1
-    ms.capability_stats[aid] = stats
 end
 
 function failure_catalog(ms::MemoryStore)
@@ -97,12 +100,15 @@ decay_memory!(ms; half_life_cycles=100)
 Apply forgetting pressure by decaying counts.
 """
 function decay_memory!(ms::MemoryStore; half_life_cycles::Int=100)
-    for (k,v) in ms.capability_stats
-        v["success"] = max(0, Int(floor(v["success"] * 0.995)))
-        v["fail"] = max(0, Int(floor(v["fail"] * 0.995)))
-        v["sum_error"] = v["sum_error"] * 0.995
-        v["count"] = max(1, Int(floor(v["count"] * 0.995)))
-        ms.capability_stats[k] = v
+    # Thread-safe decay of capability_stats
+    lock(ms.stats_lock) do
+        for (k,v) in ms.capability_stats
+            v["success"] = max(0, Int(floor(v["success"] * 0.995)))
+            v["fail"] = max(0, Int(floor(v["fail"] * 0.995)))
+            v["sum_error"] = v["sum_error"] * 0.995
+            v["count"] = max(1, Int(floor(v["count"] * 0.995)))
+            ms.capability_stats[k] = v
+        end
     end
 end
 
