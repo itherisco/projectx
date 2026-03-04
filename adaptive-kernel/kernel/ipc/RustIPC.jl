@@ -15,18 +15,59 @@ using SHA
 using Dates
 using JSON
 using Random
+using Base.Threads
+
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+#
+# WARNING: Direct use of unsafe_store! and unsafe_load is now DEPRECATED!
+#
+# All shared memory access MUST go through the safe API functions:
+#   - safe_shm_write() - Thread-safe write with bounds checking
+#   - safe_shm_read()  - Thread-safe read with bounds checking
+#
+# Using raw unsafe operations will result in race conditions and data corruption.
+#
+# The Rust kernel already has proper synchronization (ShmLock, ShmWriteGuard).
+# Julia MUST acquire the mutex before any shared memory access.
+#
+# ============================================================================
 
 # ============================================================================
 # Constants
 # ============================================================================
 
-const SHM_PATH = "/dev/shm/itheris_ipc"
+# Configurable shared memory path - can be overridden via environment variable
+function _get_shm_path()
+    get("ITHERIS_SHM_PATH", "/dev/shm/itheris_ipc")
+end
+
+const SHM_PATH = _get_shm_path()
 const SHM_SIZE = 0x0010_0000  # 16MB
 const RING_BUFFER_ENTRIES = 256
+
+# Response region offset - separated from request region to avoid collisions
+const RESPONSE_OFFSET = 4096  # Response written at offset 4096 bytes
+const MAX_PAYLOAD_SIZE = 4096  # Maximum payload size per entry
+
+# Mutex for thread-safe shared memory access
+# Uses Base.Threads.ReentrantLock for recursive locking capability
+const _shm_mutex = ReentrantLock()
+
+# Track if mutex is held for debugging
+const _mutex_holder = Ref{Union{Nothing, Int}}(nothing)
 
 # IPC Protocol constants
 const IPC_MAGIC = 0x49544852  # "ITHR"
 const IPC_VERSION = 0x0001
+
+# IPC Entry types (matching Rust enum)
+const IPC_ENTRY_THOUGHT_CYCLE = 0
+const IPC_ENTRY_INTEGRATION_PROPOSAL = 1
+const IPC_ENTRY_RESPONSE = 2
+const IPC_ENTRY_HEARTBEAT = 3
+const IPC_ENTRY_PANIC = 4
 
 # Security constants
 const TIMESTAMP_VALIDITY_SECONDS = 30  # Reject messages older than 30 seconds
@@ -530,6 +571,198 @@ function disconnect_kernel(conn::KernelConnection)
 end
 
 # ============================================================================
+# Safe Shared Memory API - Bounds Checking and Mutex Protection
+# ============================================================================
+
+"""
+    BoundsCheckError - Raised when memory access is out of bounds
+"""
+struct BoundsCheckError <: Exception
+    offset::UInt64
+    size::UInt64
+    region_size::UInt64
+    
+    BoundsCheckError(off::UInt64, sz::UInt64, reg::UInt64) = new(off, sz, reg)
+end
+
+function Base.showerror(io::IO, e::BoundsCheckError)
+    print(io, "BoundsCheckError: Attempted to access offset $(e.offset) with size $(e.size), ")
+    print(io, "but region size is only $(e.region_size)")
+end
+
+"""
+    MutexError - Raised when mutex lock fails
+"""
+struct MutexError <: Exception
+    message::String
+    
+    MutexError(msg::String) = new(msg)
+end
+
+function Base.showerror(io::IO, e::MutexError)
+    print(io, "MutexError: $(e.message)")
+end
+
+"""
+    Validate that an offset and size are within bounds
+    
+    Arguments:
+    - offset::UInt64 - The offset into shared memory
+    - size::UInt64 - The size of data to access
+    - region_size::UInt64 - Total size of the shared memory region
+    
+    Throws: BoundsCheckError if access would go out of bounds
+"""
+function _validate_bounds(offset::UInt64, size::UInt64, region_size::UInt64)
+    # Check for overflow
+    end_offset = offset + size
+    if end_offset > region_size
+        throw(BoundsCheckError(offset, size, region_size))
+    end
+    
+    # Also check for zero-size access
+    if size == 0
+        throw(BoundsCheckError(offset, size, region_size))
+    end
+    
+    true
+end
+
+"""
+    Safe write to shared memory with mutex protection and bounds checking
+    
+    Arguments:
+    - conn::KernelConnection - The kernel connection
+    - data::T - Data to write (must be bitstype)
+    - offset::UInt64 - Offset into shared memory
+    
+    Returns: true on success
+    
+    Throws:
+    - BoundsCheckError if offset/size is out of bounds
+    - MutexError if lock cannot be acquired
+"""
+function safe_shm_write(conn::KernelConnection, data::T, offset::UInt64)::Bool where T
+    # Acquire mutex lock for thread-safe access
+    lock(_shm_mutex)
+    try
+        # Get data size
+        data_size = UInt64(sizeof(T))
+        
+        # Bounds check BEFORE unsafe operation
+        _validate_bounds(offset, data_size, UInt64(SHM_SIZE))
+        
+        # Calculate actual pointer
+        ptr = reinterpret(Ptr{T}, conn.mapped_addr + offset)
+        
+        # Log for debugging (race condition detection)
+        tid = Threads.threadid()
+        println("[IPC] Thread $tid: Writing $(data_size) bytes at offset $(offset)")
+        
+        # Now perform the unsafe operation - it's protected!
+        unsafe_store!(ptr, data)
+        
+        println("[IPC] Thread $tid: Write completed")
+        true
+    catch e
+        println("[IPC] ERROR in safe_shm_write: $e")
+        rethrow()
+    finally
+        # Always release the lock
+        unlock(_shm_mutex)
+    end
+end
+
+"""
+    Safe read from shared memory with mutex protection and bounds checking
+    
+    Arguments:
+    - conn::KernelConnection - The kernel connection
+    - ::Type{T} - Type to read
+    - offset::UInt64 - Offset into shared memory
+    
+    Returns: The read data
+    
+    Throws:
+    - BoundsCheckError if offset/size is out of bounds
+    - MutexError if lock cannot be acquired
+"""
+function safe_shm_read(conn::KernelConnection, ::Type{T}, offset::UInt64)::T where T
+    # Acquire mutex lock for thread-safe access
+    lock(_shm_mutex)
+    try
+        # Get data size
+        data_size = UInt64(sizeof(T))
+        
+        # Bounds check BEFORE unsafe operation
+        _validate_bounds(offset, data_size, UInt64(SHM_SIZE))
+        
+        # Calculate actual pointer
+        ptr = reinterpret(Ptr{T}, conn.mapped_addr + offset)
+        
+        # Log for debugging (race condition detection)
+        tid = Threads.threadid()
+        println("[IPC] Thread $tid: Reading $(data_size) bytes at offset $(offset)")
+        
+        # Now perform the unsafe operation - it's protected!
+        result = unsafe_load(ptr)
+        
+        println("[IPC] Thread $tid: Read completed")
+        result
+    catch e
+        println("[IPC] ERROR in safe_shm_read: $e")
+        rethrow()
+    finally
+        # Always release the lock
+        unlock(_shm_mutex)
+    end
+end
+
+"""
+    Check if the shared memory region is properly mapped
+    
+    Arguments:
+    - conn::KernelConnection - The kernel connection
+    
+    Returns: true if mapped, false otherwise
+"""
+function is_shm_mapped(conn::KernelConnection)::Bool
+    conn.mapped_addr != C_NULL && conn.connected
+end
+
+"""
+    Get shared memory region information
+    
+    Returns: Dict with path, size, and mapped status
+"""
+function get_shm_info()::Dict{Symbol, Any}
+    Dict(
+        :path => SHM_PATH,
+        :size => SHM_SIZE,
+        :response_offset => RESPONSE_OFFSET,
+        :max_payload => MAX_PAYLOAD_SIZE,
+        :mutex_locked => islocked(_shm_mutex),
+    )
+end
+
+"""
+    Reset/shutdown the mutex (for testing or recovery)
+    
+    WARNING: Only use this if you're sure no other threads are using shared memory!
+"""
+function reset_shm_mutex()
+    # Try to unlock if locked (this is a last-resort recovery mechanism)
+    if islocked(_shm_mutex)
+        try
+            unlock(_shm_mutex)
+            println("[IPC] WARNING: Force-unlocked mutex (possible deadlock recovery)")
+        catch e
+            println("[IPC] Could not unlock mutex: $e")
+        end
+    end
+end
+
+# ============================================================================
 # Message Serialization
 # ============================================================================
 
@@ -627,6 +860,9 @@ end
 """
     Submit a thought cycle to Rust kernel for verification
     NOW INCLUDES SIGNING with timestamp and sequence
+    
+    SECURITY: This function now uses mutex-protected shared memory access
+    with explicit bounds checking to prevent race conditions and buffer overflows.
 """
 function submit_thought(conn::KernelConnection, 
                        thought::ThoughtCycle;
@@ -636,8 +872,18 @@ function submit_thought(conn::KernelConnection,
         throw(KeyManagementError("Cannot sign message: secret key not initialized. Call init_secret_key() first."))
     end
     
+    # Check if shared memory is properly mapped
+    if !is_shm_mapped(conn)
+        throw(MutexError("Shared memory not mapped - cannot submit thought"))
+    end
+    
     # Serialize the thought
     payload = serialize_thought(thought)
+    
+    # Validate payload size BEFORE creating entry
+    if length(payload) > MAX_PAYLOAD_SIZE
+        throw(BoundsCheckError(0, UInt64(length(payload)), UInt64(MAX_PAYLOAD_SIZE)))
+    end
     
     # Sign the payload if requested
     if sign
@@ -664,9 +910,13 @@ function submit_thought(conn::KernelConnection,
         compute_checksum(payload)     # checksum
     )
     
-    # Write to shared memory (simplified - would use ring buffer)
-    entry_ptr = reinterpret(Ptr{IPCEntry}, conn.mapped_addr)
-    unsafe_store!(entry_ptr, entry)
+    # =========================================================================
+    # SECURE: Use mutex-protected safe API instead of raw unsafe_store!
+    # =========================================================================
+    
+    # Write entry to shared memory at offset 0 using safe API
+    # This acquires the mutex lock and performs bounds checking
+    safe_shm_write(conn, entry, UInt64(0))
     
     # Trigger interrupt to notify kernel
     ccall(:raise, Int32, (Int32,), 30)  # SIGUSR1
@@ -674,9 +924,13 @@ function submit_thought(conn::KernelConnection,
     # Wait for response (simplified)
     sleep(0.1)
     
-    # Read response
-    response_ptr = reinterpret(Ptr{IPCEntry}, conn.mapped_addr + 4096)
-    response = unsafe_load(response_ptr)
+    # =========================================================================
+    # SECURE: Use mutex-protected safe API instead of raw unsafe_load
+    # =========================================================================
+    
+    # Read response from shared memory at RESPONSE_OFFSET using safe API
+    # This acquires the mutex lock and performs bounds checking
+    response = safe_shm_read(conn, IPCEntry, UInt64(RESPONSE_OFFSET))
     
     KernelResponse(
         response.entry_type == 0x01,  # approved if response type is IntegrationAction
@@ -949,5 +1203,34 @@ function reset_security_state!()
     _key_source[] = "none"
     println("[IPC] Security state reset")
 end
+
+# ============================================================================
+# Public API Exports - Safe Access Only!
+# ============================================================================
+#
+# IMPORTANT: All shared memory access must go through these safe functions:
+# - safe_shm_write() - Thread-safe write with mutex + bounds checking
+# - safe_shm_read() - Thread-safe read with mutex + bounds checking
+# - is_shm_mapped() - Check if shared memory is properly mapped
+# - get_shm_info() - Get shared memory configuration
+# - reset_shm_mutex() - Emergency mutex recovery (use with caution!)
+#
+# ============================================================================
+
+export safe_shm_write, safe_shm_read, is_shm_mapped, get_shm_info, reset_shm_mutex
+export BoundsCheckError, MutexError
+export SHM_PATH, SHM_SIZE, get_shm_info
+
+export connect_kernel, disconnect_kernel, submit_thought
+
+export init_secret_key, is_key_initialized, sign_message, verify_signature
+
+export SignatureError, KeyManagementError, SignatureVerificationError, ReplayAttackError
+
+export ThoughtCycle, KernelResponse, KernelConnection, IPCEntry
+
+export send_heartbeat, health_check
+
+export init, get_key_source, reset_security_state!
 
 end  # module

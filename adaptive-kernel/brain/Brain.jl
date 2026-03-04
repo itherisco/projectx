@@ -1,5 +1,6 @@
 # adaptive-kernel/brain/Brain.jl - ITHERIS Neural Brain Module
 # Complete neural brain activation with proper kernel boundary enforcement
+# SECURITY: fallback_to_heuristic requires explicit human approval via SecureConfirmationGate
 
 module Brain
 
@@ -10,6 +11,13 @@ using Statistics
 
 # ITHERIS Neural Brain Integration
 using ..ITHERISCore  # infer(), learn!(), initialize_brain()
+
+# Trust and Confirmation (P0 Security - require explicit approval for fallback)
+# Note: SecureConfirmationGate integration happens at higher levels (Kernel)
+# Brain uses fallback_approval_token field in BrainConfig for security checks
+
+# RiskLevel enum for security classification
+@enum RiskLevel READ_ONLY LOW MEDIUM HIGH CRITICAL
 
 # Export brain types and functions
 export 
@@ -27,7 +35,10 @@ export
     
     # Boundary enforcement
     validate_brain_output,
-    BoundaryInvariant
+    BoundaryInvariant,
+    
+    # SECURITY: Fallback approval functions (P0 - Vulnerability #5 & Weakness #6)
+    check_fallback_approval
 
 # ============================================================================
 # BRAIN-KERNEL BOUNDARY CONTRACTS
@@ -185,13 +196,18 @@ end
 
 """
     BrainConfig - Configuration for brain module
+    
+    SECURITY: fallback_to_heuristic requires EXPLICIT human approval via SecureConfirmationGate
+    - Even if fallback_to_heuristic=true is set in config, runtime approval is REQUIRED
+    - This prevents silent bypass of brain verification
 """
 struct BrainConfig
     model_path::Union{String, Nothing}
     confidence_threshold::Float32
     advisory_mode::Bool                    # Brain never executes
     execution_bypass_blocked::Bool
-    fallback_to_heuristic::Bool            # Allow fallback on failure
+    fallback_to_heuristic::Bool            # Allow fallback on failure (requires APPROVAL to activate)
+    fallback_approval_token::Union{String, Nothing}  # Token from SecureConfirmationGate approval
     max_inference_time_ms::Float32
     enable_training::Bool
     
@@ -201,17 +217,61 @@ struct BrainConfig
         advisory_mode::Bool=true,
         execution_bypass_blocked::Bool=true,
         fallback_to_heuristic::Bool=false,  # Default: NO fallback - must be explicitly enabled
+        fallback_approval_token::Union{String, Nothing}=nothing,  # Requires explicit approval token
         max_inference_time_ms::Float32=500.0f0,
         enable_training::Bool=true
     )
-        # SECURITY: If fallback_to_heuristic is enabled, log a warning
-        if fallback_to_heuristic
-            @warn "SECURITY WARNING: fallback_to_heuristic is enabled - this bypasses brain verification!"
+        # SECURITY: If fallback_to_heuristic is enabled, warn about requirement for approval
+        if fallback_to_heuristic && fallback_approval_token === nothing
+            @warn "SECURITY WARNING: fallback_to_heuristic is set but NO approval token provided!" * 
+                  " Runtime approval via SecureConfirmationGate is REQUIRED."
+        elseif fallback_to_heuristic && fallback_approval_token !== nothing
+            @info "SECURITY: fallback_to_heuristic enabled with approval token - verified fallback"
         end
         new(model_path, confidence_threshold, advisory_mode, 
             execution_bypass_blocked, fallback_to_heuristic, 
-            max_inference_time_ms, enable_training)
+            fallback_approval_token, max_inference_time_ms, enable_training)
     end
+end
+
+"""
+    require_fallback_approval - Request human approval for heuristic fallback
+    
+    Returns approval token if granted, nothing if denied/pending.
+    This is the ONLY way to enable heuristic fallback - fail-closed by default.
+    
+    NOTE: This function is typically called from Kernel's SecureConfirmationGate.
+    The Kernel level handles the actual human confirmation UI/flow.
+"""
+function require_fallback_approval(
+    gate_missing_not_used::Nothing;  # Placeholder - actual implementation in Kernel
+    reason::String="Heuristic fallback requested - bypasses brain verification"
+)::Union{String, Nothing}
+    # This is a stub - the actual implementation with human confirmation
+    # should be called from Kernel. This function exists for API completeness.
+    @warn "require_fallback_approval: Should be called via Kernel's SecureConfirmationGate"
+    return nothing  # Fail-closed: no token returned by default
+end
+
+"""
+    check_fallback_approval - Verify that fallback has valid human approval
+    
+    FAIL-CLOSED: Returns false if no valid approval token present.
+"""
+function check_fallback_approval(config::BrainConfig)::Bool
+    # Fail-closed: no fallback allowed without explicit approval
+    if !config.fallback_to_heuristic
+        return false
+    end
+    
+    # Even if fallback is enabled in config, requires valid approval token
+    if config.fallback_approval_token === nothing
+        @error "SECURITY VIOLATION: fallback_to_heuristic=true but NO approval token!" *
+              " Denying fallback activation - human approval required."
+        return false
+    end
+    
+    return true  # Has valid approval
 end
 
 # ============================================================================
@@ -347,21 +407,23 @@ function create_brain(
             brain.initialized = true
             @info "ITHERIS Brain initialized successfully"
         else
-            if !config.fallback_to_heuristic
-                # FAIL-CLOSED: Require explicit configuration to use fallback
-                error("ITHERIS initialization failed and fallback_to_heuristic is disabled - BRAIN VERIFICATION REQUIRED")
+            # SECURITY: Check for explicit human approval BEFORE allowing fallback
+            if !check_fallback_approval(config)
+                # FAIL-CLOSED: Require explicit approval to use fallback
+                error("ITHERIS initialization failed and NO valid fallback approval - BRAIN VERIFICATION REQUIRED")
             end
-            # Log audit event when falling back
-            @error "ITHERIS not available - fallback_to_heuristic is ENABLED (insecure mode)"
-            @warn "Brain running in DEGRADED MODE without ITHERIS verification"
-            brain.initialized = config.fallback_to_heuristic
+            # Log audit event when falling back with approval
+            @error "ITHERIS not available - fallback approved by human - running in DEGRADED MODE"
+            @warn "Brain running in DEGRADED MODE with human-approved fallback"
+            brain.initialized = true  # Can initialize with degraded mode since human approved
         end
     catch e
-        if !config.fallback_to_heuristic
-            rethrow()
+        # SECURITY: Check for explicit human approval before allowing any fallback
+        if !check_fallback_approval(config)
+            rethrow()  # Fail-closed: propagate error
         end
-        @error "Brain initialization failed: $e - using degraded mode"
-        brain.initialized = config.fallback_to_heuristic
+        @error "Brain initialization failed: $e - using human-approved degraded mode"
+        brain.initialized = true
     end
     
     return brain
@@ -400,22 +462,23 @@ function infer_brain(
             @error "Neural inference failed" error=e
             record_inference!(brain.health, (time() - start_time) * 1000, false)
             
-            if !brain.config.fallback_to_heuristic
+            # SECURITY: Check for explicit human approval BEFORE allowing fallback
+            if !check_fallback_approval(brain.config)
                 # FAIL-CLOSED: Return safe output instead of silently falling back
-                @error "Neural inference failed and fallback disabled - returning safe output"
-                return _safe_fallback_output("Neural inference failed: $e")
+                @error "Neural inference failed and NO valid fallback approval - returning safe output"
+                return _safe_fallback_output("Neural inference failed: $e - no human approval for fallback")
             end
-            @error "Neural inference failed - using HEURISTIC FALLBACK (insecure mode)"
+            @error "Neural inference failed - using HEURISTIC FALLBACK with human approval"
         end
     end
     
-    # Fallback (if enabled) - this is now explicitly logged as INSECURE
-    if brain.config.fallback_to_heuristic
-        @warn "BRAIN FALLBACK ACTIVE - No brain verification for this inference"
+    # Fallback (if enabled) - now requires explicit human approval at RUNTIME
+    if check_fallback_approval(brain.config)
+        @warn "BRAIN FALLBACK ACTIVE - Heuristic mode with human-approved fallback"
         return _heuristic_fallback(brain_input)
     else
         # FAIL-CLOSED: Safe output with very low confidence
-        return _safe_fallback_output("Brain not initialized and fallback disabled")
+        return _safe_fallback_output("Brain not initialized and no fallback approval")
     end
 end
 

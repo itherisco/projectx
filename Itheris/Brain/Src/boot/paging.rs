@@ -71,9 +71,25 @@ pub mod virt_addr {
 }
 
 /// Page table manager for the kernel
+/// 
+/// This struct provides safe access to page tables by encapsulating
+/// the unsafe pointer operations within a well-defined interface.
 pub struct PageTableManager {
     /// The PML4 page table (root)
     pml4: &'static mut PageTable,
+}
+
+/// Result type for page table operations
+#[derive(Debug)]
+pub enum PageTableResult {
+    /// Operation completed successfully
+    Ok,
+    /// The page table entry is not present
+    NotPresent,
+    /// The address is not properly aligned
+    Misaligned,
+    /// The address is null
+    NullAddress,
 }
 
 impl PageTableManager {
@@ -120,18 +136,121 @@ impl PageTableManager {
         &mut pt[page.p1_index()]
     }
     
+    /// Validate a page table entry before dereferencing
+    /// 
+    /// # Returns
+    /// * `PageTableResult::Ok` - Entry is valid for dereferencing
+    /// * `PageTableResult::NotPresent` - Entry is not present
+    /// * `PageTableResult::Misaligned` - Address not 4KB aligned
+    /// * `PageTableResult::NullAddress` - Address is zero
+    fn validate_entry(entry: &PageTableEntry) -> PageTableResult {
+        // Check if entry is present
+        if !entry.is_present() {
+            return PageTableResult::NotPresent;
+        }
+        
+        let addr = entry.addr().as_u64();
+        
+        // Check for null address
+        if addr == 0 {
+            return PageTableResult::NullAddress;
+        }
+        
+        // Check 4KB alignment (page tables must be page-aligned)
+        if addr % 4096 != 0 {
+            return PageTableResult::Misaligned;
+        }
+        
+        PageTableResult::Ok
+    }
+    
+    /// Get the PDPT (Page Directory Pointer Table) from PML4 entry
+    /// 
+    /// # Safety
+    /// The caller must ensure:
+    /// - The PML4 entry is present
+    /// - The referenced PDPT is mapped at the given physical address
+    /// - The physical address is 4KB aligned
     fn get_pdpt(&self, pml4_entry: &PageTableEntry) -> &PageTable {
+        // Validate entry before unsafe operation
+        match Self::validate_entry(pml4_entry) {
+            PageTableResult::Ok => {}
+            PageTableResult::NotPresent => {
+                panic!("[PAGING] SAFETY VIOLATION: Attempted to dereference non-present PML4 entry");
+            }
+            PageTableResult::NullAddress => {
+                panic!("[PAGING] SAFETY VIOLATION: Attempted to dereference null PDPT address");
+            }
+            PageTableResult::Misaligned => {
+                panic!("[PAGING] SAFETY VIOLATION: PDPT address is not 4KB aligned");
+            }
+        }
+        
         let addr = pml4_entry.addr().as_u64();
+        
+        // DIAGNOSTIC: Log the address we're dereferencing
+        println!("[PAGING DEBUG] Dereferencing PDPT at physical address: {:#x}", addr);
+        
         unsafe { &*(addr as *const PageTable) }
     }
     
+    /// Get the PD (Page Directory) from PDPT entry
+    /// 
+    /// # Safety
+    /// The caller must ensure:
+    /// - The PDPT entry is present
+    /// - The referenced PD is mapped at the given physical address
+    /// - The physical address is 4KB aligned
     fn get_pd(&self, pdpt_entry: &PageTableEntry) -> &PageTable {
+        // Validate entry before unsafe operation
+        match Self::validate_entry(pdpt_entry) {
+            PageTableResult::Ok => {}
+            PageTableResult::NotPresent => {
+                panic!("[PAGING] SAFETY VIOLATION: Attempted to dereference non-present PDPT entry");
+            }
+            PageTableResult::NullAddress => {
+                panic!("[PAGING] SAFETY VIOLATION: Attempted to dereference null PD address");
+            }
+            PageTableResult::Misaligned => {
+                panic!("[PAGING] SAFETY VIOLATION: PD address is not 4KB aligned");
+            }
+        }
+        
         let addr = pdpt_entry.addr().as_u64();
+        
+        // DIAGNOSTIC: Log the address we're dereferencing
+        println!("[PAGING DEBUG] Dereferencing PD at physical address: {:#x}", addr);
+        
         unsafe { &*(addr as *const PageTable) }
     }
     
+    /// Get the PT (Page Table) from PD entry
+    /// 
+    /// # Safety
+    /// The caller must ensure:
+    /// - The PD entry is present
+    /// - The referenced PT is mapped at the given physical address
+    /// - The physical address is 4KB aligned
     fn get_pt(&self, pd_entry: &PageTableEntry) -> &PageTable {
+        // Validate entry before unsafe operation
+        match Self::validate_entry(pd_entry) {
+            PageTableResult::Ok => {}
+            PageTableResult::NotPresent => {
+                panic!("[PAGING] SAFETY VIOLATION: Attempted to dereference non-present PD entry");
+            }
+            PageTableResult::NullAddress => {
+                panic!("[PAGING] SAFETY VIOLATION: Attempted to dereference null PT address");
+            }
+            PageTableResult::Misaligned => {
+                panic!("[PAGING] SAFETY VIOLATION: PT address is not 4KB aligned");
+            }
+        }
+        
         let addr = pd_entry.addr().as_u64();
+        
+        // DIAGNOSTIC: Log the address we're dereferencing
+        println!("[PAGING DEBUG] Dereferencing PT at physical address: {:#x}", addr);
+        
         unsafe { &*(addr as *const PageTable) }
     }
     

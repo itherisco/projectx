@@ -21,6 +21,11 @@ export ActionProposal, Goal, GoalState, Thought, ReflectionEvent, IntentVector, 
     # Backward Compatibility Note
     - `risk` can be either Float32 (new format) or String (legacy format "high"/"medium"/"low")
     - Use `get_risk_value()` to get numeric risk regardless of format
+    
+    SECURITY: Float32 risk values are validated to ensure:
+    - Values are within [0.0, 1.0] bounds
+    - Values are not NaN or Inf
+    - This prevents safety score manipulation via invalid risk values
 """
 struct ActionProposal
     capability_id::String
@@ -29,6 +34,67 @@ struct ActionProposal
     predicted_reward::Float32
     risk::Union{Float32, String}  # Float32 for kernel comparison, String for legacy compatibility
     reasoning::String
+    
+    # Inner constructor with validation - SECURITY FIX for Vulnerability #1 & #2
+    function ActionProposal(
+        cap_id::String,
+        confidence::Float32,
+        cost::Float32,
+        reward::Float32,
+        risk::Union{Float32, String},
+        reasoning::String
+    )
+        # Validate Float32 fields
+        _validate_float32_bounds(confidence, "confidence", 0.0f0, 1.0f0)
+        _validate_float32_bounds(cost, "predicted_cost", 0.0f0, Inf32)
+        _validate_float32_bounds(reward, "predicted_reward", 0.0f0, 1.0f0)
+        
+        # Validate Float32 risk (not String - legacy format)
+        if risk isa Float32
+            _validate_float32_bounds(risk, "risk", 0.0f0, 1.0f0)
+        end
+        
+        new(cap_id, confidence, cost, reward, risk, reasoning)
+    end
+end
+
+"""
+    _validate_float32_bounds(value, field_name, min_val, max_val)
+    
+Validate that a Float32 value is within acceptable bounds and not NaN/Inf.
+Raises an error if validation fails (fail-secure approach).
+"""
+function _validate_float32_bounds(
+    value::Float32, 
+    field_name::String, 
+    min_val::Float32, 
+    max_val::Float32
+)::Nothing
+    # Check for NaN
+    if isnan(value)
+        throw(ArgumentError(
+            "SECURITY VALIDATION FAILED: $field_name cannot be NaN. " *
+            "ActionProposal rejected to prevent safety score manipulation."
+        ))
+    end
+    
+    # Check for Inf/-Inf
+    if isinf(value)
+        throw(ArgumentError(
+            "SECURITY VALIDATION FAILED: $field_name cannot be Inf or -Inf. " *
+            "ActionProposal rejected to prevent safety score manipulation."
+        ))
+    end
+    
+    # Check bounds
+    if value < min_val || value > max_val
+        throw(ArgumentError(
+            "SECURITY VALIDATION FAILED: $field_name must be in [$min_val, $max_val], got $value. " *
+            "ActionProposal rejected to prevent safety score manipulation."
+        ))
+    end
+    
+    return nothing
 end
 
 """
@@ -329,7 +395,7 @@ struct IntegrationActionProposal
     timestamp::DateTime
 end
 
-# Constructor with auto-generated UUID
+# Constructor with auto-generated UUID and validation
 function IntegrationActionProposal(
     capability_id::String,
     confidence::Float32,
@@ -339,6 +405,13 @@ function IntegrationActionProposal(
     reasoning::String = "",
     impact::Float32 = 0.5f0
 )::IntegrationActionProposal
+    # Validate all Float32 fields - SECURITY FIX for Vulnerability #1 & #2
+    _validate_float32_bounds(confidence, "confidence", 0.0f0, 1.0f0)
+    _validate_float32_bounds(cost, "predicted_cost", 0.0f0, Inf32)
+    _validate_float32_bounds(reward, "predicted_reward", 0.0f0, 1.0f0)
+    _validate_float32_bounds(risk, "risk", 0.0f0, 1.0f0)  # Risk MUST be in [0,1]
+    _validate_float32_bounds(impact, "impact_estimate", 0.0f0, 1.0f0)
+    
     return IntegrationActionProposal(
         uuid4(),
         capability_id,

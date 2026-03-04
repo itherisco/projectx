@@ -96,6 +96,31 @@ function AgentProposal(
 end
 
 # ============================================================================
+# DIAGNOSTIC LOGGING FOR ENTROPY INJECTION
+# ============================================================================
+
+"""
+    diagnose_entropy_injection - Diagnostic function to track entropy injection events
+"""
+function diagnose_entropy_injection(
+    proposals::Vector{AgentProposal},
+    config::SpineConfig,
+    mean_conf::Float64
+)::Dict{String, Any}
+    return Dict{String, Any}(
+        "timestamp" => string(now()),
+        "entropy_injection_enabled" => config.entropy_injection_enabled,
+        "entropy_threshold" => config.entropy_threshold,
+        "mean_confidence" => mean_conf,
+        "num_proposals" => length(proposals),
+        "proposal_confidences" => [p.confidence for p in proposals],
+        "proposal_decisions" => [p.decision for p in proposals],
+        "injection_triggered" => mean_conf >= config.entropy_threshold,
+        "default_entropy_value" => SpineConfig().entropy_injection_enabled
+    )
+end
+
+# ============================================================================
 # CONFLICT RESOLUTION
 # ============================================================================
 
@@ -129,6 +154,22 @@ function resolve_conflict(
     isempty(proposals) && return ConflictResolution(
         CONFLICT_ESCALATION, 0, Dict(), "", "No proposals", now()
     )
+    
+    # DIAGNOSTIC: Log entropy injection configuration and trigger conditions
+    # This helps validate assumptions about entropy injection behavior
+    if length(proposals) >= 2
+        confidences = [p.confidence for p in proposals]
+        mean_conf = mean(confidences)
+        diagnostic = diagnose_entropy_injection(proposals, config, mean_conf)
+        
+        @warn "ENTROPY_INJECTION_DIAGNOSTIC" 
+            entropy_injection_enabled=diagnostic["entropy_injection_enabled"]
+            entropy_threshold=diagnostic["entropy_threshold"]
+            mean_confidence=diagnostic["mean_confidence"]
+            injection_triggered=diagnostic["injection_triggered"]
+            default_entropy_enabled=diagnostic["default_entropy_value"]
+            num_proposals=diagnostic["num_proposals"]
+    end
     
     # Check for entropy injection (too much agreement)
     if config.entropy_injection_enabled && length(proposals) >= 2
