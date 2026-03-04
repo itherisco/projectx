@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0  
 **Last Updated:** 2026-02-28  
-**Julia Version:** 1.10+  
+**Julia Version:** 1.8+  
 **Status:** Production-Ready
 
 ---
@@ -46,12 +46,12 @@ The system is built on five fundamental principles:
 
 | Metric | Value |
 |--------|-------|
-| Kernel Size | ~830 lines |
-| Decision Latency | <1ms per cycle |
+| Kernel Size | 1790 lines |
+| Decision Latency | See benchmark results |
 | Dependencies | Minimal (JSON only) |
 | Test Coverage | Unit + Integration |
 | Trust Levels | 5 (BLOCKED → FULL) |
-| Memory Capacity | 5000 events |
+| Memory Capacity | 1000 events (MAX_EPISODIC_MEMORY) |
 
 ---
 
@@ -504,7 +504,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 ```toml
 [julius]
 version = "1.0"
-julia_version = "1.10+"
+julia_version = "1.8+"
 
 [llm]
 provider = "openai"

@@ -1,0 +1,110 @@
+[package]
+name = "jarvis_runtime"
+version = "0.1.0"
+edition = "2021"
+authors = ["JARVIS Team"]
+description = "Production-grade async runtime for JARVIS intelligent platform"
+license = "MIT"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full", "tracing"] }
+
+# Web framework
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# WebSocket
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Logging & tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Metrics
+prometheus = "0.13"
+metrics-exporter-prometheus = "0.12"
+
+# UUIDs
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+
+# File watching
+notify = "6.1"
+
+# Network utilities
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], optional = true }
+
+# System info
+sys-info = "0.9"
+
+# JWT
+jsonwebtoken = "9.2"
+argon2 = "0.5"
+
+# Password hashing
+password-hash = "0.6.0-rc.12"
+
+# Graph/knowledge
+petgraph = "0.6"
+
+# URL parsing
+url = "2.5"
+
+# Async trait
+async-trait = "0.1"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Validation
+jsonschema = "0.18"
+
+# Rand for sampling
+rand = "0.8"
+
+# Base64 encoding
+base64 = "0.21"
+
+# Machine learning utilities (for pattern detection)
+ndarray = "0.15"
+
+# HTTP
+hyper = "1.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.12"
+tempfile = "3.8"
+
+[features]
+default = ["runtime"]
+runtime = []
+web = ["dep:reqwest"]
+sandbox = []
+
+[lib]
+name = "jarvis_runtime"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jarvisd"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

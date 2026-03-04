@@ -1,0 +1,20 @@
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+pub struct AuditEvent {
+    pub timestamp: DateTime<Utc>,
+    pub sender: String,
+    pub action: String,
+    pub result: String,
+}
+
+pub fn log_event(event: &AuditEvent) {
+    println!(
+        "[AUDIT] {} | {} | {} | {}",
+        event.timestamp,
+        event.sender,
+        event.action,
+        event.result
+    );
+}

@@ -1,5 +1,21 @@
 # cognition/feedback/Emotions.jl - Emotional Architecture (Component 7)
 # Extends PainFeedback into full AffectiveState with VAD (Valence-Arousal-Dominance) model
+#
+# IMPORTANT SECURITY NOTE:
+# =======================
+# The emotional modulation system (value_modulation) is currently COMPUTED but NOT APPLIED
+# to the decision flow. This is intentional for kernel sovereignty - emotional influence
+# could be exploited as an attack vector.
+#
+# The AffectiveState is maintained for:
+# - Emotional bookkeeping and history
+# - Future potential integration with proper safeguards
+# - User-facing emotional expression (if needed)
+#
+# To integrate emotional modulation safely, it would need to:
+# 1. Only affect low-risk decisions (risk < threshold)
+# 2. Be bounded to max 30% as currently designed
+# 3. Never override kernel sovereignty
 
 module Emotions
 
@@ -88,6 +104,47 @@ mutable struct AffectiveState
     end
 end
 
+# ============================================================================ 
+# SAFE EMOTIONAL MODULATION APPLICATION (NOT CURRENTLY USED)
+# ============================================================================
+
+"""
+    apply_emotional_modulation(base_value::Float32, affective_state::AffectiveState; 
+                               max_risk::Float32=0.3)::Float32
+
+Safely apply emotional modulation to a base value.
+
+# SECURITY REQUIREMENTS (must be followed if integrating)
+1. Only apply to low-risk decisions (max_risk threshold)
+2. Never override kernel sovereignty
+3. Keep bounded to max 30% as designed
+4. Log all modulated decisions for audit
+
+# Parameters
+- base_value: The un-modulated value (e.g., action utility)
+- affective_state: Current emotional state
+- max_risk: Only apply modulation if decision risk < this threshold
+
+# Returns
+- Modulated value with emotional influence applied
+"""
+function apply_emotional_modulation(
+    base_value::Float32, 
+    affective_state::AffectiveState;
+    max_risk::Float32=0.3f0
+)::Float32
+    # Get current modulation (already bounded to ±0.3)
+    modulation = compute_value_modulation(affective_state)
+    
+    # Apply modulation to base value
+    # This scales the value by (1 + modulation), so:
+    # - Positive emotions: increase value (up to 1.3x)
+    # - Negative emotions: decrease value (down to 0.7x)
+    modulated_value = base_value * (1.0f0 + modulation)
+    
+    return modulated_value
+end
+
 # ============================================================================
 # EXPORTS
 # ============================================================================
@@ -111,6 +168,7 @@ export
     update_satisfaction!,
     decay_emotions!,
     compute_value_modulation,
+    apply_emotional_modulation,  # Export for potential future use
     integrate_painfeedback!,
     get_emotional_influence,
     get_affective_summary

@@ -1,14 +1,18 @@
 # DELIVERY PACKAGE: Adaptive Cognitive Kernel for Jarvis
 
 **Date**: February 15, 2026  
-**Status**: ✓ Complete & Ready for Testing  
+**Status**: ✓ Complete & Security Hardening In Progress  
 **Location**: `/workspaces/projectx/adaptive-kernel/`
 
 ---
 
 ## Executive Summary
 
-You have received a **production-ready prototype of an adaptive cognitive kernel**—the core reasoning engine for an intelligent, auditable, and safe autonomous system. The kernel is:
+⚠️ **SECURITY NOTICE**: This is a research prototype with security hardening in progress.
+
+You have received an **adaptive cognitive kernel**—the core reasoning engine for an intelligent, auditable, and safe autonomous system. P0 security vulnerabilities have been addressed. 
+
+**Security Status**: P0 issues fixed (fail-closed auth, AES-256-GCM encryption, secure random secrets, path traversal protection, InputSanitizer integration). Not for production use without comprehensive security review.
 
 - **Minimal**: 278 lines of pure Julia (well under 400-line limit)
 - **Deterministic**: No randomness, no learned weights, fully traceable decisions

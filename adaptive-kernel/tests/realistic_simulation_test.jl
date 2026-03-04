@@ -222,12 +222,13 @@ end
 """
 Permission handler with risk assessment - strict for high-risk
 """
-function permission_handler(risk::String)::Bool
+function permission_handler(risk::Float32)::Bool
     # Fail-closed: deny high-risk by default
-    if risk == "high"
+    # Use same thresholds as parse_risk_string: 0.1=low, 0.5=medium, 0.9=high
+    if risk >= 0.66f0  # high risk
         # Allow 40% of high-risk actions (simulating special circumstances)
         return rand() < 0.4
-    elseif risk == "medium"
+    elseif risk >= 0.33f0  # medium risk
         # Allow 70% of medium-risk actions
         return rand() < 0.7
     end

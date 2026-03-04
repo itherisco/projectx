@@ -48,11 +48,11 @@ export
     GoalStatus - Enum for goal lifecycle states
 """
 @enum GoalStatus begin
-    :pending    # Goal created, not yet activated
-    :active     # Goal is being pursued
-    :completed # Goal successfully achieved
-    :abandoned # Goal given up
-    :suspended # Goal temporarily paused
+    pending    # Goal created, not yet activated
+    active     # Goal is being pursued
+    completed # Goal successfully achieved
+    abandoned # Goal given up
+    suspended # Goal temporarily paused
 end
 
 """

@@ -188,7 +188,7 @@ This plan outlines 8 incremental milestones (each ~3–5 days of focused work) t
 
 By milestone 8, you will have:
 
-1. **A production-ready adaptive kernel**: ≤400 lines, fully auditable, deterministic, extensible
+1. **A secure cognitive kernel**: ≤400 lines, fully auditable, deterministic, extensible, security-hardened
 2. **A proven capability system**: 50+ safe, composable capabilities (observe, analyze, remediate, escalate)
 3. **A comprehensive audit trail**: every decision logged, every action traced
 4. **A team confident in autonomous reasoning**: humans understand the kernel, trust its decisions, can explain them to others

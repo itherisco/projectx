@@ -11,9 +11,7 @@ include("../persistence/Persistence.jl")
 using .Kernel
 using .Persistence
 
-# Global registry and capability lookup
-global CAPABILITY_REGISTRY = Dict{String, Dict{String, Any}}()
-global UNSAFE_MODE = false
+# Global registry (no UNSAFE_MODE - kernel sovereignty cannot be bypassed)
 
 """
     load_registry(registry_file::String)
@@ -38,9 +36,9 @@ Default permission handler: allow "low" risk, deny "high" and "medium".
 Can be overridden with --unsafe flag.
 """
 function default_permission_handler(risk::String)::Bool
-    if UNSAFE_MODE
-        return true  # Allow all in unsafe mode
-    end
+    # Security: Never bypass sovereignty - always use proper risk assessment
+    # This function provides a default implementation but the Kernel
+    # performs its own risk assessment independently
     
     return risk == "low"  # Only allow low-risk by default
 end
@@ -106,10 +104,11 @@ end
     run_harness(cycles::Int=20; unsafe::Bool=false, registry_path::String="registry/capability_registry.json")
 Main entry point: initialize kernel, load capabilities, run event loop.
 """
-function run_harness(cycles::Int=20; unsafe::Bool=false, registry_path::String="registry/capability_registry.json")
-    global UNSAFE_MODE = unsafe
+function run_harness(cycles::Int=20; registry_path::String="registry/capability_registry.json")
+    # SECURITY: No unsafe parameter - kernel sovereignty cannot be bypassed
+    # All actions must go through proper Kernel approval
     
-    @info "=== Adaptive Kernel Harness ===" cycles unsafe
+    @info "=== Adaptive Kernel Harness ===" cycles
     
     # Initialize persistence
     init_persistence()

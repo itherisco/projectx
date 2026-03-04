@@ -1,12 +1,15 @@
 🎉 ADAPTIVE KERNEL: DELIVERED
 ================================
 
-You now have a production-ready cognitive kernel for building safe, auditable, and adaptive systems.
+⚠️ **SECURITY NOTICE**: This is a research prototype. Security hardening is in progress.
+
+You now have a cognitive kernel for building safe, auditable, and adaptive systems.
+**Status**: Security hardening in progress (P0 issues addressed). Not for production use without security review.
 
 📦 WHAT YOU RECEIVED
 ====================
 
-✅ Kernel (278 lines | Julia) — deterministic reasoning engine
+✅ Kernel (1790 lines | Julia) — deterministic reasoning engine
 ✅ 4 Capabilities — observe_cpu, analyze_logs, write_file, safe_shell
 ✅ Persistence — append-only JSONL event audit trail
 ✅ Harness — event loop orchestrator with CLI
@@ -18,9 +21,9 @@ You now have a production-ready cognitive kernel for building safe, auditable, a
 📊 KEY METRICS
 ==============
 
-Kernel size:           278 lines (under 400-line limit) ✓
-Decision latency:      <1ms per cycle
-Memory per entry:      ~1KB (5000-entry cap)
+Kernel size:           1790 lines
+Decision latency:      See benchmark results
+Memory per entry:      ~1KB (1000-entry cap - MAX_EPISODIC_MEMORY)
 Dependencies:          1 (JSON only)
 Test coverage:         Unit + integration
 Audit trail:           100% immutable (JSONL)
@@ -29,7 +32,7 @@ Safety level:          High-risk actions require permission (default: DENY)
 🏗️ ARCHITECTURE PRINCIPLES
 ===========================
 
-1. Kernel ≤ 400 lines: fully auditable, no hidden heuristics
+1. Kernel is 1790 lines: fully auditable, no hidden heuristics
 2. Capabilities: plug-and-play modules with meta() + execute() interface
 3. Registry: metadata-only declarations (cost, risk, reversibility)
 4. Determinism: no randomness in reasoning → reproducible decisions

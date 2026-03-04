@@ -1,0 +1,715 @@
+# ============================================================
+itheris 
+# Multi-Agent Architecture with Situational Awareness
+# ============================================================
+
+using Pkg
+for pkg in ["Random", "Dates", "UUIDs", "Logging", "Serialization", "JSON", "ZMQ", "Statistics", "LinearAlgebra"]
+    try
+        Base.require(Main, Symbol(pkg))
+    catch
+        Pkg.add(pkg)
+        Base.require(Main, Symbol(pkg))
+    end
+end
+
+using Random, Dates, UUIDs, Logging, Serialization, JSON, ZMQ, Statistics, LinearAlgebra
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+const CENTRAL_HUB = "tcp://127.0.0.1:5555"
+const SENSOR_PORT = "tcp://127.0.0.1:5556"
+const ACTUATOR_PORT = "tcp://127.0.0.1:5557"
+const MEMORY_FILE = "itheris_persistent_memory.bin"
+const LOG_FILE = "itheris_operations.log"
+
+# System parameters
+const WORLD_BUFFER_SIZE = 50
+const DECISION_CONFIDENCE_THRESHOLD = 0.75f0
+const MAX_ACCEPTABLE_RISK = 0.65f0
+const CRITICAL_SEVERITY_THRESHOLD = 0.8f0
+const REASONING_MAX_STEPS = 10
+
+# ============================================================
+# DATA STRUCTURES - ITHERIS MEMORY HIERARCHY
+# ============================================================
+
+# Sensory perception from the environment
+mutable struct EnvironmentState
+    timestamp::DateTime
+    sensors::Dict{String, Any}
+    threats::Vector{Dict}
+    system_health::Dict{String, Float32}
+    situational_context::String
+end
+
+# Goal-oriented task representation
+mutable struct Mission
+    id::String
+    description::String
+    priority::Float32
+    risk_assessment::Float32
+    confidence::Float32
+    status::String  # "pending", "active", "completed", "aborted"
+    created_at::DateTime
+    dependencies::Vector{String}
+end
+
+# Action plan with risk/reward analysis
+mutable struct ActionPlan
+    action_type::String
+    parameters::Dict{String, Any}
+    estimated_risk::Float32
+    estimated_reward::Float32
+    requires_approval::Bool
+    execution_order::Int
+end
+
+# Hierarchical memory system (Main + Archival)
+mutable struct CognitiveMemory
+    # Main memory (active context)
+    current_environment::EnvironmentState
+    active_missions::Vector{Mission}
+    recent_decisions::Vector{Dict}
+    
+    # Archival memory (long-term storage)
+    historical_patterns::Dict{String, Any}
+    learned_preferences::Dict{String, Any}
+    performance_metrics::Dict{String, Float32}
+    
+    # Meta-cognition
+    reasoning_trace::Vector{String}
+    self_diagnostic::Dict{String, Any}
+end
+
+# ============================================================
+# MEMORY MANAGEMENT - PERSISTENT STORAGE
+# ============================================================
+
+function load_cognitive_memory()
+    if isfile(MEMORY_FILE)
+        try
+            return open(MEMORY_FILE) do io
+                deserialize(io)
+            end
+        catch e
+            @warn "Failed to load memory, initializing fresh" exception=e
+        end
+    end
+    
+    # Initialize new memory
+    CognitiveMemory(
+        EnvironmentState(now(), Dict(), Dict[], Dict{String, Float32}(), "initializing"),
+        Mission[],
+        Dict[],
+        Dict{String, Any}(),
+        Dict{String, Any}("user_preferences" => Dict()),
+        Dict{String, Float32}("uptime" => 0.0f0, "decisions_made" => 0.0f0),
+        String[],
+        Dict{String, Any}("status" => "healthy")
+    )
+end
+
+function persist_memory(memory::CognitiveMemory)
+    try
+        open(MEMORY_FILE, "w") do io
+            serialize(io, memory)
+        end
+    catch e
+        @error "Failed to persist memory" exception=e
+    end
+end
+
+const COGNITIVE_MEMORY = load_cognitive_memory()
+
+# ============================================================
+# COMMUNICATION PROTOCOL - ITHERIS MESSAGE FORMAT
+# ============================================================
+
+function create_message(sender::String, recipient::String, msg_type::String, payload::Any; priority::String="normal")
+    JSON.json(Dict(
+        "id" => string(uuid4()),
+        "timestamp" => string(now()),
+        "sender" => sender,
+        "recipient" => recipient,
+        "type" => msg_type,
+        "priority" => priority,
+        "payload" => payload
+    ))
+end
+
+function log_operation(component::String, action::String, details::Dict)
+    entry = "[$(now())] [$component] $action: $(JSON.json(details))"
+    @info entry
+    
+    try
+        open(LOG_FILE, "a") do io
+            println(io, entry)
+        end
+    catch e
+        @warn "Failed to write to log file" exception=e
+    end
+end
+
+# ============================================================
+# CENTRAL HUB - ORCHESTRATION BACKBONE
+# ============================================================
+
+function run_central_hub()
+    ctx = Context()
+    router = Socket(ctx, ROUTER)
+    bind(router, CENTRAL_HUB)
+    
+    @info "═══════════════════════════════════════════════════"
+    @info "   ITHERIS CENTRAL HUB ONLINE"
+    @info "   Orchestrating: Sensors → Reasoning → Actuators"
+    @info "═══════════════════════════════════════════════════"
+
+    message_count = 0
+    
+    try
+        while true
+            msg = recv_multipart(router)
+            identity = msg[1]
+            data = JSON.parse(String(msg[end]))
+            message_count += 1
+            
+            # Route based on message type
+            if data["type"] == "SENSOR_DATA"
+                # Update environmental awareness
+                COGNITIVE_MEMORY.current_environment = EnvironmentState(
+                    now(),
+                    data["payload"],
+                    get(data["payload"], "threats", Dict[]),
+                    get(data["payload"], "health", Dict{String, Float32}()),
+                    get(data["payload"], "context", "operational")
+                )
+                persist_memory(COGNITIVE_MEMORY)
+                
+                # Forward to reasoning engine
+                send_multipart(router, [
+                    Vector{UInt8}("REASONING_ENGINE"),
+                    UInt8[],
+                    Vector{UInt8}(create_message("CENTRAL_HUB", "REASONING_ENGINE", "ANALYZE", data["payload"]))
+                ])
+                
+            elseif data["type"] == "DECISION"
+                # Log decision to memory
+                push!(COGNITIVE_MEMORY.recent_decisions, data["payload"])
+                if length(COGNITIVE_MEMORY.recent_decisions) > 20
+                    popfirst!(COGNITIVE_MEMORY.recent_decisions)
+                end
+                persist_memory(COGNITIVE_MEMORY)
+                
+                # Route to appropriate handler
+                target = data["payload"]["requires_approval"] ? "HUMAN_INTERFACE" : "ACTUATOR_CONTROL"
+                send_multipart(router, [
+                    Vector{UInt8}(target),
+                    UInt8[],
+                    Vector{UInt8}(JSON.json(data))
+                ])
+                
+            elseif data["type"] == "MEMORY_UPDATE"
+                # Archive learned patterns
+                merge!(COGNITIVE_MEMORY.historical_patterns, data["payload"])
+                persist_memory(COGNITIVE_MEMORY)
+                
+            elseif data["type"] == "STATUS_REQUEST"
+                # Respond with system status
+                status = Dict(
+                    "messages_processed" => message_count,
+                    "active_missions" => length(COGNITIVE_MEMORY.active_missions),
+                    "memory_health" => COGNITIVE_MEMORY.self_diagnostic["status"],
+                    "uptime" => COGNITIVE_MEMORY.performance_metrics["uptime"]
+                )
+                send_multipart(router, [
+                    identity,
+                    UInt8[],
+                    Vector{UInt8}(create_message("CENTRAL_HUB", data["sender"], "STATUS_RESPONSE", status))
+                ])
+            end
+            
+            # Periodic memory persistence
+            if message_count % 50 == 0
+                persist_memory(COGNITIVE_MEMORY)
+            end
+        end
+    finally
+        close(router)
+        close(ctx)
+        persist_memory(COGNITIVE_MEMORY)
+    end
+end
+
+# ============================================================
+# SENSOR ARRAY - ENVIRONMENTAL PERCEPTION
+# ============================================================
+
+function simulate_sensor_fusion()
+    # Simulates multi-modal sensor inputs (vision, audio, telemetry)
+    cpu_load = mean(rand(0.15:0.01:0.95, 3))
+    memory_usage = rand(0.25:0.01:0.90)
+    disk_io = rand(0.1:0.01:0.6)
+    network_latency = rand(10.0:1.0:200.0)
+    
+    # Environmental context
+    file_count = length(readdir("."))
+    process_count = rand(50:200)
+    
+    # Threat detection (simulated)
+    threats = Dict[]
+    if cpu_load > 0.85
+        push!(threats, Dict(
+            "type" => "resource_exhaustion",
+            "severity" => cpu_load,
+            "source" => "cpu",
+            "recommendation" => "throttle_processes"
+        ))
+    end
+    
+    if memory_usage > 0.80
+        push!(threats, Dict(
+            "type" => "memory_pressure",
+            "severity" => memory_usage,
+            "source" => "ram",
+            "recommendation" => "clear_cache"
+        ))
+    end
+    
+    # Calculate overall system severity
+    severity = clamp((cpu_load + memory_usage + disk_io) / 3, 0, 1)
+    
+    Dict(
+        "cpu_load" => cpu_load,
+        "memory_usage" => memory_usage,
+        "disk_io" => disk_io,
+        "network_latency" => network_latency,
+        "file_count" => file_count,
+        "process_count" => process_count,
+        "threats" => threats,
+        "overall_severity" => severity,
+        "context" => severity > 0.7 ? "critical" : severity > 0.5 ? "elevated" : "normal",
+        "health" => Dict{String, Float32}(
+            "computational" => Float32(1 - cpu_load),
+            "storage" => Float32(1 - disk_io),
+            "connectivity" => Float32(clamp(1 - network_latency/200, 0, 1))
+        )
+    )
+end
+
+function run_sensor_array()
+    ctx = Context()
+    sock = Socket(ctx, DEALER)
+    ZMQ.set_identity(sock, "SENSOR_ARRAY")
+    connect(sock, CENTRAL_HUB)
+    
+    @info "[SENSOR ARRAY] Multi-modal perception online"
+    @info "  → Monitoring: CPU, Memory, I/O, Network, Threats"
+
+    cycle = 0
+    try
+        while true
+            sleep(2.5)  # Sensor fusion cycle
+            cycle += 1
+            
+            sensor_data = simulate_sensor_fusion()
+            
+            send(sock, create_message(
+                "SENSOR_ARRAY",
+                "CENTRAL_HUB",
+                "SENSOR_DATA",
+                sensor_data,
+                priority = sensor_data["context"] == "critical" ? "high" : "normal"
+            ))
+            
+            if cycle % 10 == 0
+                @info "[SENSOR] Status" cycle=cycle severity=sensor_data["overall_severity"]
+            end
+        end
+    finally
+        close(sock)
+        close(ctx)
+    end
+end
+
+# ============================================================
+# REASONING ENGINE - COGNITIVE PROCESSING
+# ============================================================
+
+function assess_mission_urgency(environment::EnvironmentState)
+    missions = Mission[]
+    
+    # Generate missions based on environmental state
+    severity = get(environment.sensors, "overall_severity", 0.0)
+    
+    if severity > CRITICAL_SEVERITY_THRESHOLD
+        push!(missions, Mission(
+            string(uuid4()),
+            "Critical system stabilization required",
+            Float32(severity),
+            Float32(severity * 0.8),
+            0.85f0,
+            "pending",
+            now(),
+            String[]
+        ))
+    elseif severity > 0.6
+        push!(missions, Mission(
+            string(uuid4()),
+            "Optimize resource allocation",
+            Float32(severity * 0.7),
+            Float32(severity * 0.5),
+            0.70f0,
+            "pending",
+            now(),
+            String[]
+        ))
+    end
+    
+    # Threat-specific missions
+    for threat in environment.threats
+        if threat["severity"] > 0.7
+            push!(missions, Mission(
+                string(uuid4()),
+                "Mitigate $(threat["type"]): $(threat["recommendation"])",
+                Float32(threat["severity"]),
+                Float32(threat["severity"] * 0.6),
+                0.75f0,
+                "pending",
+                now(),
+                String[]
+            ))
+        end
+    end
+    
+    missions
+end
+
+function generate_action_plan(mission::Mission)
+    # ReAct-style planning: Reason → Act → Observe
+    plans = ActionPlan[]
+    
+    if contains(lowercase(mission.description), "critical")
+        # High-priority, low-risk actions first
+        push!(plans, ActionPlan(
+            "LOG_CRITICAL_EVENT",
+            Dict("mission_id" => mission.id, "details" => mission.description),
+            0.05f0,
+            0.3f0,
+            false,
+            1
+        ))
+        
+        push!(plans, ActionPlan(
+            "ALERT_OPERATOR",
+            Dict("message" => mission.description, "urgency" => mission.priority),
+            0.1f0,
+            0.8f0,
+            false,
+            2
+        ))
+        
+        push!(plans, ActionPlan(
+            "EXECUTE_MITIGATION",
+            Dict("strategy" => "resource_rebalancing"),
+            0.6f0,
+            0.9f0,
+            true,  # Requires human approval
+            3
+        ))
+    else
+        # Standard optimization
+        push!(plans, ActionPlan(
+            "ANALYZE_PATTERNS",
+            Dict("timeframe" => "last_hour"),
+            0.1f0,
+            0.5f0,
+            false,
+            1
+        ))
+        
+        push!(plans, ActionPlan(
+            "OPTIMIZE_PERFORMANCE",
+            Dict("target" => "resource_efficiency"),
+            0.3f0,
+            0.7f0,
+            false,
+            2
+        ))
+    end
+    
+    sort(plans, by = p -> (p.execution_order, p.estimated_risk - p.estimated_reward))
+end
+
+function run_reasoning_engine()
+    ctx = Context()
+    sock = Socket(ctx, DEALER)
+    ZMQ.set_identity(sock, "REASONING_ENGINE")
+    connect(sock, CENTRAL_HUB)
+    
+    @info "[REASONING ENGINE] Cognitive processing online"
+    @info "  → ReAct Pattern: Observe → Reason → Plan → Decide"
+
+    reasoning_cycles = 0
+    
+    try
+        while true
+            msg = JSON.parse(String(recv(sock)))
+            reasoning_cycles += 1
+            
+            # Clear reasoning trace for new cycle
+            empty!(COGNITIVE_MEMORY.reasoning_trace)
+            push!(COGNITIVE_MEMORY.reasoning_trace, "Cycle $reasoning_cycles: Received sensor data")
+            
+            # STEP 1: Assess situation and generate missions
+            COGNITIVE_MEMORY.active_missions = assess_mission_urgency(COGNITIVE_MEMORY.current_environment)
+            push!(COGNITIVE_MEMORY.reasoning_trace, "Generated $(length(COGNITIVE_MEMORY.active_missions)) missions")
+            
+            if isempty(COGNITIVE_MEMORY.active_missions)
+                push!(COGNITIVE_MEMORY.reasoning_trace, "No urgent missions detected - maintaining surveillance")
+                continue
+            end
+            
+            # STEP 2: Select highest priority mission
+            mission = COGNITIVE_MEMORY.active_missions[argmax([m.priority for m in COGNITIVE_MEMORY.active_missions])]
+            push!(COGNITIVE_MEMORY.reasoning_trace, "Selected mission: $(mission.description)")
+            
+            # STEP 3: Generate action plan
+            action_plan = generate_action_plan(mission)
+            push!(COGNITIVE_MEMORY.reasoning_trace, "Generated $(length(action_plan)) action steps")
+            
+            # STEP 4: Select optimal action
+            best_action = action_plan[1]
+            
+            # STEP 5: Make decision with confidence assessment
+            decision = Dict(
+                "mission_id" => mission.id,
+                "mission_description" => mission.description,
+                "action_type" => best_action.action_type,
+                "parameters" => best_action.parameters,
+                "risk_level" => best_action.estimated_risk,
+                "confidence" => mission.confidence,
+                "requires_approval" => best_action.requires_approval || 
+                                      best_action.estimated_risk > MAX_ACCEPTABLE_RISK,
+                "reasoning_trace" => copy(COGNITIVE_MEMORY.reasoning_trace)
+            )
+            
+            # Update metrics
+            COGNITIVE_MEMORY.performance_metrics["decisions_made"] = 
+                get(COGNITIVE_MEMORY.performance_metrics, "decisions_made", 0.0f0) + 1.0f0
+            
+            log_operation("REASONING_ENGINE", "DECISION_MADE", Dict(
+                "action" => best_action.action_type,
+                "risk" => best_action.estimated_risk,
+                "confidence" => mission.confidence
+            ))
+            
+            @info "[REASONING] Decision" action=best_action.action_type risk=best_action.estimated_risk confidence=mission.confidence
+            
+            # Send decision
+            send(sock, create_message(
+                "REASONING_ENGINE",
+                "CENTRAL_HUB",
+                "DECISION",
+                decision
+            ))
+        end
+    finally
+        close(sock)
+        close(ctx)
+    end
+end
+
+# ============================================================
+# HUMAN INTERFACE - APPROVAL & OVERSIGHT
+# ============================================================
+
+function run_human_interface()
+    ctx = Context()
+    sock = Socket(ctx, DEALER)
+    ZMQ.set_identity(sock, "HUMAN_INTERFACE")
+    connect(sock, CENTRAL_HUB)
+    
+    @info "[HUMAN INTERFACE] Oversight system online"
+    @info "  → High-risk actions require human approval"
+
+    try
+        while true
+            msg = JSON.parse(String(recv(sock)))
+            payload = msg["payload"]
+            
+            println("\n" * "="^60)
+            println("⚠  HUMAN APPROVAL REQUIRED")
+            println("="^60)
+            println("Mission: $(payload["mission_description"])")
+            println("Action:  $(payload["action_type"])")
+            println("Risk:    $(round(payload["risk_level"] * 100, digits=1))%")
+            println("Confidence: $(round(payload["confidence"] * 100, digits=1))%")
+            println("\nReasoning Trace:")
+            for (i, step) in enumerate(payload["reasoning_trace"])
+                println("  $i. $step")
+            end
+            println("="^60)
+            print("\nApprove this action? (y/n): ")
+            
+            response = readline()
+            
+            if lowercase(strip(response)) == "y"
+                println("✓ Action approved by operator")
+                
+                approved_payload = merge(payload, Dict("approval_status" => "approved"))
+                send(sock, create_message(
+                    "HUMAN_INTERFACE",
+                    "ACTUATOR_CONTROL",
+                    "APPROVED",
+                    approved_payload
+                ))
+                
+                log_operation("HUMAN_INTERFACE", "APPROVED", Dict(
+                    "action" => payload["action_type"],
+                    "mission" => payload["mission_id"]
+                ))
+            else
+                println("✗ Action denied by operator")
+                log_operation("HUMAN_INTERFACE", "DENIED", Dict(
+                    "action" => payload["action_type"],
+                    "mission" => payload["mission_id"]
+                ))
+            end
+        end
+    finally
+        close(sock)
+        close(ctx)
+    end
+end
+
+# ============================================================
+# ACTUATOR CONTROL - EXECUTION LAYER
+# ============================================================
+
+function execute_action(action_type::String, parameters::Dict)
+    @info "[ACTUATOR] Executing: $action_type"
+    
+    if action_type == "LOG_CRITICAL_EVENT"
+        open("itheris_critical_events.log", "a") do io
+            println(io, "[$(now())] CRITICAL: $(parameters["details"])")
+        end
+        println("📝 Critical event logged")
+        
+    elseif action_type == "ALERT_OPERATOR"
+        println("\n🚨 ALERT: $(parameters["message"])")
+        println("   Urgency: $(round(parameters["urgency"] * 100, digits=1))%\n")
+        
+    elseif action_type == "EXECUTE_MITIGATION"
+        println("🔧 Executing mitigation strategy: $(parameters["strategy"])")
+        sleep(1)  # Simulate execution time
+        println("✓ Mitigation complete")
+        
+    elseif action_type == "ANALYZE_PATTERNS"
+        println("🔍 Analyzing patterns over $(parameters["timeframe"])")
+        sleep(0.5)
+        
+    elseif action_type == "OPTIMIZE_PERFORMANCE"
+        println("⚡ Optimizing: $(parameters["target"])")
+        sleep(0.8)
+        
+    else
+        @warn "Unknown action type: $action_type"
+    end
+end
+
+function run_actuator_control()
+    ctx = Context()
+    sock = Socket(ctx, DEALER)
+    ZMQ.set_identity(sock, "ACTUATOR_CONTROL")
+    connect(sock, CENTRAL_HUB)
+    
+    @info "[ACTUATOR CONTROL] Execution layer online"
+    @info "  → Ready to execute approved actions"
+
+    actions_executed = 0
+    
+    try
+        while true
+            msg = JSON.parse(String(recv(sock)))
+            
+            # Only execute approved actions
+            if msg["type"] != "DECISION" && msg["type"] != "APPROVED"
+                continue
+            end
+            
+            payload = msg["payload"]
+            
+            # Execute the action
+            execute_action(payload["action_type"], payload["parameters"])
+            actions_executed += 1
+            
+            log_operation("ACTUATOR_CONTROL", "EXECUTED", Dict(
+                "action" => payload["action_type"],
+                "count" => actions_executed
+            ))
+            
+            # Send completion acknowledgment
+            send(sock, create_message(
+                "ACTUATOR_CONTROL",
+                "CENTRAL_HUB",
+                "MEMORY_UPDATE",
+                Dict(
+                    "action_completed" => payload["action_type"],
+                    "timestamp" => string(now()),
+                    "success" => true
+                )
+            ))
+        end
+    finally
+        close(sock)
+        close(ctx)
+    end
+end
+
+# ============================================================
+# SYSTEM LAUNCHER
+# ============================================================
+
+function launch_itheris()
+    println("\n" * "="^60)
+    println("  ███╗   ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗")
+    println("  ████╗  ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝")
+    println("  ██╔██╗ ██║███████║██████╔╝██║   ██║██║███████╗")
+    println("  ██║╚██╗██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║")
+    println("  ██║ ╚████║██║  ██║██║  ██║ ╚████╔╝ ██║███████║")
+    println("  ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝")
+    println("="^60)
+    println("  ITHERIS-Inspired Autonomous System v7.0")
+    println("  Architecture: Multi-Agent Cognitive Framework")
+    println("="^60)
+    println("\nInitializing subsystems...")
+    println("  ✓ Cognitive Memory: Loaded")
+    println("  ✓ Central Hub: Starting")
+    println("  ✓ Sensor Array: Starting")
+    println("  ✓ Reasoning Engine: Starting")
+    println("  ✓ Human Interface: Starting")
+    println("  ✓ Actuator Control: Starting")
+    println("\nSystem Status: OPERATIONAL")
+    println("="^60 * "\n")
+    
+    @async run_central_hub()
+    sleep(0.5)
+    @async run_sensor_array()
+    @async run_reasoning_engine()
+    @async run_human_interface()
+    @async run_actuator_control()
+    
+    # Keep main thread alive
+    wait(Condition())
+end
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    launch_itheris()
+end

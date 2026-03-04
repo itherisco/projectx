@@ -346,7 +346,7 @@ Validate a JWT token using the configured secret.
 """
 function validate_token(token::String)::Bool
     if !is_auth_enabled()
-        return true  # Auth disabled, allow all
+        return false  # Auth disabled - fail closed for security
     end
     
     secret = get_jwt_secret()
@@ -373,8 +373,10 @@ Execute a function only if authentication succeeds.
 Throws AuthenticationError if authentication fails.
 """
 function authenticated_fallback(f::Function, token::String)
+    # SECURITY: Fail-closed - require authentication even if auth appears disabled
+    # This ensures consistent security posture
     if !is_auth_enabled()
-        return f()  # Auth disabled, execute directly
+        throw(InvalidTokenError("Authentication is required. Auth system misconfiguration detected."))
     end
     
     if isempty(token) || !authenticate_request(token)
@@ -395,8 +397,9 @@ function with_authentication(
     token::String, 
     on_auth_fail::Function = () -> throw(InvalidTokenError("Authentication failed"))
 )
+    # SECURITY: Fail-closed - require authentication even if auth appears disabled
     if !is_auth_enabled()
-        return f()  # Auth disabled, execute directly
+        return on_auth_fail()  # Treat disabled auth as auth failure
     end
     
     if isempty(token) || !authenticate_request(token)
@@ -413,8 +416,9 @@ Require authentication for the current operation.
 Throws an error if authentication fails.
 """
 function require_auth(token::String)
+    # SECURITY: Fail-closed - require authentication even if auth appears disabled
     if !is_auth_enabled()
-        return  # Auth disabled, allow
+        throw(InvalidTokenError("Authentication is required. Auth system misconfiguration detected."))
     end
     
     if isempty(token) || !authenticate_request(token)

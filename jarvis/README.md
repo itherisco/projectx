@@ -1,7 +1,7 @@
 # Project Jarvis - Neuro-Symbolic Autonomous System
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Julia](https://img.shields.io/badge/Julia-1.10+-9558B2)
+![Julia](https://img.shields.io/badge/Julia-1.8+-9558B2)
 ![Status](https://img.shields.io/badge/status-Active-green)
 
 ## Overview
@@ -301,7 +301,7 @@ The system integrates existing ProjectX components:
 
 ## Requirements
 
-- Julia 1.10+
+- Julia 1.8+
 - Flux.jl (Neural Engine)
 - HTTP.jl (API calls)
 - JSON.jl (Serialization)

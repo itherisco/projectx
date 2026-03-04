@@ -1,0 +1,21 @@
+use crate::protocol::*;
+use chrono::Utc;
+
+pub fn validate_envelope(env: &Envelope) -> Result<(), String> {
+    // Time sanity (±5 minutes)
+    let now = Utc::now();
+    let delta = now.signed_duration_since(env.timestamp).num_minutes().abs();
+    if delta > 5 {
+        return Err("Timestamp out of bounds".into());
+    }
+
+    // Identity sanity
+    match env.sender {
+        Identity::JuliaReasoner |
+        Identity::PythonExplorer |
+        Identity::Human |
+        Identity::ToolExecutor => {}
+    }
+
+    Ok(())
+}

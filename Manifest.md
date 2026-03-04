@@ -4,7 +4,7 @@
 # Evolution from ITHERIS Brain to Jarvis-Level Personal Assistant
 # 
 # Author: Lead Architect
-# Julia Version: 1.10+
+# Julia Version: 1.8+
 # Created: 2026-02-16
 
 # ============================================================================

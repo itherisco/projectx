@@ -116,10 +116,10 @@ end
 
 # Environment variable for flow integrity secret
 const _FLOW_INTEGRITY_SECRET_ENV = "JARVIS_FLOW_INTEGRITY_SECRET"
-const _DEFAULT_FLOW_SECRET = Vector{UInt8}("jarvis-flow-default-insecure-change-me")
 
 """
     _get_flow_integrity_secret - Get or generate the HMAC secret
+SECURITY: Throws an error if not configured - fail secure
 """
 function _get_flow_integrity_secret(provided::Union{Vector{UInt8}, Nothing})::Vector{UInt8}
     if provided !== nothing
@@ -127,8 +127,9 @@ function _get_flow_integrity_secret(provided::Union{Vector{UInt8}, Nothing})::Ve
     elseif haskey(ENV, _FLOW_INTEGRITY_SECRET_ENV)
         return Vector{UInt8}(ENV[_FLOW_INTEGRITY_SECRET_ENV])
     else
-        @warn "FlowIntegrity: Using default insecure secret. Set JARVIS_FLOW_INTEGRITY_SECRET in production!"
-        return _DEFAULT_FLOW_SECRET
+        error("SECURITY CRITICAL: JARVIS_FLOW_INTEGRITY_SECRET environment variable not set. " *
+              "System cannot operate without a configured flow integrity secret. " *
+              "Set this environment variable to a cryptographically secure random value.")
     end
 end
 

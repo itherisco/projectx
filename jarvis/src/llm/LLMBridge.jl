@@ -16,6 +16,9 @@ using Base.Threads: @spawn, Channel
 using MbedTLS
 using Unicode
 
+# Import InputSanitizer for security
+using InputSanitizer
+
 export 
     LLMConfig,
     LLMResponse,
@@ -583,6 +586,13 @@ function parse_user_intent(
     config::LLMConfig;
     conversation_history::Vector{ConversationEntry} = ConversationEntry[]
 )::LLMResponse
+    # SECURITY: Sanitize input using InputSanitizer module
+    sanitized = sanitize_input(user_input)
+    if is_malicious(sanitized)
+        error("SECURITY: InputSanitizer blocked malicious input: $(sanitized.errors)")
+    end
+    user_input = sanitized.clean_text  # Use sanitized version
+    
     # Build context from history
     history_text = ""
     if !isempty(conversation_history)
@@ -783,6 +793,13 @@ function generate_response(
     preferences::Vector{UserPreference} = UserPreference[],
     system_state::Dict{String, Any} = Dict()
 )::String
+    # SECURITY: Sanitize input using InputSanitizer module
+    sanitized = sanitize_input(user_input)
+    if is_malicious(sanitized)
+        error("SECURITY: InputSanitizer blocked malicious input: $(sanitized.errors)")
+    end
+    user_input = sanitized.clean_text  # Use sanitized version
+    
     # Build context strings
     history_text = isempty(conversation_history) ? "No recent context" : 
         join([c.user_message for c in conversation_history[max(1,end-2):end]], " | ")

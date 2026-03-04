@@ -61,9 +61,12 @@ import .Persistence: init_persistence, save_event, load_events
     
     perm_fn = (risk) -> risk != "high"
     
+    # Provide verify_fn for FlowIntegrity - required since UNSAFE_MODE was removed
+    verify_fn = (cap_id, token) -> Dict("success" => true, "verified" => true)
+    
     # Run 20 cycles deterministically
     for i in 1:20
-        kernel, action, result = Kernel.step_once(kernel, candidates, exec_fn, perm_fn)
+        kernel, action, result = Kernel.step_once(kernel, candidates, exec_fn, perm_fn; verify_fn=verify_fn)
 
         event = Dict(
             "timestamp" => string(now()),

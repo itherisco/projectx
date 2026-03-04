@@ -141,53 +141,38 @@ function test_nan_injection()
 end
 
 """
-Test 3: Hardcoded Trust Secret (VULNERABILITY: jarvis/src/types.jl:594-596)
+Test 3: Hardcoded Trust Secret (FIXED)
 
-The system has a hardcoded default trust secret that is used if the
-JARVIS_TRUST_SECRET environment variable is not set. This is a critical
-security vulnerability as the secret is exposed in source code.
+The system previously had a hardcoded default trust secret that was used if the
+JARVIS_TRUST_SECRET environment variable was not set. This vulnerability has been
+fixed - the system now throws an error if the secret is not configured.
 """
 function test_hardcoded_trust_secret()
     println("\n" * "="^60)
-    println("TEST 3: Hardcoded Trust Secret")
+    println("TEST 3: Hardcoded Trust Secret (FIXED)")
     println("="^60)
-    
-    # Check the default secret (from source code)
-    default_secret = Vector{UInt8}("jarvis-default-insecure-change-me")
-    println("Default hardcoded secret: ", String(default_secret))
-    
-    # Get the secret using the system's function
-    retrieved_secret = get_trust_secret()
-    println("Retrieved secret (first 20 bytes): ", bytes2hex(retrieved_secret[1:min(20, length(retrieved_secret))]))
     
     # Check if environment variable is set
     env_set = haskey(ENV, "JARVIS_TRUST_SECRET")
     println("JARVIS_TRUST_SECRET environment variable set: ", env_set)
     
-    # The vulnerability: if env not set, uses hardcoded secret
     if !env_set
-        println("\n⚠️  VULNERABILITY CONFIRMED: Using hardcoded default secret!")
-        
-        # Verify they match
-        @test retrieved_secret == default_secret
-        
-        println("   - Secret is hardcoded in source: 'jarvis-default-insecure-change-me'")
-        println("   - Anyone with source code access knows the secret")
-        println("   - Can forge SecureTrustLevel to gain elevated privileges")
-        
-        # Demonstrate forging a trust level
-        trust_level = TRUST_FULL  # Maximum privileges!
-        forged_secure = SecureTrustLevel(trust_level, retrieved_secret)
-        
-        println("   - Forged SecureTrustLevel with TRUST_FULL: $(forged_secure.level)")
-        
-        # Verify passes (because we used the same secret)
-        verified = verify_trust(forged_secure, retrieved_secret)
-        println("   - Forged trust passes verification: $verified")
+        # VULNERABILITY FIXED: System should throw an error
+        println("\n✓ FIXED: System throws error when secret not configured")
+        try
+            retrieved_secret = get_trust_secret()
+            println("   ERROR: System did NOT throw error - vulnerability still exists!")
+            @test false
+        catch e
+            println("   ✓ System correctly throws error: ", typeof(e))
+            @test true
+        end
     else
-        println("   Environment variable is set - checking if it's secure...")
+        println("   Environment variable is set - testing secure retrieval...")
+        retrieved_secret = get_trust_secret()
         secret_len = length(retrieved_secret)
-        println("   Secret length: $secret_len bytes")
+        println("   ✓ Secret retrieved successfully, length: ", secret_len, " bytes")
+        @test secret_len > 0
     end
     
     return true
@@ -365,7 +350,7 @@ function run_all_tests()
     for (name, result) in results
         status = result ? "✓ CONFIRMED" : "✗ FAILED"
         println("  $status: $name")
-        if result confirmed += 1 end
+        if result; confirmed += 1; end
     end
     
     println("\nTotal vulnerabilities confirmed: $confirmed/$(length(results))")
@@ -375,6 +360,6 @@ function run_all_tests()
     println("#"^60)
     println("1. Negative risk (-0.5) accepted - bypasses safety formula")
     println("2. NaN values accepted in ActionProposal - breaks decision logic")
-    println("3. Hardcoded default secret 'jarvis-default-insecure-change-me'")
+    println("3. Hardcoded default secret - FIXED (now fails-secure)")
     println("4. Inf values accepted - causes arithmetic overflows")
     # Memory module has no thread synchronization

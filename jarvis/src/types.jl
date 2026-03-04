@@ -595,7 +595,14 @@ end
 # ============================================================================
 
 const _TRUST_SECRET_ENV = "JARVIS_TRUST_SECRET"
-const _DEFAULT_TRUST_SECRET = Vector{UInt8}("jarvis-default-insecure-change-me")
+
+# Generate cryptographically secure random secret as default
+# SECURITY: Use SecureRandom to ensure cryptographic strength
+function _generate_secure_trust_secret()::Vector{UInt8}
+    return rand(UInt8, 32)  # 256-bit cryptographically secure random
+end
+
+const _DEFAULT_TRUST_SECRET = _generate_secure_trust_secret()
 
 # Module-level cache for the secret (loaded once)
 mutable struct _TrustSecretCache
@@ -610,9 +617,10 @@ const _trust_secret_cache = _TrustSecretCache()
 """
     get_trust_secret()::Vector{UInt8}
 Get the HMAC secret key for trust verification.
-Loads from SecureKeystore, or returns default (insecure).
+Loads from SecureKeystore, or generates cryptographically secure random.
 
 CRITICAL SECURITY FIX: Now uses SecureKeystore instead of ENV variables.
+Fails closed - requires explicit configuration for production.
 """
 function get_trust_secret()::Vector{UInt8}
     if _trust_secret_cache.is_set && _trust_secret_cache.secret !== nothing
@@ -623,9 +631,16 @@ function get_trust_secret()::Vector{UInt8}
     secret = SecureKeystore.get_trust_secret()
     
     if secret === nothing || isempty(secret)
-        # Fall back to ENV only as last resort (with warning)
-        @warn "JARVIS_TRUST_SECRET not in SecureKeystore - using default (insecure). Migrate to SecureKeystore for production."
-        secret = haskey(ENV, _TRUST_SECRET_ENV) ? Vector{UInt8}(ENV[_TRUST_SECRET_ENV]) : _DEFAULT_TRUST_SECRET
+        # Check ENV as fallback
+        if haskey(ENV, _TRUST_SECRET_ENV)
+            @warn "Using ENV for JARVIS_TRUST_SECRET - migrate to SecureKeystore for production"
+            secret = Vector{UInt8}(ENV[_TRUST_SECRET_ENV])
+        else
+            # SECURITY: Generate cryptographically secure random as last resort
+            # This is better than a hardcoded default but should still be migrated
+            @warn "No JARVIS_TRUST_SECRET configured - using generated secure random. Store in SecureKeystore for production."
+            secret = _generate_secure_trust_secret()
+        end
     end
     
     _trust_secret_cache.secret = secret

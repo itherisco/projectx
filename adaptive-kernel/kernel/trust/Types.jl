@@ -21,16 +21,19 @@ end
 
 # Environment variable for trust secret
 const _TRUST_SECRET_ENV = "JARVIS_TRUST_SECRET"
-const _DEFAULT_TRUST_SECRET = Vector{UInt8}("jarvis-default-insecure-change-me")
 
 """
     get_trust_secret()::Vector{UInt8}
 Get the HMAC secret key for trust verification.
+SECURITY: Throws an error if not configured - fail secure
 """
 function get_trust_secret()::Vector{UInt8}
-    return haskey(ENV, _TRUST_SECRET_ENV) ? 
-        Vector{UInt8}(ENV[_TRUST_SECRET_ENV]) : 
-        _DEFAULT_TRUST_SECRET
+    if !haskey(ENV, _TRUST_SECRET_ENV)
+        error("SECURITY CRITICAL: JARVIS_TRUST_SECRET environment variable not set. " *
+              "System cannot operate without a configured trust secret. " *
+              "Set this environment variable to a cryptographically secure random value.")
+    end
+    return Vector{UInt8}(ENV[_TRUST_SECRET_ENV])
 end
 
 """

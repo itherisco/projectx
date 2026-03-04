@@ -2,7 +2,7 @@
 
 ## Why Keep the Kernel Minimal?
 
-The adaptive kernel is intentionally limited to ≤400 lines: maintain world state, self metrics (confidence, energy, focus), priority-weighted goal scoring, and deterministic action selection via a simple heuristic (priority - cost * risk_penalty). This minimalism is not weakness—it is architectural strength.
+The adaptive kernel is intentionally designed with 1790 lines: maintain world state, self metrics (confidence, energy, focus), priority-weighted goal scoring, and deterministic action selection via a simple heuristic (priority - cost * risk_penalty). This design is intentional for comprehensive functionality.
 
 ### 1. **Auditability & Governance**
 
@@ -18,7 +18,7 @@ The kernel's decision logic uses no randomness—all choices flow from weights a
 
 ### 4. **Performance & Scaling**
 
-No ML inference, no searching vast action spaces. A single kernel cycle completes in <1ms on commodity hardware. You can run 1000s of independent kernel instances in parallel, each with its own world state and episodic memory. This scales to managing large fleets of heterogeneous robots or services.
+No ML inference, no searching vast action spaces. Kernel cycle performance varies by hardware; see benchmark results for latency data. You can run 1000s of independent kernel instances in parallel, each with its own world state and episodic memory. This scales to managing large fleets of heterogeneous robots or services.
 
 ### 5. **Domain-Agnostic Core**
 

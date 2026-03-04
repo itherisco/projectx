@@ -112,6 +112,97 @@ struct ProcessedSensory
 end
 
 # =============================================================================
+# SENSORY INPUT VALIDATION
+# =============================================================================
+
+"""
+    validate_sensory_input(input::SensoryInput)::Bool
+
+Validate sensory input for integrity and safety.
+Checks:
+1. Feature vectors are within expected bounds
+2. No NaN or Inf values
+3. Timestamp is reasonable (not in future, not too old)
+4. Source is recognized
+
+# Returns
+- `true` if valid, `false` otherwise
+"""
+function validate_sensory_input(input::SensoryInput)::Bool
+    # Validate source
+    valid_sources = [:camera, :microphone, :system, :user]
+    if input.source ∉ valid_sources
+        @warn "Invalid sensory source: $(input.source)"
+        return false
+    end
+    
+    # Validate timestamp (not in future, not older than 1 hour)
+    current_time = time()
+    if input.timestamp > current_time + 1.0  # Allow 1 second tolerance
+        @warn "Sensory input from future timestamp"
+        return false
+    end
+    if current_time - input.timestamp > 3600.0  # 1 hour max age
+        @warn "Sensory input too old: $(current_time - input.timestamp) seconds"
+        return false
+    end
+    
+    # Validate all feature vectors
+    for (name, features) in [
+        (:visual, input.visual_features),
+        (:auditory, input.auditory_features),
+        (:telemetry, input.telemetry_features)
+    ]
+        if !isempty(features)
+            # Check for NaN or Inf
+            if any(isnan, features) || any(isinf, features)
+                @warn "Invalid values in $name features"
+                return false
+            end
+            
+            # Check bounds (features should be reasonably bounded)
+            # Allow some tolerance for normalized features
+            if any(f -> f < -1000.0 || f > 1000.0, features)
+                @warn "Out-of-bounds values in $name features"
+                return false
+            end
+            
+            # Check for unreasonably large vectors (potential DoS)
+            if length(features) > 10000
+                @warn "Unreasonably large feature vector in $name: $(length(features))"
+                return false
+            end
+        end
+    end
+    
+    return true
+end
+
+"""
+    sanitize_sensory_input(input::SensoryInput)::SensoryInput
+
+Sanitize sensory input by clamping values and handling anomalies.
+Returns a cleaned copy of the input.
+"""
+function sanitize_sensory_input(input::SensoryInput)::SensoryInput
+    # Helper to sanitize a feature vector
+    function sanitize_features(features::Vector{Float32})::Vector{Float32}
+        # Replace NaN/Inf with 0
+        cleaned = Float32[isnan(f) || isinf(f) ? 0.0f0 : f for f in features]
+        # Clamp to reasonable bounds
+        return clamp.(cleaned, -1000.0f0, 1000.0f0)
+    end
+    
+    return SensoryInput(
+        sanitize_features(input.visual_features),
+        sanitize_features(input.auditory_features),
+        sanitize_features(input.telemetry_features),
+        input.timestamp,
+        input.source
+    )
+end
+
+# =============================================================================
 # Core Buffer Operations
 # =============================================================================
 
@@ -129,7 +220,16 @@ Handles backpressure with drop_oldest strategy.
 - `Bool`: True if successfully added, false on failure
 """
 function push_sensory!(buffer::SensoryBuffer, input::SensoryInput)
-    channel = _get_channel(buffer, input.source)
+    # SECURITY: Validate input before processing
+    if !validate_sensory_input(input)
+        @warn "Rejected invalid sensory input"
+        return false
+    end
+    
+    # Sanitize input to handle anomalies
+    sanitized_input = sanitize_sensory_input(input)
+    
+    channel = _get_channel(buffer, sanitized_input.source)
     
     try
         # Non-blocking put with drop_oldest behavior on full channel
@@ -141,7 +241,7 @@ function push_sensory!(buffer::SensoryBuffer, input::SensoryInput)
                 # Ignore if already taken
             end
         end
-        put!(channel, _extract_features(input))
+        put!(channel, _extract_features(sanitized_input))
         return true
     catch e
         @warn "Failed to push sensory input: $e"
@@ -567,6 +667,9 @@ export
     create_test_buffer,
     create_test_input,
     get_sample_rate_interval,
-    is_buffer_healthy
+    is_buffer_healthy,
+    # Added security validation
+    validate_sensory_input,
+    sanitize_sensory_input
 
 end # module

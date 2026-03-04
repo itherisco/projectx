@@ -256,7 +256,7 @@ julia --project=. -e 'include("capabilities/my_cap.jl"); using .MyCapability; pr
 ## Performance Notes
 
 - **Kernel cycle time**: ~1ms per step (no ML inference, pure heuristics)
-- **Memory growth**: ~1KB per episodic memory entry (5000-entry cap per kernel)
+- **Memory growth**: ~1KB per episodic memory entry (1000-entry cap - MAX_EPISODIC_MEMORY)
 - **Event log**: ~100-200 bytes per entry; rotate after 1Mtarget lines
 - **Parallel scalability**: Each kernel instance is independent; scale with N independent processes
 

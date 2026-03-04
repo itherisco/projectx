@@ -366,6 +366,20 @@ struct IntegrationObservation
     confidence::Float32
     
     IntegrationObservation() = new(0.0f0, 0.0f0, 0.0f0, 0.0f0, 0, 0, 1.0f0, 0.8f0)
+    
+    # Full constructor with all fields
+    function IntegrationObservation(
+        cpu_load::Float32,
+        memory_usage::Float32,
+        disk_io::Float32,
+        network_latency::Float32,
+        file_count::Int,
+        process_count::Int,
+        energy_level::Float32,
+        confidence::Float32
+    )
+        return new(cpu_load, memory_usage, disk_io, network_latency, file_count, process_count, energy_level, confidence)
+    end
 end
 
 """

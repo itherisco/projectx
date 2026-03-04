@@ -1,0 +1,63 @@
+import zmq
+import json
+import time
+
+# CONFIGURATION - Points to the Rust Sidecar/Gateway
+GATEWAY_ADDR = "tcp://127.0.0.1:5555"
+AGENT_ID = "HUMAN_SOVEREIGN"
+SECRET_KEY = "EMPIRE_SECRET_2026"
+
+def create_sovereign_packet(command, intent="ACT"):
+    """
+    Wraps human input in the Rust-required Law Protocol.
+    """
+    return {
+        "agent_id": AGENT_ID,
+        "intent": intent, 
+        "payload": command,
+        "confidence": 1.0,  # Human intent is absolute truth
+        "source_proof": "ROOT_OVERRIDE_AUTH", # Rust recognizes this as 'The Boss'
+        "timestamp": int(time.time())
+    }
+
+def start_terminal():
+    context = zmq.Context()
+    # Using DEALER to connect to the Rust Hub's ROUTER
+    socket = context.socket(zmq.DEALER)
+    socket.setsockopt(zmq.IDENTITY, AGENT_ID.encode())
+    socket.connect(GATEWAY_ADDR)
+
+    print("====================================================")
+    print("        ITHERIS: SOVEREIGN COMMAND INTERFACE        ")
+    print("        Status: AUTHENTICATED AS SOVEREIGN          ")
+    print("====================================================")
+
+    while True:
+        try:
+            # 1. Capture your directive
+            user_msg = input("\n[COMMAND] > ")
+            if user_msg.lower() in ["exit", "quit", "shutdown"]: break
+
+            # 2. Package it for the Rust Law Hub
+            packet = create_sovereign_packet(user_msg)
+            
+            # 3. Send through the Gateway
+            socket.send_json(packet)
+            print("Status: Sending through Rust Firewall...")
+
+            # 4. Receive response from Itheris (via Rust)
+            # Polling for 5 seconds to wait for Julia's reasoning
+            if socket.poll(5000):
+                response = socket.recv_json()
+                print(f"\n[ITHERIS] > {response.get('payload', 'Action Acknowledged')}")
+                print(f"[VERDICT] > {response.get('status', 'Lawfully Executed')}")
+            else:
+                print("\n[SYSTEM] > Rust Hub timed out. Check if Gateway is running.")
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"Connection Error: {e}")
+
+if __name__ == "__main__":
+    start_terminal()

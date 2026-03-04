@@ -27,6 +27,10 @@ using .SharedTypes: ReflectionEvent, IntentVector, ThoughtCycle, ThoughtCycleTyp
 include("observability/SystemObserver.jl")
 using .SysObserver
 
+# Import RustIPC for Julia-Rust interprocess communication
+include(joinpath(@__DIR__, "ipc", "RustIPC.jl"))
+using .RustIPC
+
 # Import SelfModel for dynamic confidence calibration ("Honest Uncertainty")
 # Include SelfModel directly as it defines its own module
 include(joinpath(@__DIR__, "..", "cognition", "metacognition", "SelfModel.jl"))
@@ -78,19 +82,23 @@ end
 
 """
     Kernel secret for signing authorization tokens
-    In production, this should be loaded from secure environment variable
+    In production, this MUST be loaded from secure environment variable
+    SECURITY: No default fallback - system fails securely if not configured
 """
 const _KERNEL_SECRET_ENV = "JARVIS_KERNEL_SECRET"
-const _DEFAULT_KERNEL_SECRET = Vector{UInt8}("jarvis-kernel-default-insecure-change-me")
 
 """
     get_kernel_secret()::Vector{UInt8}
 Get the Kernel's private secret for signing authorization tokens.
+SECURITY: Throws an error if not configured - fail secure
 """
 function get_kernel_secret()::Vector{UInt8}
-    return haskey(ENV, _KERNEL_SECRET_ENV) ? 
-        Vector{UInt8}(ENV[_KERNEL_SECRET_ENV]) : 
-        _DEFAULT_KERNEL_SECRET
+    if !haskey(ENV, _KERNEL_SECRET_ENV)
+        error("SECURITY CRITICAL: JARVIS_KERNEL_SECRET environment variable not set. " *
+              "Kernel cannot operate without a configured secret. " *
+              "Set this environment variable to a cryptographically secure random value.")
+    end
+    return Vector{UInt8}(ENV[_KERNEL_SECRET_ENV])
 end
 
 """
@@ -217,6 +225,8 @@ export Observation, KernelState, Goal, GoalState, WorldState, init_kernel, step_
        run_thought_cycle, ThoughtCycleType, _validate_kernel_metrics,
        # Decision types for sovereignty (legacy)
        APPROVED, DENIED, STOPPED, approve,
+       # Risk recalculation for independent verification
+       recalculate_risk, analyze_parameters_for_risk, RISK_LEVEL_MAP,
        # SOVEREIGNTY GATEWAY - Hardened Checkpoint exports
        AuthToken, SovereigntyViolation, KERNEL_THRESHOLD, calculate_risk, sign_approval,
        verify_token_signature, is_token_valid, get_kernel_secret, kernel_secret_is_set,
@@ -281,6 +291,9 @@ mutable struct KernelState
     # FlowIntegrity: Cryptographic token gate for sovereignty
     flow_gate::Union{FlowIntegrityGate, Nothing}
     
+    # RustIPC: Connection to Rust brain process  
+    ipc_connection::Union{RustIPC.KernelConnection, Nothing}
+    
     # Mutable for runtime updates only—not structural logic
     KernelState(cycle::Int, goals::Vector{Goal}, world::WorldState, active_goal_id::String) =
         new(Threads.Atomic{Int}(cycle), goals, 
@@ -293,7 +306,8 @@ mutable struct KernelState
             DENIED,  # Default to DENIED for security
             nothing,  # SystemObserver initialized separately
             SelfModel.SelfModelCore(),  # Initialize SelfModel for dynamic confidence
-            FlowIntegrityGate()  # FlowIntegrity gate (enabled for Sovereign AI)
+            FlowIntegrityGate(),  # FlowIntegrity gate (enabled for Sovereign AI)
+            nothing  # RustIPC connection initialized separately
         )
 end
 
@@ -418,6 +432,15 @@ function init_kernel(config::Dict)::KernelState
     # Initialize kernel state
     kernel = KernelState(0, goals, world, active_goal)
     kernel.system_observer = system_observer
+    
+    # Initialize RustIPC connection to brain process
+    kernel.ipc_connection = RustIPC.init()
+
+    if kernel.ipc_connection !== nothing
+        @info "RustIPC connection established to Itheris kernel"
+    else
+        @warn "RustIPC connection failed - running in fallback mode without brain verification"
+    end
     
     @info "Kernel initialized with SystemObserver" num_goals=length(goals) active_goal=active_goal
     return kernel
@@ -704,6 +727,83 @@ This is the single choke point for all execution approval.
 - `DENIED`: Action is not approved
 - `STOPPED`: System should stop entirely
 """
+
+# Risk recalculation for independent verification
+# Maps string risk levels to numeric values
+const RISK_LEVEL_MAP = Dict(
+    "low" => 0.2f0,
+    "medium" => 0.5f0,
+    "high" => 0.8f0,
+    "critical" => 1.0f0
+)
+
+"""
+    recalculate_risk(proposal::ActionProposal, kernel::KernelState)::Tuple{Float32, String}
+
+Independently recalculate risk level from capability registry.
+Returns (risk_level, source) tuple.
+
+This prevents attackers from manipulating risk by setting proposal.risk to 0.0.
+"""
+function recalculate_risk(proposal::ActionProposal, kernel::KernelState)::Tuple{Float32, String}
+    # Default risk if capability not found
+    default_risk = 0.5f0
+    
+    try
+        # Try to load capability registry
+        registry_path = joinpath(@__DIR__, "..", "registry", "capability_registry.json")
+        if isfile(registry_path)
+            registry_json = JSON.parsefile(registry_path)
+            
+            # Find matching capability
+            for cap in registry_json
+                if cap["id"] == proposal.capability_id
+                    risk_str = get(cap, "risk", "medium")
+                    registry_risk = get(RISK_LEVEL_MAP, risk_str, default_risk)
+                    
+                    # Analyze parameters for additional risk factors
+                    param_risk = analyze_parameters_for_risk(proposal)
+                    
+                    # Use the higher of registry risk or parameter analysis
+                    final_risk = max(registry_risk, param_risk)
+                    return (final_risk, "registry: $(proposal.capability_id)")
+                end
+            end
+        end
+    catch e
+        @warn "Failed to load capability registry" error=string(e)
+    end
+    
+    # Fallback: analyze parameters even if registry unavailable
+    param_risk = analyze_parameters_for_risk(proposal)
+    return (max(default_risk, param_risk), "fallback")
+end
+
+"""
+    analyze_parameters_for_risk(proposal::ActionProposal)::Float32
+
+Analyze proposal parameters for risk factors.
+"""
+function analyze_parameters_for_risk(proposal::ActionProposal)::Float32
+    # Default parameter risk
+    param_risk = 0.1f0
+    
+    # High-risk parameter patterns
+    high_risk_patterns = ["rm ", "sudo", "curl |", "wget |", "eval", "exec", "system("]
+    
+    # Check reasoning/comments for suspicious patterns
+    if isdefined(proposal, :reasoning) && proposal.reasoning !== nothing
+        reasoning_lower = lowercase(proposal.reasoning)
+        for pattern in high_risk_patterns
+            if occursin(pattern, reasoning_lower)
+                param_risk = max(param_risk, 0.7f0)
+            end
+        end
+    end
+    
+    return param_risk
+end
+
 function approve(kernel::KernelState, proposal::ActionProposal, world_state::Dict{String, Any})::Decision
     # P0: Fail-closed - default to DENIED for security
     kernel.last_decision = DENIED
@@ -714,8 +814,15 @@ function approve(kernel::KernelState, proposal::ActionProposal, world_state::Dic
         return DENIED
     end
     
-    # Parse risk level from proposal
-    risk_level = proposal.risk
+    # INDEPENDENT RISK RECALCULATION - Security critical!
+    # Do NOT trust proposal.risk - recalculate from capability registry
+    risk_level, risk_source = recalculate_risk(proposal, kernel)
+    
+    # Security check: If proposal claims lower risk than registry, flag as suspicious
+    if proposal.risk < risk_level * 0.5
+        @warn "Risk manipulation detected!" claimed=proposal.risk recalculated=risk_level
+        # Still use recalculated value but log the attempt
+    end
     
     # Evaluate based on self-metrics
     confidence = get(kernel.self_metrics, "confidence", 0.8f0)
@@ -1348,6 +1455,47 @@ Single cycle: observe → evaluate → decide → reflect.
 - permission_handler(risk)::Bool returns true if action is permitted.
 - Returns nothing for kernel when action is denied (fail-closed design)
 """
+
+# ============================================================================
+# Rust Kernel IPC Interface
+# ============================================================================
+
+"""
+    submit_to_rust(kernel::KernelState, thought::RustIPC.ThoughtCycle, signature::Vector{UInt8})::RustIPC.KernelResponse
+
+Submit a thought cycle to Rust kernel for sovereign verification.
+Returns approval/denial with cryptographic signature.
+"""
+function submit_to_rust(kernel::KernelState, thought::RustIPC.ThoughtCycle, signature::Vector{UInt8})::RustIPC.KernelResponse
+    if kernel.ipc_connection === nothing
+        return RustIPC.KernelResponse(false, "IPC not connected", UInt8[])
+    end
+    
+    try
+        RustIPC.submit_thought(kernel.ipc_connection, thought, signature)
+    catch e
+        @error "Failed to submit thought to Rust kernel" error=e
+        RustIPC.KernelResponse(false, "Submission failed: $e", UInt8[])
+    end
+end
+
+"""
+    check_rust_health(kernel::KernelState)::Bool
+
+Check if Rust kernel is alive and responding.
+"""
+function check_rust_health(kernel::KernelState)::Bool
+    if kernel.ipc_connection === nothing
+        return false
+    end
+    try
+        RustIPC.health_check(kernel.ipc_connection)
+    catch e
+        @error "Rust health check failed" error=e
+        false
+    end
+end
+
 function step_once(kernel::KernelState, capability_candidates::Vector{<:Any}, 
                    execute_fn::Function, permission_handler::Function;
                    verify_fn::Union{Function, Nothing}=nothing)::Union{Tuple{KernelState, ActionProposal, Dict}, Tuple{Nothing, ActionProposal, Dict}}
@@ -1369,12 +1517,14 @@ function step_once(kernel::KernelState, capability_candidates::Vector{<:Any},
     action = select_action(kernel, typed_candidates)
     
     # PERMISSION CHECK: Verify risk level
-    permitted = permission_handler(action.risk)
+    # Use get_risk_value to handle both Float32 and String risk types
+    risk_value = get_risk_value(action)
+    permitted = permission_handler(risk_value)
     
     if !permitted
         # P0: Fail-closed - denied actions should not execute or return valid kernel state
         # This prevents corrupted/invalid state from propagating
-        result = Dict(
+        result = Dict{String, Any}(
             "success" => false,
             "effect" => "Action denied by permission handler - fail-closed",
             "actual_confidence" => 0.0f0,
@@ -1412,10 +1562,37 @@ function step_once(kernel::KernelState, capability_candidates::Vector{<:Any},
     # FlowIntegrity enforced - token verification is mandatory
     try
         # Token-verified execution path (FlowIntegrity enabled)
-        if verify_fn !== nothing
-            result = verify_fn(action.capability_id, flow_token)
+        # SECURITY: Fail-closed if verify_fn not provided
+        if verify_fn === nothing
+            @error "FlowIntegrity violation: verify_fn not configured - fail-closed"
+            result = Dict{String, Any}(
+                "success" => false,
+                "effect" => "Execution blocked: FlowIntegrity not configured - fail-closed",
+                "actual_confidence" => 0.0f0,
+                "energy_cost" => action.predicted_cost,
+                "error" => "FlowIntegrity verify_fn not set"
+            )
         else
-            result = execute_fn(action.capability_id)
+            # Verify the token
+            verification_result = verify_fn(action.capability_id, flow_token)
+            # Ensure result is Dict{String, Any}
+            if !(verification_result isa Dict{String, Any})
+                verification_result = Dict{String, Any}(k => v for (k, v) in verification_result)
+            end
+            
+            # Check if verification succeeded
+            if get(verification_result, "success", false) == true
+                # Token verified - execute the capability
+                result = execute_fn(action.capability_id)
+            else
+                # Verification failed - fail closed
+                result = Dict{String, Any}(
+                    "success" => false,
+                    "effect" => "FlowIntegrity: Token verification failed - fail-closed",
+                    "actual_confidence" => 0.0f0,
+                    "energy_cost" => action.predicted_cost
+                )
+            end
         end
     catch e
         @error "Execution failed" error=e exception=(e, catch_backtrace())
@@ -1431,6 +1608,30 @@ function step_once(kernel::KernelState, capability_candidates::Vector{<:Any},
     
     # REFLECT: Update memory and self-metrics (even on execution failure)
     reflect!(kernel, action, result)
+    
+    # Submit thought cycle to Rust brain via IPC for verification
+    if kernel.ipc_connection !== nothing
+        try
+            # Create thought cycle from current action using RustIPC format
+            thought = RustIPC.ThoughtCycle(
+                "JULIA_ADAPTIVE",  # identity
+                action.capability_id,  # intent  
+                Dict("proposal_id" => action.proposal_id, "cycle" => kernel.cycle[]),
+                now(),
+                randstring(32)
+            )
+            
+            # Submit for verification (empty signature for now - could add Ed25519 later)
+            response = submit_to_rust(kernel, thought, UInt8[])
+            
+            if !response.approved
+                @warn "Rust kernel denied action" reason=response.reason
+                # Continue anyway - fallback to local FlowIntegrity
+            end
+        catch e
+            @debug "Failed to submit thought cycle to Rust" error=e
+        end
+    end
     
     kernel.last_action = action
     return kernel, action, result

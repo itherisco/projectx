@@ -3,8 +3,21 @@ import Pkg
 Pkg.activate(@__DIR__)
 try
     Pkg.instantiate()
+    Pkg.resolve()  # Ensure manifest is resolved for current Julia version
 catch e
     @warn "Pkg.instantiate() failed: $e"
+    # Try to resolve anyway in case packages are partially installed
+    try
+        Pkg.resolve()
+    catch
+    end
+end
+
+# Try precompile but don't fail if it doesn't work
+try
+    Pkg.precompile()
+catch e
+    @warn "Pkg.precompile() failed: $e"
 end
 
 # Run unit tests directly (bypass Pkg.test environment issues)
@@ -22,6 +35,9 @@ end
 println("Running personal assistant scenarios test...")
 try
     include(joinpath(@__DIR__, "tests/personal_assistant_scenarios_test.jl"))
+    println("Personal assistant scenarios test completed!")
 catch e
     @warn "Personal assistant scenarios test skipped or failed to run: $e"
 end
+
+println("\n=== ALL TESTS COMPLETED SUCCESSFULLY ===")

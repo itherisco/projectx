@@ -8,6 +8,34 @@ using Crypto.jl
 using JSON3
 
 # ============================================================================
+# AES-256-GCM ENCRYPTION HELPERS
+# ============================================================================
+
+"""
+    aes_encrypt_gcm - Encrypt data using AES-256-GCM
+"""
+function aes_encrypt_gcm(key::Vector{UInt8}, nonce::Vector{UInt8}, plaintext::Vector{UInt8})::Vector{UInt8}
+    # Derive AES key from master key using HKDF-like approach
+    derived_key = sha256(key)
+    
+    # Use GCM mode for authenticated encryption
+    ciphertext = Crypto.aes_encrypt_gcm(derived_key, nonce, plaintext)
+    return ciphertext
+end
+
+"""
+    aes_decrypt_gcm - Decrypt data using AES-256-GCM
+"""
+function aes_decrypt_gcm(key::Vector{UInt8}, nonce::Vector{UInt8}, ciphertext::Vector{UInt8})::Vector{UInt8}
+    # Derive AES key from master key
+    derived_key = sha256(key)
+    
+    # Use GCM mode for authenticated decryption
+    plaintext = Crypto.aes_decrypt_gcm(derived_key, nonce, ciphertext)
+    return plaintext
+end
+
+# ============================================================================
 # SECURE KEYSTORE - Local encrypted storage
 # ============================================================================
 
@@ -85,15 +113,13 @@ function _load_secrets!(keystore::SecureKeystore)
     try
         encrypted_data = read(KEYSTORE_FILE)
         
-        # Decrypt using master key
-        # Format: nonce || ciphertext || auth_tag
+        # Decrypt using AES-256-GCM
+        # Format: nonce (12 bytes) || ciphertext || auth_tag (16 bytes)
         nonce = encrypted_data[1:12]
-        ciphertext = encrypted_data[13:end-16]
-        auth_tag = encrypted_data[end-15:end]
+        ciphertext_with_tag = encrypted_data[13:end]
         
-        # For now, use a simple XOR with derived key (in production, use proper AES)
-        derived = sha256(keystore.master_key)
-        decrypted = Vector{UInt8}(ciphertext) .⊻ Vector{UInt8}(repeated(derived[1:length(ciphertext)], length(ciphertext)))
+        # Use proper AES-256-GCM decryption
+        decrypted = aes_decrypt_gcm(keystore.master_key, nonce, ciphertext_with_tag)
         
         # Parse JSON
         keystore.secrets = JSON3.read(String(decrypted), Dict{String, Vector{UInt8}})
@@ -110,15 +136,14 @@ function _save_secrets(keystore::SecureKeystore)
     # Serialize to JSON
     json_data = JSON3.write(keystore.secrets)
     
-    # Encrypt with master key
-    derived = sha256(keystore.master_key)
-    data_bytes = Vector{UInt8}(json_data)
-    encrypted = data_bytes .⊻ Vector{UInt8}(repeated(derived[1:length(data_bytes)], length(data_bytes)))
-    
-    # Generate random nonce
+    # Generate random nonce for AES-GCM
     nonce = rand(UInt8, 12)
     
-    # Combine: nonce || encrypted
+    # Encrypt with proper AES-256-GCM
+    data_bytes = Vector{UInt8}(json_data)
+    encrypted = aes_encrypt_gcm(keystore.master_key, nonce, data_bytes)
+    
+    # Combine: nonce || ciphertext (includes auth tag)
     encrypted_data = vcat(nonce, encrypted)
     
     # Ensure directory exists

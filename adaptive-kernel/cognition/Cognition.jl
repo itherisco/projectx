@@ -118,6 +118,15 @@ using .WorldModel
 include(joinpath(@__DIR__, "..", "planning", "AutonomousPlanner.jl"))
 using .AutonomousPlanner
 
+# Kernel imports for sovereignty gateway
+include(joinpath(@__DIR__, "..", "kernel", "Kernel.jl"))
+using .Kernel
+using .Kernel.SharedTypes
+
+# Brain imports for BrainOutput conversion
+include(joinpath(@__DIR__, "..", "brain", "Brain.jl"))
+using .Brain
+
 # ============================================================================
 # FLOW INTEGRITY - Cryptographic Approval Tokens (Phase 4)
 # ============================================================================
@@ -296,6 +305,55 @@ mutable struct CognitiveEngine
 end
 
 """
+    BrainOutput_to_ActionProposal - Convert BrainOutput to ActionProposal for kernel approval
+    
+    This bridges the Brain-Kernel boundary by converting brain's proposal into
+    the format expected by the kernel's approval system.
+    
+    # Arguments
+    - `brain_output::BrainOutput`: Output from brain inference
+    - `action_index::Int`: Which proposed action to convert (1 = highest priority)
+    
+    # Returns
+    - `ActionProposal`: Properly formatted proposal for kernel approval
+"""
+function BrainOutput_to_ActionProposal(brain_output::BrainOutput, action_index::Int=1)::ActionProposal
+    # Default to safe action if index out of bounds
+    capability_id = if action_index > 0 && action_index <= length(brain_output.proposed_actions)
+        brain_output.proposed_actions[action_index]
+    else
+        "observe_cpu"  # Safe default
+    end
+    
+    # Map brain confidence to predicted cost/reward
+    # Higher confidence = lower cost, higher reward
+    predicted_cost = 0.1f0 * (1.0f0 - brain_output.confidence)
+    predicted_reward = brain_output.value_estimate
+    
+    # Estimate risk based on uncertainty and capability type
+    # Higher uncertainty = higher risk
+    base_risk = brain_output.uncertainty
+    
+    # Adjust risk based on capability type
+    high_risk_capabilities = ["safe_shell", "write_file", "safe_http_request"]
+    if capability_id in high_risk_capabilities
+        base_risk = max(base_risk, 0.5f0)
+    end
+    
+    # Use uncertainty as a risk multiplier
+    risk = min(1.0f0, base_risk * (1.0f0 + brain_output.uncertainty))
+    
+    return ActionProposal(
+        capability_id,
+        brain_output.confidence,
+        predicted_cost,
+        predicted_reward,
+        risk,
+        brain_output.reasoning
+    )
+end
+
+"""
     run_sovereign_cycle - Run a complete sovereign cognition cycle
     Now uses typed Perception instead of Dict{String, Any} for type stability
 """
@@ -426,17 +484,9 @@ function run_sovereign_cycle(
             )
             
             # Call the actual Kernel.approve() function
-            kernel_decision = nothing
+            kernel_decision = Kernel.approve(engine.kernel, proposal, world_state)
             
-            # Try to import and call Kernel.approve
-            # This will work when Kernel is properly imported in the using context
-            @debug "Calling Kernel.approve() for decision" decision=conflict.winner
-            
-            # For now, implement the Flow Integrity pattern with fail-closed default
-            # In production, this would call: kernel_decision = Kernel.approve(engine.kernel, proposal, world_state)
-            
-            # Default: fail-closed (deny) unless kernel explicitly approves
-            kernel_decision = nothing  # Will result in denial
+            @debug "Kernel.approve() returned" decision=kernel_decision
             
             if kernel_decision == APPROVED
                 # Generate cryptographic approval token

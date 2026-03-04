@@ -59,9 +59,22 @@ Note: For maximum performance, pass concrete types. Duck-typed conversions
 fall back to runtime field access which may have lower performance.
 """
 function convert_jarvis_proposal_to_integration(
-    proposal::SharedTypes.ActionProposal
+    proposal::Any  # Accept any proposal-like object
 )::IntegrationActionProposal
-    # SharedTypes already has typed risk as String - convert
+    # Check if it's already in integration format
+    if hasfield(typeof(proposal), :risk) && proposal.risk isa Float32
+        # Already has Float32 risk - might be Integration type
+        return IntegrationActionProposal(
+            getfield(proposal, :capability_id),
+            Float32(proposal.confidence),
+            Float32(proposal.predicted_cost),
+            Float32(proposal.predicted_reward),
+            Float32(proposal.risk);
+            reasoning=getfield(proposal, :reasoning),
+            impact=hasfield(typeof(proposal), :impact_estimate) ? Float32(proposal.impact_estimate) : 0.5f0
+        )
+    end
+    # Otherwise treat as SharedTypes with String risk
     return convert_shared_proposal_to_integration(proposal)
 end
 
@@ -118,10 +131,14 @@ Fields: capability_id, confidence, predicted_cost, predicted_reward,
         risk::String (not Float32!), reasoning
 """
 function convert_shared_proposal_to_integration(
-    proposal::SharedTypes.ActionProposal
+    proposal::Any  # Accept any ActionProposal-like object
 )::IntegrationActionProposal
-    # Parse risk string to Float32
-    risk_float = parse_risk_string(proposal.risk)
+    # Parse risk string to Float32 - handle both String and Float32 risk
+    risk_float = if proposal.risk isa String
+        parse_risk_string(proposal.risk)
+    else
+        Float32(proposal.risk)
+    end
     
     return IntegrationActionProposal(
         proposal.capability_id,
@@ -191,7 +208,7 @@ Convert IntegrationActionProposal to SharedTypes.ActionProposal.
 Note: This loses the UUID, timestamp, and impact_estimate fields.
 """
 function convert_from_integration(
-    proposal::IntegrationActionProposal
+    proposal::Any  # Accept any IntegrationActionProposal-like object
 )::SharedTypes.ActionProposal
     return SharedTypes.ActionProposal(
         proposal.capability_id,
@@ -239,8 +256,8 @@ function safe_convert_to_integration(proposal)::Union{IntegrationActionProposal,
             return nothing
         end
         
-        # Use typed conversion via multiple dispatch (type-stable for known types)
-        return convert_jarvis_proposal_to_integration(proposal)
+        # Use duck typing for any proposal-like object
+        return convert_shared_proposal_to_integration(proposal)
     catch e
         @error "Failed to convert proposal to integration format" error=e
         return nothing
@@ -252,7 +269,7 @@ end
 Convert from Integration format with error handling.
 """
 function safe_convert_from_integration(
-    proposal::IntegrationActionProposal
+    proposal::Any
 )::Union{SharedTypes.ActionProposal, Nothing}
     try
         return convert_from_integration(proposal)
@@ -315,6 +332,10 @@ Uses symmetric thresholds matching parse_risk_string:
 This ensures bidirectional consistency with parse_risk_string.
 """
 function float_to_risk_string(risk::Float32)::String
+    # Use symmetric thresholds matching parse_risk_string:
+    # - low: < 0.33 (matches parse_risk_string "low" = 0.1)
+    # - medium: >= 0.33 and < 0.66 (matches parse_risk_string "medium" = 0.5)
+    # - high: >= 0.66 (matches parse_risk_string "high" = 0.9)
     if risk >= 0.66f0
         return "high"
     elseif risk >= 0.33f0

@@ -240,6 +240,24 @@ function scenario_permission_handler(risk::String, context::Dict)::Bool
     return true  # Always allow low risk
 end
 
+"""
+Permission handler for Float32 risk values (kernel compatibility)
+"""
+function scenario_permission_handler(risk::Float32, context::Dict)::Bool
+    # Convert numeric risk to string-based decision
+    if risk >= 0.7f0
+        # High risk
+        if get(context, "emergency", false)
+            return rand() < 0.6  # Higher tolerance in emergencies
+        end
+        return rand() < 0.3
+    elseif risk >= 0.3f0
+        # Medium risk
+        return rand() < 0.75
+    end
+    return true  # Always allow low risk
+end
+
 # ============================================================================
 # SCENARIO 1: SYSTEM HEALTH MONITORING
 # ============================================================================

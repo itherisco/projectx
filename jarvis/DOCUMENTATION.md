@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0  
 **Last Updated:** 2026-02-24  
-**Julia Version:** 1.10+
+**Julia Version:** 1.8+
 
 ---
 
@@ -764,7 +764,7 @@ VectorMemory.rag_retrieve
 
 ## Requirements
 
-- **Julia**: 1.10+
+- **Julia**: 1.8+
 - **Neural Engine**: Flux.jl 0.14-0.16
 - **HTTP Client**: HTTP.jl 1.9-1.11
 - **Serialization**: JSON.jl 0.21-0.24

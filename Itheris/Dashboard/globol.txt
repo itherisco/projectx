@@ -1,0 +1,368 @@
+# ==============================================================================
+# 1️⃣ IMPORTS & DEPENDENCIES
+# ==============================================================================
+using Random
+using Flux
+using Dates
+using UUIDs
+using Logging
+using LinearAlgebra
+using BSON
+using StatsBase
+using Base.Threads
+using ZMQ
+using FlatBuffers
+
+# Include your generated FlatBuffers schema files here
+# include("schema/Proposal.jl") 
+# include("schema/Verdict.jl")
+
+# ==============================================================================
+# 2️⃣ IPC & RUNTIME CONSTANTS
+# ==============================================================================
+const IPC_VERSION = "1.0"
+const ZCTX = Context()
+
+# OUTBOUND: Julia → Rust (Action Proposals)
+# specific IP depends on your Docker/Network setup
+const PROPOSAL_PUB = Socket(ZCTX, PUB)
+
+# INBOUND: Rust → Julia (Verdicts/Rewards)
+const VERDICT_PULL = Socket(ZCTX, PULL)
+
+# ==============================================================================
+# 3️⃣ CORE DATA STRUCTURES
+# ==============================================================================
+
+# A single semantic memory
+mutable struct Memory
+    embedding::Vector{Float32} # The state vector at that time
+    timestamp::DateTime
+    note::String               # Optional metadata
+end
+
+# A completed action loop for Reinforcement Learning
+struct Transition
+    state::Vector{Float32}
+    action::Int
+    reward::Float32
+end
+
+# The Agent Entity
+mutable struct Agent
+    id::String
+    age::Int
+    energy::Dict{String, Float32}  # available, core, memory
+    genes::Dict{String, Float32}   # Personality traits
+    brain::Chain                   # Neural Network
+    buffer::Vector{Transition}     # Replay Buffer for training
+    knowledge::Dict{String, Any}   # Working memory & lookup
+    opt::Flux.Optimise.AbstractOptimiser
+    inbox_lock::SpinLock           # Thread safety for Async listener
+end
+
+mutable struct World
+    cycle_count::Int
+    agent::Agent
+end
+
+# ==============================================================================
+# 4️⃣ NEURAL BRAIN ARCHITECTURE
+# ==============================================================================
+function create_brain()
+    # Input: 18 dimensions (6 Vitals + 12 Memory Context)
+    # Output: 4 Action probabilities
+    Chain(
+        Dense(18, 16, relu),
+        Dense(16, 8, relu),
+        Dense(8, 4),
+        softmax
+    )
+end
+
+# ==============================================================================
+# 5️⃣ AGENT INITIALIZATION
+# ==============================================================================
+function init_agent()
+    Agent(
+        string(uuid4()),
+        0,
+        Dict("available" => 50f0, "core" => 50f0, "memory" => 50f0),
+        Dict(
+            "resilience" => rand(Float32),
+            "innovation" => rand(Float32),
+            "strategy"   => rand(Float32),
+            "intellect"  => rand(Float32)
+        ),
+        create_brain(),
+        Transition[],
+        Dict(
+            "memories" => Memory[],
+            "pending_transitions" => Dict{String, Any}(),
+            "world_tick" => 0
+        ),
+        Flux.Optimise.Adam(0.001f0),
+        SpinLock()
+    )
+end
+
+# ==============================================================================
+# 6️⃣ PERSISTENCE (LONG-TERM MEMORY)
+# ==============================================================================
+function save_brain(agent::Agent, path="itheris_state.bson")
+    @info "💾 Saving Cortex State..."
+    # We strip the lock before saving as it cannot be serialized
+    # In a real scenario, you might construct a clean dict to save
+    BSON.@save path agent
+end
+
+function load_brain!(agent::Agent, path="itheris_state.bson")
+    isfile(path) || return
+    @info "📂 Loading Cortex State..."
+    data = BSON.load(path)
+    saved = data[:agent]
+
+    agent.brain     = saved.brain
+    agent.opt       = saved.opt
+    agent.age       = saved.age
+    agent.energy    = saved.energy
+    agent.genes     = saved.genes
+    # We usually don't load the old buffer to encourage fresh learning
+    agent.knowledge["memories"] = saved.knowledge["memories"]
+end
+
+# ==============================================================================
+# 7️⃣ PERCEPTION & CONTEXT ASSEMBLY
+# ==============================================================================
+function cosine_similarity(a::Vector{Float32}, b::Vector{Float32})
+    dot(a, b) / (norm(a) * norm(b) + 1f-6)
+end
+
+function build_input(agent::Agent)
+    # 1. Current Vitals (Normalized)
+    vitals = Float32[
+        agent.energy["available"] / 100f0,
+        min(agent.age / 200f0, 1f0),
+        agent.genes["intellect"],
+        agent.genes["innovation"],
+        agent.genes["strategy"],
+        agent.energy["core"] / max(agent.energy["memory"], 1f0)
+    ]
+
+    # 2. Memory Context (Associative Recall)
+    # We try to find 2 past memories similar to current vitals
+    mem_ctx = zeros(Float32, 12) # 2 memories * 6 dims
+    mems = agent.knowledge["memories"]
+
+    if !isempty(mems)
+        sims = [cosine_similarity(vitals, m.embedding) for m in mems]
+        # Get indices of top 2 matches
+        idx = sortperm(sims, rev=true)[1:min(2, length(sims))]
+        
+        flat = vcat([mems[i].embedding for i in idx]...)
+        len = length(flat)
+        mem_ctx[1:min(12, len)] .= flat[1:min(12, len)]
+    end
+
+    # Combine into 18-dim vector
+    vcat(vitals, mem_ctx)
+end
+
+# ==============================================================================
+# 8️⃣ LEARNING LOOP (POLICY GRADIENT)
+# ==============================================================================
+function update_brain!(agent::Agent, batch_size=32)
+    length(agent.buffer) < batch_size && return
+
+    # Experience Replay
+    idxs = sample(1:length(agent.buffer), batch_size, replace=false)
+    batchset = agent.buffer[idxs]
+
+    states  = hcat([t.state for t in batchset]...) # Matrix 18 x 32
+    actions = [t.action for t in batchset]
+    rewards = [t.reward for t in batchset]
+
+    ps = Flux.params(agent.brain)
+    grads = Flux.gradient(ps) do
+        probs = agent.brain(states)
+        loss = 0f0
+        for i in 1:batch_size
+            # Negative Log Likelihood weighted by Reward
+            # If reward is high, we increase prob of that action
+            loss += -rewards[i] * log(probs[actions[i], i] + 1f-6)
+        end
+        loss / batch_size
+    end
+
+    Flux.Optimise.update!(agent.opt, ps, grads)
+    
+    # Optional: Clear old buffer to prevent over-fitting on old history
+    if length(agent.buffer) > 2000
+        deleteat!(agent.buffer, 1:1000)
+    end
+end
+
+# ==============================================================================
+# 9️⃣ FLATBUFFERS BUILDER
+# ==============================================================================
+function build_proposal_fb(agent::Agent, action::Int, confidence::Float32)
+    b = FlatBufferBuilder(256)
+
+    # Create Strings
+    v_version  = createString(b, IPC_VERSION)
+    v_msg_id   = createString(b, string(uuid4()))
+    v_agent_id = createString(b, agent.id)
+
+    # Build Table
+    # Note: These function names depend on your compiled schema
+    Proposal.start!(b)
+    Proposal.add_version!(b, v_version)
+    Proposal.add_msg_id!(b, v_msg_id)
+    Proposal.add_agent_id!(b, v_agent_id)
+    Proposal.add_action!(b, UInt8(action))
+    Proposal.add_confidence!(b, confidence)
+    Proposal.add_energy!(b, agent.energy["available"])
+    Proposal.add_timestamp!(b, UInt64(time_ns()))
+
+    root = Proposal.end!(b)
+    finish!(b, root)
+
+    return FlatBuffers.bytes(b), String(v_msg_id)
+end
+
+# ==============================================================================
+# 🔟 SEND PROPOSAL (Julia -> Rust)
+# ==============================================================================
+function send_proposal(agent::Agent, action::Int, confidence::Float32)
+    buf, pid = build_proposal_fb(agent, action, confidence)
+
+    # Store state in pending map to pair with future reward
+    lock(agent.inbox_lock)
+    try
+        agent.knowledge["pending_transitions"][pid] = (
+            state = build_input(agent), 
+            action = action, 
+            time = now()
+        )
+    finally
+        unlock(agent.inbox_lock)
+    end
+
+    ZMQ.send(PROPOSAL_PUB, buf)
+    # @debug "Sent proposal $pid"
+end
+
+# ==============================================================================
+# 1️⃣1️⃣ VERDICT LISTENER (Async Background Task)
+# ==============================================================================
+function start_verdict_listener(agent::Agent)
+    @info "👂 Listening for Verdicts..."
+    @async begin
+        while true
+            try
+                raw = ZMQ.recv(VERDICT_PULL)
+                verdict = FlatBuffers.getroot(Verdict, raw)
+
+                pid = String(verdict.proposal_id)
+                reward = Float32(verdict.reward)
+
+                lock(agent.inbox_lock)
+                try
+                    if haskey(agent.knowledge["pending_transitions"], pid)
+                        tr = agent.knowledge["pending_transitions"][pid]
+                        # Complete the loop: State + Action + Reward
+                        push!(agent.buffer, Transition(tr.state, tr.action, reward))
+                        delete!(agent.knowledge["pending_transitions"], pid)
+                        # @info "Transition closed: Reward $reward"
+                    end
+                finally
+                    unlock(agent.inbox_lock)
+                end
+            catch e
+                @error "Verdict Listener Error: $e"
+            end
+        end
+    end
+end
+
+# ==============================================================================
+# 1️⃣2️⃣ COGNITIVE STEP (Main Heartbeat)
+# ==============================================================================
+function smart_step!(world::World; ε=0.1f0)
+    agent = world.agent
+    world.cycle_count += 1
+
+    # 1. Metabolism
+    agent.energy["available"] = max(0f0, agent.energy["available"] - 0.05f0)
+
+    # 2. Percieve
+    input = build_input(agent)
+
+    # 3. Decide
+    probs = agent.brain(input)
+    
+    # Epsilon-Greedy Exploration
+    action = rand() < ε ? rand(1:4) : argmax(probs)
+    confidence = probs[action]
+
+    # 4. Act (Propose)
+    send_proposal(agent, action, confidence)
+
+    # 5. Learn
+    update_brain!(agent)
+
+    # 6. Memory Formation
+    # Only store memory occasionally to save space
+    if world.cycle_count % 10 == 0
+        push!(agent.knowledge["memories"], Memory(input[1:6], now(), "tick_$(world.cycle_count)"))
+        if length(agent.knowledge["memories"]) > 500
+            deleteat!(agent.knowledge["memories"], 1)
+        end
+    end
+
+    # 7. Lifecycle
+    agent.age += 1
+    if world.cycle_count % 100 == 0
+        save_brain(agent)
+    end
+end
+
+# ==============================================================================
+# 1️⃣3️⃣ MAIN ENTRY POINT
+# ==============================================================================
+function main()
+    println("🧠 ITHERIS JULIA CORTEX ONLINE")
+    println("------------------------------")
+
+    # Connect to the Rust Gateway
+    connect(PROPOSAL_PUB, "tcp://127.0.0.1:7001")
+    bind(VERDICT_PULL, "tcp://127.0.0.1:7002")
+
+    agent = init_agent()
+    load_brain!(agent)
+
+    world = World(0, agent)
+
+    # Start the background listener for Rust responses
+    start_verdict_listener(agent)
+
+    # Main Cognitive Loop
+    try
+        while true
+            smart_step!(world)
+            
+            # Control tick rate (e.g., 10Hz)
+            sleep(0.1)
+        end
+    catch e
+        @error "Core loop crashed: $e"
+        save_brain(agent)
+    finally
+        close(PROPOSAL_PUB)
+        close(VERDICT_PULL)
+        close(ZCTX)
+    end
+end
+
+# Execute
+main()

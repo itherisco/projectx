@@ -29,12 +29,13 @@ This is a fail-closed validation - assume invalid until proven valid.
 """
 function validate_kernel_state(state)::Bool
     state === nothing && return false
-    # Check if self_metrics exists and is valid
-    if !haskey(state, :self_metrics) || state.self_metrics === nothing
+    # Check if self_metrics exists and is valid (Julia struct field access)
+    # KernelState.self_metrics is Dict{String, Float32} - check for valid entries
+    if !isdefined(state, :self_metrics) || !isa(state.self_metrics, Dict) || isempty(state.self_metrics)
         return false
     end
     # Check if world exists and is valid
-    if !haskey(state, :world) || state.world === nothing
+    if !isdefined(state, :world) || state.world === nothing
         return false
     end
     return true
@@ -72,7 +73,8 @@ This enforces kernel sovereignty over action execution.
 """
 function check_kernel_approval(state::KernelState, approved_decision::Decision)::Bool
     state === nothing && return false
-    !haskey(state, :last_decision) && return false
+    # Julia struct field access - check if last_decision field is defined
+    !isdefined(state, :last_decision) && return false
     return state.last_decision == approved_decision
 end
 

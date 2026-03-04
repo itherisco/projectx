@@ -25,7 +25,8 @@ export
     generate_embedding,
     cosine_similarity
 
-# Import Jarvis types from parent module
+# Include jarvis types - VectorMemory depends on SemanticEntry from jarvis/src/types.jl
+include("../types.jl")
 using ..JarvisTypes
 
 # ============================================================================

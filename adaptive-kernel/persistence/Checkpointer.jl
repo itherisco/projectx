@@ -125,24 +125,86 @@ end
 
 """
     _serialize_goals - Serialize goal state
+    Properly serializes both immutable goals and mutable goal_states
 """
 function _serialize_goals(state::KernelState)::Vector{Dict}
-    # Placeholder - would serialize actual goals
-    return []
+    goals_data = Dict[]
+    
+    # Serialize immutable goals
+    for goal in state.goals
+        push!(goals_data, Dict(
+            "id" => goal.id,
+            "description" => goal.description,
+            "priority" => goal.priority,
+            "created_at" => string(goal.created_at),
+            "deadline" => string(goal.deadline)
+        ))
+    end
+    
+    # Serialize mutable goal states
+    goal_states_data = Dict()
+    for (goal_id, goal_state) in state.goal_states
+        goal_states_data[goal_id] = Dict(
+            "goal_id" => goal_state.goal_id,
+            "status" => string(goal_state.status),
+            "progress" => goal_state.progress,
+            "last_updated" => string(goal_state.last_updated),
+            "iterations" => goal_state.iterations
+        )
+    end
+    
+    return [
+        Dict("goals" => goals_data),
+        Dict("goal_states" => goal_states_data),
+        Dict("active_goal_id" => state.active_goal_id)
+    ]
 end
 
 """
     _serialize_metrics - Serialize self-metrics
+    Includes confidence, energy, focus, and other self-assessment metrics
 """
 function _serialize_metrics(state::KernelState)::Dict
-    # Placeholder - would serialize actual metrics
-    return Dict()
+    metrics = Dict(
+        "cycle" => state.cycle[],
+        "self_metrics" => copy(state.self_metrics),
+        "last_reward" => state.last_reward,
+        "last_prediction_error" => state.last_prediction_error,
+        "last_action" => state.last_action !== nothing ? Dict(
+            "id" => state.last_action.id,
+            "capability" => state.last_action.capability,
+            "risk" => string(state.last_action.risk)
+        ) : nothing,
+        "last_decision" => string(state.last_decision)
+    )
+    
+    # Serialize intent vector (strategic inertia)
+    intent_data = Dict()
+    for (key, value) in state.intent_vector.intents
+        intent_data[key] = value
+    end
+    metrics["intent_vector"] = intent_data
+    
+    return metrics
 end
 
 """
     _serialize_world - Serialize world state
+    Includes observations and factual knowledge
 """
 function _serialize_world(state::KernelState)::Dict
-    # Placeholder - would serialize actual world
-    return Dict()
+    obs = state.world.observations
+    
+    return Dict(
+        "timestamp" => string(state.world.timestamp),
+        "observations" => Dict(
+            "cpu" => obs.cpu,
+            "memory" => obs.memory,
+            "disk" => obs.disk,
+            "network" => obs.network,
+            "files" => obs.files,
+            "processes" => obs.processes
+        ),
+        "facts" => copy(state.world.facts)
+    )
 end

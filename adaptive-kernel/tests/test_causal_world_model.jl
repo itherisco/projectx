@@ -5,13 +5,11 @@ using Test
 using Statistics
 using LinearAlgebra
 
-# Include the worldmodel module first
-include("../cognition/worldmodel/WorldModel.jl")
-using .WorldModel
-
-# Include the causal world model module
+# Include the causal world model module (which includes WorldModel internally)
 include("../cognition/worldmodel/CausalWorldModel.jl")
 using .CausalWorldModel
+
+# We can access WorldModel through CausalWorldModel.WorldModel if needed
 
 # ============================================================================
 # Test Helper Functions

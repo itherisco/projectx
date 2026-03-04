@@ -1,6 +1,6 @@
 # Adaptive Cognitive Kernel
 
-A minimal, auditable adaptive operating system kernel for building safe, intelligent agents. The kernel is ~830 lines of readable Julia code that maintains world state, evaluates priorities, selects actions deterministically, and reflects on outcomes—all without embedding task logic, OS capabilities, or personality.
+A minimal, auditable adaptive operating system kernel for building safe, intelligent agents. The kernel is 1790 lines of readable Julia code that maintains world state, evaluates priorities, selects actions deterministically, and reflects on outcomes—all without embedding task logic, OS capabilities, or personality.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ A minimal, auditable adaptive operating system kernel for building safe, intelli
 1. **Separation of concerns**: Kernel reasons; capabilities execute.
 2. **Determinism**: All decisions are traced and reproducible.
 3. **Auditability**: Append-only event log for full transparency.
-4. **Minimalism**: Kernel ≤400 lines; capabilities are thin wrappers.
+4. **Minimalism**: Kernel is 1790 lines; capabilities are thin wrappers.
 5. **Safety by default**: High-risk actions require explicit permission.
 
 ## Running the System
@@ -223,7 +223,7 @@ last_state = get_last_state()  # Resume from previous checkpoint
 
 ## Performance
 
-- **Kernel**: ~350 lines, runs a cycle in <1ms
+- **Kernel**: 1790 lines, latency TBD (benchmark pending)
 - **Event log**: Append-only; linear reads; space-efficient JSONL
 - **Memory**: Episodic memory cap at 5000 events (managed per capability)
 

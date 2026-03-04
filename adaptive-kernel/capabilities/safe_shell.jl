@@ -61,10 +61,10 @@ end
     SECURITY: Prevents injection through arguments
 """
 function sanitize_argument(arg::String)::String
-    # Check for blocked patterns
+    # Check for blocked patterns - throw error for dangerous args
     for pattern in BLOCKED_PATTERNS
         if occursin(pattern, arg)
-            return ""  # Return empty string for dangerous args
+            error("SECURITY: Blocked dangerous pattern detected in argument: $(pattern)")
         end
     end
     

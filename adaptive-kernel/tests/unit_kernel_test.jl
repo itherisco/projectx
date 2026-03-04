@@ -170,7 +170,15 @@ using .Kernel.SharedTypes
         
         perm_fn = (risk) -> risk <= 0.3f0  # Allow low to medium risk
         
-        kernel, action, result = Kernel.step_once(kernel, candidates, exec_fn, perm_fn)
+        # Provide verify_fn for FlowIntegrity - required since UNSAFE_MODE was removed
+        verify_fn = (cap_id, token) -> begin
+            return Dict(
+                "success" => true,
+                "verified" => true
+            )
+        end
+        
+        kernel, action, result = Kernel.step_once(kernel, candidates, exec_fn, perm_fn; verify_fn=verify_fn)
         
         @test kernel.cycle[] == 1
         @test action.capability_id == "test_cap"
