@@ -435,10 +435,8 @@ function deterministic_attention(
         end
     end
     
-    # If nothing selected, use fallback
-    if isempty(selected)
-        return Symbol[fallback_focus]
-    end
+    #= FALLBACK_CLEANUP: Removed redundant empty selection fallback (2026-03-04)
+       Primary implementation via priority_order is sufficient =#
     
     return selected
 end

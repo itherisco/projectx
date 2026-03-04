@@ -33,13 +33,19 @@ end
 # Test get_kernel_secret
 println("Testing get_kernel_secret...")
 KERNEL_SECRET_ENV = "JARVIS_KERNEL_SECRET"
-_DEFAULT_KERNEL_SECRET = Vector{UInt8}("jarvis-kernel-default-insecure-change-me")
 
+# SECURITY FIX: Removed hardcoded default - now fails secure like Types.jl
 function get_kernel_secret()::Vector{UInt8}
-    return haskey(ENV, KERNEL_SECRET_ENV) ? 
-        Vector{UInt8}(ENV[KERNEL_SECRET_ENV]) : 
-        _DEFAULT_KERNEL_SECRET
+    if !haskey(ENV, KERNEL_SECRET_ENV)
+        error("SECURITY CRITICAL: $KERNEL_SECRET_ENV environment variable not set. " * 
+              "System cannot operate without a configured kernel secret. " *
+              "Set this environment variable to a cryptographically secure random value.")
+    end
+    return Vector{UInt8}(ENV[KERNEL_SECRET_ENV])
 end
+
+# DIAGNOSTIC: Log current state
+println("  ENV[$KERNEL_SECRET_ENV] set: $(haskey(ENV, KERNEL_SECRET_ENV))")
 
 secret = get_kernel_secret()
 println("  Secret length: $(length(secret))")

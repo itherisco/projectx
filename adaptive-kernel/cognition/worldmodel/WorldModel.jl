@@ -342,6 +342,9 @@ function predict_next_state(
     end
     
     # Legacy fallback: Use learned linear model (last resort)
+    # SECURITY: This is an internal prediction fallback, NOT a security bypass.
+    # It provides degraded but SAFE predictions when MLP fails.
+    # The output is used internally and doesn't bypass any brain/ITHERIS verification.
     augmented_state = vcat(state, [1.0f0])  # Add bias term
     next_state = model.transition_coefficients * augmented_state
     
@@ -397,6 +400,8 @@ function predict_reward(
     end
     
     # Legacy fallback: Use learned linear reward model
+    # SECURITY: Internal prediction fallback, NOT a security bypass.
+    # Provides degraded reward estimates when MLP fails.
     action_onehot = zeros(Float32, 8)
     if action > 0 && action <= length(action_onehot)
         action_onehot[action] = 1.0f0

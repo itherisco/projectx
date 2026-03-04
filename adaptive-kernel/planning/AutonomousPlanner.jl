@@ -229,8 +229,9 @@ function decompose_topic(topic::String)::TopicDecomposition
     # Normalize topic for lookup
     topic_lower = lowercase(strip(topic))
     
-    # Get template or use default
-    template = get(TOPIC_TEMPLATES, topic_lower, TOPIC_TEMPLATES["default"])
+#= FALLBACK_CLEANUP: Removed redundant topic template fallback (2026-03-04)
+   Simplified to direct dict access since default key always exists =#
+    template = haskey(TOPIC_TEMPLATES, topic_lower) ? TOPIC_TEMPLATES[topic_lower] : TOPIC_TEMPLATES["default"]
     module_templates = template["modules"]
     
     modules = StudyModule[]

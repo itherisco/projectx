@@ -234,6 +234,8 @@ export BrainWrapper, KernelWrapper
 export _load_capability_registry, _get_capability_by_id, _execute_capability
 export _execute_builtin_capability, _get_cpu_info, _get_process_info
 export _get_network_info, _get_filesystem_info
+# Export action ID validation (SECURITY)
+export AUTHORIZED_ACTIONS, validate_action_id, get_authorized_action_ids
 export _update_memory, _handle_brain_nothing, _handle_kernel_denial
 
 # Import existing components from ProjectX
@@ -1087,6 +1089,72 @@ end
 const CAPABILITY_REGISTRY_PATH = joinpath(ADAPTIVE_KERNEL_PATH, "registry", "capability_registry.json")
 
 """
+    AUTHORIZED_ACTIONS - Whitelist of all valid action/capability IDs
+    
+    This set combines:
+    1. Capabilities from capability_registry.json
+    2. Built-in capabilities from _execute_builtin_capability
+    
+    SECURITY: This is the authoritative list of all actions that can be executed.
+    Any action_id NOT in this set will be rejected with a clear error message.
+"""
+const AUTHORIZED_ACTIONS = Set{String}(
+    vcat(
+        # Registry capabilities (will be loaded at runtime if available)
+        ["observe_cpu", "analyze_logs", "write_file", "safe_shell", 
+         "safe_http_request", "observe_network", "observe_filesystem"],
+        # Built-in capabilities from _execute_builtin_capability
+        ["observe_cpu", "observe_system", "log_status", 
+         "list_processes", "observe_processes", "garbage_collect",
+         "observe_network", "observe_filesystem"]
+    )
+)
+
+"""
+    validate_action_id(capability_id::String)::Bool
+
+Validate that a capability/action ID is in the authorized whitelist.
+
+SECURITY: This implements fail-closed behavior - unknown action IDs are
+rejected rather than being passed through to execution fallback.
+
+# Arguments
+- `capability_id::String`: The action ID to validate
+
+# Returns
+- `true` if the ID is authorized
+- `false` if the ID is NOT in the AUTHORIZED_ACTIONS whitelist
+
+# Error Handling
+Logs a security warning for unauthorized IDs and returns false.
+"""
+function validate_action_id(capability_id::String)::Bool
+    if isempty(capability_id)
+        @warn "SECURITY: Empty action_id rejected"
+        return false
+    end
+    
+    if capability_id in AUTHORIZED_ACTIONS
+        return true
+    end
+    
+    # Log security violation
+    @warn "SECURITY VIOLATION: Unauthorized action_id attempt" 
+        requested_id=capability_id
+        authorized_count=length(AUTHORIZED_ACTIONS)
+    return false
+end
+
+"""
+    get_authorized_action_ids()::Vector{String}
+
+Return list of all authorized action IDs for debugging/display.
+"""
+function get_authorized_action_ids()::Vector{String}
+    return sort(collect(AUTHORIZED_ACTIONS))
+end
+
+"""
     _load_capability_registry - Load capabilities from the registry JSON
 """
 function _load_capability_registry()::Dict{String, Any}
@@ -1906,6 +1974,29 @@ function _execute_action(
     
     # Get capability ID
     capability_id = action.proposal.capability_id
+    
+    # ============================================================================
+    # ACTION ID VALIDATION (WHITELIST ENFORCEMENT)
+    # SECURITY: Validate against AUTHORIZED_ACTIONS whitelist before execution
+    # This implements fail-closed behavior - unknown IDs are rejected
+    # ============================================================================
+    if !validate_action_id(capability_id)
+        @error "SECURITY VIOLATION: Attempted to execute unauthorized action_id" 
+            action_id=capability_id
+            authorized_ids=get_authorized_action_ids()
+        return Dict(
+            "success" => false, 
+            "reason" => "INVALID_ACTION_ID",
+            "error" => "Action ID '$(capability_id)' is not in the authorized whitelist. " *
+                        "Valid actions are: $(join(sort(collect(AUTHORIZED_ACTIONS)), ", "))",
+            "action_id" => capability_id,
+            "security_violation" => true
+        )
+    end
+    @debug "Action ID validated successfully" action_id=capability_id
+    # ============================================================================
+    # END ACTION ID VALIDATION
+    # ============================================================================
     
     # Log the action
     _log_event(system, "action_execution", Dict(

@@ -24,6 +24,7 @@ pub mod api_bridge;
 pub mod database;
 pub mod pipeline;
 pub mod monitoring;
+pub mod panic_translation;
 
 // Bare-metal modules (Ring 0)
 #[cfg(feature = "bare-metal")]
@@ -56,6 +57,7 @@ pub use api_bridge::{APIBridge, ExternalAPI, APIRequest, APIResponse};
 pub use database::{DatabaseManager, Database, DatabaseType, Query, QueryResult};
 pub use pipeline::{PipelineManager, DataPipeline, PipelineStage, PipelineExecution};
 pub use monitoring::{Monitor, Metric, Alert};
+pub use panic_translation::{TranslatedPanic, FFIResult, JuliaExceptionCode, catch_panic, catch_panic_ptr, free_translated_panic, raise_julia_exception, install_panic_hook, panic_in_progress};
 
 // Bare-metal re-exports
 #[cfg(feature = "bare-metal")]
@@ -65,7 +67,7 @@ pub use boot;
 pub use memory;
 
 #[cfg(feature = "bare-metal")]
-pub use ipc;
+pub use ipc::{self, IPCEntry, IPCEntryType, IPCFlags, IPCError, IPCResult, SyncIpcRingBuffer, SharedSyncBuffer, ring_buffer::RING_BUFFER_CAPACITY, shm::{ShmRegion, ShmLock, ShmReadGuard, ShmWriteGuard, ShmSequence, ShmError, ShmResult}};
 
 #[cfg(feature = "bare-metal")]
 pub use tpm;

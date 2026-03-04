@@ -200,10 +200,14 @@ struct BrainConfig
         confidence_threshold::Float32=0.5f0,
         advisory_mode::Bool=true,
         execution_bypass_blocked::Bool=true,
-        fallback_to_heuristic::Bool=false,  # Default: NO silent fallback
+        fallback_to_heuristic::Bool=false,  # Default: NO fallback - must be explicitly enabled
         max_inference_time_ms::Float32=500.0f0,
         enable_training::Bool=true
     )
+        # SECURITY: If fallback_to_heuristic is enabled, log a warning
+        if fallback_to_heuristic
+            @warn "SECURITY WARNING: fallback_to_heuristic is enabled - this bypasses brain verification!"
+        end
         new(model_path, confidence_threshold, advisory_mode, 
             execution_bypass_blocked, fallback_to_heuristic, 
             max_inference_time_ms, enable_training)
@@ -344,16 +348,19 @@ function create_brain(
             @info "ITHERIS Brain initialized successfully"
         else
             if !config.fallback_to_heuristic
-                error("ITHERIS initialization failed and fallback disabled")
+                # FAIL-CLOSED: Require explicit configuration to use fallback
+                error("ITHERIS initialization failed and fallback_to_heuristic is disabled - BRAIN VERIFICATION REQUIRED")
             end
-            @warn "ITHERIS not available - using degraded mode"
+            # Log audit event when falling back
+            @error "ITHERIS not available - fallback_to_heuristic is ENABLED (insecure mode)"
+            @warn "Brain running in DEGRADED MODE without ITHERIS verification"
             brain.initialized = config.fallback_to_heuristic
         end
     catch e
         if !config.fallback_to_heuristic
             rethrow()
         end
-        @warn "Brain initialization failed: $e"
+        @error "Brain initialization failed: $e - using degraded mode"
         brain.initialized = config.fallback_to_heuristic
     end
     
@@ -394,16 +401,20 @@ function infer_brain(
             record_inference!(brain.health, (time() - start_time) * 1000, false)
             
             if !brain.config.fallback_to_heuristic
-                # Return safe output instead of silently falling back
+                # FAIL-CLOSED: Return safe output instead of silently falling back
+                @error "Neural inference failed and fallback disabled - returning safe output"
                 return _safe_fallback_output("Neural inference failed: $e")
             end
+            @error "Neural inference failed - using HEURISTIC FALLBACK (insecure mode)"
         end
     end
     
-    # Fallback (if enabled)
+    # Fallback (if enabled) - this is now explicitly logged as INSECURE
     if brain.config.fallback_to_heuristic
+        @warn "BRAIN FALLBACK ACTIVE - No brain verification for this inference"
         return _heuristic_fallback(brain_input)
     else
+        # FAIL-CLOSED: Safe output with very low confidence
         return _safe_fallback_output("Brain not initialized and fallback disabled")
     end
 end
@@ -492,6 +503,10 @@ function _itheris_thought_to_brain_output(thought::Thought, input::BrainInput)::
 end
 
 function _heuristic_fallback(input::BrainInput)::BrainOutput
+    # SECURITY WARNING: This function is ONLY called when fallback_to_heuristic=true
+    # This bypasses brain/ITHERIS verification - USE ONLY IN EMERGENCY
+    @error "INSECURE FALLBACK: Using heuristic without brain verification!"
+    
     # Simple heuristic based on perception
     cpu_high = input.perception_vector[1] > 0.7f0
     memory_high = input.perception_vector[2] > 0.7f0
@@ -509,18 +524,19 @@ function _heuristic_fallback(input::BrainInput)::BrainOutput
         confidence=0.7f0,
         value_estimate=0.5f0,
         uncertainty=0.3f0,
-        reasoning="Heuristic fallback based on system state"
+        reasoning="Heuristic fallback - NO BRAIN VERIFICATION (insecure mode)"
     )
 end
 
 function _safe_fallback_output(reason::String)::BrainOutput
-    # Safe output that will be rejected by kernel due to low confidence
+    # FAIL-CLOSED: Safe output that will be rejected by kernel due to low confidence
+    # This is the secure default when brain verification is unavailable
     return BrainOutput(
         ["log_status"];
         confidence=0.1f0,
         value_estimate=0.0f0,
         uncertainty=1.0f0,
-        reasoning="Safe fallback: $reason"
+        reasoning="Safe fallback (fail-closed): $reason"
     )
 end
 

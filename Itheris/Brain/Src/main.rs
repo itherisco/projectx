@@ -17,10 +17,12 @@ mod api_bridge;
 mod database;
 mod pipeline;
 mod monitoring;
+mod panic_translation;
 mod ipc;
 
 use crypto::CryptoAuthority;
 use kernel::ItherisKernel;
+use panic_translation::{catch_panic, TranslatedPanic, JuliaExceptionCode, FFIResult};
 use debate::DebateEngine;
 use state::GlobalState;
 use federation::{Federation, Agent};
@@ -34,6 +36,8 @@ use database::{DatabaseManager, Database, DatabaseType};
 use pipeline::{PipelineManager, PipelineStage};
 use monitoring::Monitor;
 use ipc::ring_buffer::IpcRingBuffer;
+use ipc::SyncIpcRingBuffer;
+use ipc::IPCError;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::io::{self, Write};
@@ -217,9 +221,9 @@ fn main() {
         mut pipeline_id,
     ) = init_systems();
 
-    // Initialize IPC ring buffer for Julia communication
-    let ipc_buffer = IpcRingBuffer::new();
-    println!("[MAIN] IPC ring buffer initialized at /dev/shm/itheris_ipc");
+    // Initialize IPC ring buffer for Julia communication (thread-safe version)
+    let ipc_buffer = SyncIpcRingBuffer::new();
+    println!("[MAIN] IPC ring buffer initialized at /dev/shm/itheris_ipc (with mutex protection)");
 
     // Spawn IPC listener thread to handle Julia kernel requests
     let kernel_clone = Arc::new(Mutex::new(kernel));
@@ -230,17 +234,71 @@ fn main() {
         println!("[IPC] Starting IPC listener thread...");
         loop {
             {
-                let ipc = ipc_clone.lock().unwrap();
-                if let Some(entry) = ipc.pop() {
-                    println!("[IPC] Received entry from Julia kernel");
-                    
-                    // Parse the entry and process it
-                    let _kernel = kernel_for_ipc.lock().unwrap();
-                    // Process entry - verify signature, check capabilities, etc.
-                    // For now, just log that we received it
-                    
-                    // Write response back
-                    // ipc.push_response(...);
+                // Use proper error handling instead of unwrap()
+                let ipc_result = ipc_clone.lock();
+                match ipc_result {
+                    Ok(ipc) => {
+                        // Use try_pop for non-blocking access
+                        match ipc.try_pop() {
+                            Ok(Some(entry)) => {
+                                println!("[IPC] Received entry from Julia kernel");
+                                
+                                // DIAGNOSTIC: Log entry type for debugging
+                                if let Some(entry_type) = entry.get_entry_type() {
+                                    println!("[IPC_DIAG] Entry type: {:?}", entry_type);
+                                }
+                                
+                                // FFI BOUNDARY: Wrap entry processing with catch_panic
+                                // This catches Rust panics and translates them to Julia exceptions
+                                let result = catch_panic(|| {
+                                    // Use proper error handling instead of unwrap()
+                                    let kernel_lock = kernel_for_ipc.lock();
+                                    match kernel_lock {
+                                        Ok(_kernel) => {
+                                            // Process entry - verify signature, check capabilities, etc.
+                                            // For now, just log that we received it
+                                            println!("[IPC] Processing entry in panic-safe wrapper");
+                                        }
+                                        Err(poisoned) => {
+                                            eprintln!("[IPC_ERROR] Kernel lock poisoned: {:?}", poisoned);
+                                        }
+                                    }
+                                    true  // Return success
+                                });
+                                
+                                match result.success {
+                                    0 => {
+                                        // DIAGNOSTIC: Log if entry is processed without panic
+                                        println!("[IPC_DIAG] Entry processed successfully");
+                                    },
+                                    -1 => {
+                                        // Panic was caught and translated - extract error info
+                                        println!("[IPC_DIAG] PANIC CAUGHT at FFI boundary!");
+                                        if !result.error_ptr.is_null() {
+                                            let panic_info = &*result.error_ptr;
+                                            println!("[IPC_DIAG] Exception code: {}", panic_info.exception_code);
+                                            println!("[IPC_DIAG] Message: {}", panic_info.get_message());
+                                        }
+                                    },
+                                    _ => {
+                                        println!("[IPC_DIAG] Unknown error code: {}", result.success);
+                                    }
+                                }
+                                
+                                // Write response back
+                                // ipc.push_response(...);
+                            },
+                            Ok(None) => {
+                                // No entry available, this is normal
+                            },
+                            Err(e) => {
+                                eprintln!("[IPC_ERROR] Failed to pop from ring buffer: {}", e);
+                            }
+                        }
+                    },
+                    Err(poisoned) => {
+                        eprintln!("[IPC_ERROR] IPC lock poisoned: {:?}", poisoned);
+                    }
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(10));

@@ -12,11 +12,12 @@ include("../types.jl")
 using .SharedTypes
 
 # Export conversion functions
+#= FALLBACK_CLEANUP: Removed duck-typed conversion fallback (2026-03-04)
+   Performance optimization removed - adds unnecessary complexity =#
 export 
     # Forward conversions (existing → Integration)
     convert_to_integration,
     convert_jarvis_proposal_to_integration,
-    convert_jarvis_proposal_duck,  # Duck-typed fallback
     convert_jarvis_worldstate_to_integration,
     convert_shared_proposal_to_integration,
     
@@ -85,42 +86,8 @@ function convert_jarvis_proposal_to_integration(
     return proposal
 end
 
-"""
-    convert_jarvis_proposal_duck(proposal)::IntegrationActionProposal
-Fallback for duck-typed proposals with runtime field access.
-Use only when concrete type is unknown.
-"""
-function convert_jarvis_proposal_duck(
-    proposal::Any
-)::IntegrationActionProposal
-    # Extract fields - handle both JarvisTypes.ActionProposal and duck-typed proposals
-    capability_id = hasfield(typeof(proposal), :capability_id) ?
-        proposal.capability_id::String : error("Missing required field: capability_id")
-    confidence = hasfield(typeof(proposal), :confidence) ?
-        Float32(proposal.confidence) : error("Missing required field: confidence")
-    predicted_cost = hasfield(typeof(proposal), :predicted_cost) ?
-        Float32(proposal.predicted_cost) : error("Missing required field: predicted_cost")
-    predicted_reward = hasfield(typeof(proposal), :predicted_reward) ?
-        Float32(proposal.predicted_reward) : error("Missing required field: predicted_reward")
-    risk = hasfield(typeof(proposal), :risk) ?
-        Float32(proposal.risk) : error("Missing required field: risk")
-    reasoning = hasfield(typeof(proposal), :reasoning) ?
-        getfield(proposal, :reasoning)::String : ""
-    impact_estimate = hasfield(typeof(proposal), :impact_estimate) ? 
-        Float32(proposal.impact_estimate) : 0.5f0
-    timestamp = hasfield(typeof(proposal), :timestamp) ? 
-        proposal.timestamp::DateTime : now()
-    
-    return IntegrationActionProposal(
-        capability_id,
-        confidence,
-        predicted_cost,
-        predicted_reward,
-        risk;
-        reasoning=reasoning,
-        impact=impact_estimate
-    )
-end
+#= FALLBACK_CLEANUP: Removed duck-typed conversion fallback (2026-03-04)
+   Performance optimization removed - adds unnecessary complexity =#
 
 """
     convert_shared_proposal_to_integration(proposal)::IntegrationActionProposal

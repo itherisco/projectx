@@ -1,8 +1,11 @@
 # ProjectX Jarvis - Neuro-Symbolic Autonomous System
 
+> **⚠️ System Status: PROTOTYPE / EXPERIMENTAL**
+> This system is a research prototype. It is NOT production-ready.
+
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![Julia](https://img.shields.io/badge/Julia-1.8+-9558B2)
-![Status](https://img.shields.io/badge/status-Active-green)
+![Status](https://img.shields.io/badge/status-Prototype-Orange)
 
 ## Overview
 
@@ -103,6 +106,31 @@ shutdown(system)
 | Phase 2 | ✅ COMPLETE | Kernel Sovereignty Enforcement |
 | Phase 3 | ✅ COMPLETE | SystemIntegrator Integration |
 | Phase 4 | ✅ COMPLETE | Testing (55 tests passing) |
+
+> ⚠️ **IMPORTANT:** Despite completing development phases, the system has NOT achieved production readiness. See scores below.
+
+## System Maturity Assessment
+
+| Assessment Area | Score | Status |
+|-----------------|-------|--------|
+| **Security** | 12/100 | 🔴 CRITICAL - Not production-ready |
+| **Cognitive Completeness** | 47/100 | 🟡 Partial - Not production-ready |
+| **Personal Assistant Readiness** | 42/100 | 🔴 Not production-ready |
+| **Red Team Resilience** | 18/100 | 🔴 Critical vulnerabilities |
+| **Overall System Score** | 43/100 | ⚠️ HAS SIGNIFICANT GAPS |
+
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md). This document is the single source of truth for component maturity levels. |
+
+### Feature Maturity Labels
+
+The following labels are used throughout this documentation:
+
+| Label | Meaning |
+|-------|---------|
+| 🟢 **Stable** | Feature is functional and reasonably tested |
+| 🟡 **Experimental** | Feature works but may change; limited testing |
+| 🔴 **Under Development** | Incomplete implementation; not for production use |
+| ⚠️ **Security Issue** | Known vulnerability; do not use in production |
 
 ## Requirements
 

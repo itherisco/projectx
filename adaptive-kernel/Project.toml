@@ -4,6 +4,7 @@ HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 Nettle = "49dea1ee-f6fa-5aa6-9a11-8816cee7d4b9"
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+Coverage = "a2441757-1185-488a-8b71-5a2f94d5e3e2"
 
 [compat]
 JSON = "0.21"
@@ -11,6 +12,7 @@ HTTP = "1.10"
 Nettle = "1.0"
 Base64 = "1.1"
 YAML = "0.4"
+Coverage = "1.6"
 julia = "1.10.3"
 
 [package]

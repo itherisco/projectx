@@ -294,6 +294,13 @@ mutable struct KernelState
     # RustIPC: Connection to Rust brain process  
     ipc_connection::Union{RustIPC.KernelConnection, Nothing}
     
+    # Brain verification status: tracks whether brain/ITHERIS is available
+    # When false, the kernel operates in safe mode requiring human intervention
+    brain_verification_enabled::Bool
+    
+    # Audit log for tracking all brain fallback events
+    fallback_audit_log::Vector{Dict{String, Any}}
+    
     # Mutable for runtime updates only—not structural logic
     KernelState(cycle::Int, goals::Vector{Goal}, world::WorldState, active_goal_id::String) =
         new(Threads.Atomic{Int}(cycle), goals, 
@@ -307,7 +314,9 @@ mutable struct KernelState
             nothing,  # SystemObserver initialized separately
             SelfModel.SelfModelCore(),  # Initialize SelfModel for dynamic confidence
             FlowIntegrityGate(),  # FlowIntegrity gate (enabled for Sovereign AI)
-            nothing  # RustIPC connection initialized separately
+            nothing,  # RustIPC connection initialized separately
+            false,  # brain_verification_enabled: starts disabled until verified
+            Dict{String, Any}[]  # fallback_audit_log
         )
 end
 
@@ -438,8 +447,24 @@ function init_kernel(config::Dict)::KernelState
 
     if kernel.ipc_connection !== nothing
         @info "RustIPC connection established to Itheris kernel"
+        kernel.brain_verification_enabled = true
     else
-        @warn "RustIPC connection failed - running in fallback mode without brain verification"
+        # FAIL-CLOSED: Brain verification is REQUIRED for safe operation
+        # Do NOT silently fall back - require explicit human intervention
+        @error "RustIPC connection failed - BRAIN VERIFICATION REQUIRED"
+        kernel.brain_verification_enabled = false
+        
+        # Log to audit trail for security accountability
+        push!(kernel.fallback_audit_log, Dict(
+            "timestamp" => time(),
+            "event" => "BRAIN_VERIFICATION_FAILED",
+            "severity" => "CRITICAL",
+            "action" => "KERNEL_SAFE_MODE",
+            "requires_human_intervention" => true
+        ))
+        
+        # Enter safe mode - kernel will only allow safe operations
+        @warn "Kernel entering SAFE MODE - human intervention required for full operation"
     end
     
     @info "Kernel initialized with SystemObserver" num_goals=length(goals) active_goal=active_goal
@@ -650,17 +675,13 @@ function select_action(kernel::KernelState, capability_candidates::Vector{<:Any}
         return ActionProposal("none", 0.0f0, 0.0f0, 0.0f0, 0.2f0, "No candidates")
     end
     
-    # Ensure we have a vector of dicts
+    #= FALLBACK_CLEANUP: Removed redundant empty candidates fallback (2026-03-04)
+       Let conversion error propagate - returning "none" masks bugs =#
     typed_candidates = if eltype(capability_candidates) <: Dict
         capability_candidates
     else
         # Convert Vector{Any} to Vector{Dict}
-        try
-            convert(Vector{Dict{String, Any}}, capability_candidates)
-        catch
-            # If conversion fails, return a default action
-            return ActionProposal("none", 0.0f0, 0.0f0, 0.0f0, 0.2f0, "Invalid candidates")
-        end
+        convert(Vector{Dict{String, Any}}, capability_candidates)
     end
     
     priority_scores = evaluate_world(kernel)
@@ -1625,8 +1646,16 @@ function step_once(kernel::KernelState, capability_candidates::Vector{<:Any},
             response = submit_to_rust(kernel, thought, UInt8[])
             
             if !response.approved
-                @warn "Rust kernel denied action" reason=response.reason
-                # Continue anyway - fallback to local FlowIntegrity
+                @error "Rust kernel denied action - FAILING CLOSED" reason=response.reason action=action.capability_id
+                # Fail-closed: Do NOT continue with denied action
+                # Return nothing for kernel to halt further processing per Kernel Sovereignty principle
+                return (nothing, action, Dict{String, Any}(
+                    "success" => false,
+                    "effect" => "RUST_KERNEL_DENIAL: Operation blocked by Rust kernel - fail-closed",
+                    "actual_confidence" => 0.0f0,
+                    "energy_cost" => action.predicted_cost,
+                    "denial_reason" => response.reason
+                ))
             end
         catch e
             @debug "Failed to submit thought cycle to Rust" error=e

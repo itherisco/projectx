@@ -1,9 +1,14 @@
 # Jarvis System Implementation Roadmap
-## Comprehensive Production-Ready Autonomous AI Assistant
+
+> **⚠️ System Status: PROTOTYPE / EXPERIMENTAL**
+> This document outlines a design specification for a future production system.
+> The current implementation is an experimental prototype with significant security gaps.
+
+## Comprehensive Autonomous AI Assistant (Design Specification)
 
 **Generated:** 2026-02-26  
 **Status:** ARCHITECTURE SPECIFICATION  
-**Classification:** PRODUCTION SYSTEM DESIGN
+**Classification:** PRODUCTION SYSTEM DESIGN (Target - Not Yet Achieved)
 
 ---
 

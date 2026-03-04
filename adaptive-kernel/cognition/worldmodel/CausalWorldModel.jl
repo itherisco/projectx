@@ -23,7 +23,7 @@ The "Challenge" Engine - simulates counterfactuals to challenge Jarvis's reasoni
 Generates 1,000 "What If" scenarios to find causal breakpoints.
 
 # Fields
-- `world_model::WorldModel`: Base world model for predictions
+- `world_model::PredictiveModel`: Base world model for predictions
 - `scenario_cache::Vector{Dict}`: Cache of generated scenarios
 - `causal_breakpoints::Vector{Dict}`: Identified causal breakpoints
 - `breakpoint_threshold::Float32`: Threshold for identifying breakpoints
@@ -31,7 +31,7 @@ Generates 1,000 "What If" scenarios to find causal breakpoints.
 - `scenario_seed::Int`: Random seed for reproducibility
 """
 mutable struct CausalChallengeEngine
-    world_model::WorldModel
+    world_model::PredictiveModel
     scenario_cache::Vector{Dict}
     causal_breakpoints::Vector{Dict}
     breakpoint_threshold::Float32
@@ -39,7 +39,7 @@ mutable struct CausalChallengeEngine
     scenario_seed::Int
     
     function CausalChallengeEngine(
-        world_model::WorldModel;
+        world_model::PredictiveModel;
         breakpoint_threshold::Float32=0.3f0,
         max_scenarios::Int=1000,
         scenario_seed::Int=42
@@ -672,17 +672,17 @@ function get_causal_map_json(causal_map::CausalMap)::String
 end
 
 """
-    function create_challenge_engine(world_model::WorldModel)::CausalChallengeEngine
+    function create_challenge_engine(world_model::PredictiveModel)::CausalChallengeEngine
 
 Create a CausalChallengeEngine from an existing WorldModel.
 
 # Arguments
-- `world_model::WorldModel`: Existing world model
+- `world_model::PredictiveModel`: Existing world model
 
 # Returns
 - `CausalChallengeEngine`: Initialized challenge engine
 """
-function create_challenge_engine(world_model::WorldModel)::CausalChallengeEngine
+function create_challenge_engine(world_model::PredictiveModel)::CausalChallengeEngine
     return CausalChallengeEngine(world_model)
 end
 

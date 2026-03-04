@@ -9,6 +9,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
+use panic_translation::install_panic_hook;
 
 /// Initialize IPC ring buffer for Julia communication
 /// Available for both bare-metal and user-space modes
@@ -23,6 +24,10 @@ pub fn init_ipc() -> Option<ipc::ring_buffer::IpcRingBuffer> {
 /// The bootloader expects a symbol named `_start`
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    // Install panic translation hook before anything else
+    // This ensures panics are caught and translated at the FFI boundary
+    install_panic_hook();
+    
     // Early println before serial is initialized
     println!("[BOOT] Itheris Kernel starting...");
     

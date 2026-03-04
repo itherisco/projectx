@@ -2,6 +2,9 @@
 
 A minimal, auditable adaptive operating system kernel for building safe, intelligent agents. The kernel is 1790 lines of readable Julia code that maintains world state, evaluates priorities, selects actions deterministically, and reflects on outcomes—all without embedding task logic, OS capabilities, or personality.
 
+> **⚠️ MATURITY STATUS: EXPERIMENTAL (68/100)**
+> See [STATUS.md](../STATUS.md) for authoritative feature maturity information.
+
 ## Architecture
 
 ```

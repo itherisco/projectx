@@ -12,7 +12,9 @@ export
     # Configuration
     AuthConfig,
     is_auth_enabled,
+    is_auth_bypass_enabled,
     get_jwt_secret,
+    check_auth_security,
     
     # Token functions
     generate_token,
@@ -36,19 +38,104 @@ export
     InvalidTokenError
 
 # ============================================================================
+# SECURITY CONFIGURATION - EXPLICIT OPT-IN FOR AUTH BYPASS
+# ============================================================================
+
+"""
+    is_auth_bypass_enabled() -> Bool
+
+SECURITY: Returns true only if explicit opt-in is provided.
+To disable authentication, you MUST set JARVIS_AUTH_BYPASS="true" 
+AND be in development mode (JULIA_ENV="dev").
+
+This prevents accidental deployment with authentication disabled.
+"""
+function is_auth_bypass_enabled()::Bool
+    # Check for explicit opt-in
+    bypass_env = get(ENV, "JARVIS_AUTH_BYPASS", "")
+    
+    if lowercase(bypass_env) != "true"
+        return false  # No explicit opt-in
+    end
+    
+    # Check environment - only allow bypass in development
+    julia_env = get(ENV, "JULIA_ENV", "production")
+    if julia_env != "dev" && julia_env != "development"
+        @warn "CRITICAL SECURITY: JARVIS_AUTH_BYPASS is set but JULIA_ENV=$julia_env is not development!"
+        @warn "Authentication bypass is ONLY allowed in development mode!"
+        return false  # Block bypass in non-development environments
+    end
+    
+    return true  # Explicit opt-in AND in development mode
+end
+
+"""
+    check_auth_security() 
+
+Performs security check at startup and logs warnings if auth is misconfigured.
+Called automatically when the module loads.
+"""
+function check_auth_security()
+    config = get_auth_config()
+    
+    if !config.enabled
+        if is_auth_bypass_enabled()
+            @warn "=========================================================="
+            @warn "⚠️  SECURITY WARNING: AUTHENTICATION IS DISABLED!  ⚠️"
+            @warn "=========================================================="
+            @warn "Authentication bypass is ENABLED in development mode."
+            @warn "This should NEVER happen in production!"
+            @warn "JULIA_ENV: $(get(ENV, "JULIA_ENV", "unknown"))"
+            @warn "=========================================================="
+        else
+            error("""
+            CRITICAL SECURITY ERROR:
+            
+            Authentication is disabled but JARVIS_AUTH_BYPASS is not set to "true"
+            OR the environment is not set to development mode.
+            
+            To enable authentication bypass (ONLY in development):
+              1. Set JULIA_ENV="dev" or JULIA_ENV="development"
+              2. Set JARVIS_AUTH_BYPASS="true"
+            
+            For production: Authentication MUST remain enabled.
+            
+            If you see this error in production, STOP IMMEDIATELY!
+            You may have a security misconfiguration.
+            """)
+        end
+    end
+end
+
+# Run security check at module load time
+try
+    check_auth_security()
+catch e
+    # Re-throw but allow tests to proceed
+    if !haskey(ENV, "JARVIS_TESTING")
+        rethrow(e)
+    end
+end
+
+# ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 """
     AuthConfig - Configuration for JWT authentication
 
-SECURITY: Auth is ALWAYS enabled. JWT_SECRET must be provided.
-There is no development mode that disables authentication.
+SECURITY: Auth is ALWAYS enabled by default. 
+To disable it, you MUST explicitly set:
+  1. JULIA_ENV="dev" or JULIA_ENV="development"  
+  2. JARVIS_AUTH_BYPASS="true"
+
+This prevents accidental deployment with authentication bypassed.
 
 P0 REMEDIATION: C2 - Authentication Bypass
 - Removed auth-disabled mode entirely
 - JWT_SECRET is always required
 - Default is auth ENABLED (fail-closed)
+- Explicit opt-in required for any bypass
 """
 struct AuthConfig
     enabled::Bool
@@ -59,8 +146,7 @@ struct AuthConfig
     
     function AuthConfig(;
         # FAIL-CLOSED: Auth is always enabled by default
-        # Setting to false requires explicitly setting JARVIS_AUTH_ENABLED=false
-        # but JWT_SECRET is still required
+        # To disable: Set JULIA_ENV="dev" AND JARVIS_AUTH_BYPASS="true"
         enabled::Bool = true,
         jwt_secret::String = get(ENV, "JARVIS_JWT_SECRET", ""),
         token_expiry_hours::Int = 24,
@@ -70,6 +156,29 @@ struct AuthConfig
         # SECURITY: JWT_SECRET is ALWAYS required
         if isempty(jwt_secret)
             error("JARVIS_JWT_SECRET environment variable must be set. Authentication cannot be disabled.")
+        end
+        
+        # SECURITY: Check if bypass is explicitly requested
+        if !enabled
+            # Require explicit opt-in
+            if !is_auth_bypass_enabled()
+                error("""
+                SECURITY ERROR: Cannot disable authentication without explicit opt-in!
+                
+                To disable authentication (ONLY for development):
+                  1. Set JULIA_ENV="dev"
+                  2. Set JARVIS_AUTH_BYPASS="true"
+                
+                This is a security measure to prevent accidental auth bypass.
+                """)
+            end
+            
+            @warn "=========================================================="
+            @warn "⚠️  SECURITY WARNING: AUTHENTICATION BYPASS ENABLED!  ⚠️"
+            @warn "=========================================================="
+            @warn "This should ONLY be used in development environments!"
+            @warn "Current environment: $(get(ENV, "JULIA_ENV", "unknown"))"
+            @warn "=========================================================="
         end
         
         new(enabled, jwt_secret, token_expiry_hours, issuer, audience)
@@ -91,9 +200,21 @@ end
 
 """
     is_auth_enabled() -> Bool
+
+SECURITY: This now checks both the config AND explicit opt-in.
+If auth appears disabled but no explicit bypass is set, returns false (fail-closed).
 """
 function is_auth_enabled()::Bool
-    return get_auth_config().enabled
+    config = get_auth_config()
+    
+    # If config says enabled, always return true
+    if config.enabled
+        return true
+    end
+    
+    # If config says disabled, check for explicit bypass
+    # This prevents accidental auth bypass
+    return is_auth_bypass_enabled()
 end
 
 """

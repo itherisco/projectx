@@ -25,9 +25,33 @@ export
     generate_embedding,
     cosine_similarity
 
-# Include jarvis types - VectorMemory depends on SemanticEntry from jarvis/src/types.jl
-include("../types.jl")
-using ..JarvisTypes
+# ============================================================================
+# TYPE DEFINITIONS - Local to avoid external dependency on JarvisTypes
+# ============================================================================
+
+"""
+    SemanticEntry - Long-term knowledge stored in vector DB
+    Defined locally to allow VectorMemory to work standalone without Jarvis package
+"""
+mutable struct SemanticEntry
+    id::UUID
+    collection::Symbol  # :user_preferences, :conversations, :project_knowledge
+    content::String
+    embedding::Vector{Float32}
+    metadata::Dict{String, Any}
+    created_at::DateTime
+    accessed_at::DateTime
+    access_count::Int
+    
+    function SemanticEntry(
+        collection::Symbol,
+        content::String,
+        embedding::Vector{Float32};
+        metadata::Dict{String, Any} = Dict()
+    )
+        new(uuid4(), collection, content, embedding, metadata, now(), now(), 0)
+    end
+end
 
 # ============================================================================
 # VECTOR STORE (In-memory HNSW-like implementation)

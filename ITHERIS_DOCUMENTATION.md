@@ -1,8 +1,14 @@
 # Itheris Personal Assistant - Complete Documentation
 
+> **⚠️ System Status: PROTOTYPE / EXPERIMENTAL**
+> This system is a research prototype. It is NOT production-ready.
+> - Security Score: 12/100 (CRITICAL)
+> - Cognitive Completeness: 47/100 (Partial)
+> - Personal Assistant Readiness: 42/100 (Not production-ready)
+
 **Version:** 2.0  
 **Last Updated:** 2026-03-02  
-**Status:** Production-Ready Neuro-Symbolic Autonomous System  
+**Status:** Experimental Neuro-Symbolic Autonomous System  
 **Implementation:** Julia 1.8+ / Rust (Itheris Brain)
 
 ---

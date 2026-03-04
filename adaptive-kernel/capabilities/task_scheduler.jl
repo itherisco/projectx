@@ -22,13 +22,9 @@ function execute(params::Dict{String,Any})::Dict{String,Any}
     task = get(params, "task", "noop")
     sfile = "sandbox/schedule.json"
     data = Dict()
-    if isfile(sfile)
-        try
-            data = JSON.parse(read(sfile, String))
-        catch
-            data = Dict()
-        end
-    end
+#= FALLBACK_CLEANUP: Removed JSON parse fallback (2026-03-04)
+   Silent failure could mask bugs - let errors propagate =#
+    data = JSON.parse(read(sfile, String))
     data[string(now())] = Dict("at"=>at, "task"=>task)
     open(sfile, "w") do io
         println(io, JSON.json(data))

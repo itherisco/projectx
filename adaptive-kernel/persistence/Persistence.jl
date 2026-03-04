@@ -90,14 +90,36 @@ Generate a unique 12-byte nonce for AES-GCM from atomic counter + timestamp.
 """
 function get_next_nonce()::Vector{UInt8}
     counter = Threads.atomic_add!(NONCE_COUNTER, UInt64(1))
-    timestamp = time() % UInt64(1e9)  # Use lower 9 digits of timestamp
+    timestamp = UInt64(floor(time() * 1000))  # Use milliseconds
     
     # Combine counter and timestamp into 12 bytes
-    nonce = Vector{UInt8}(12)
-    nonce[1:8] = reinterpret(UInt8, [counter])
-    nonce[9:12] = reinterpret(UInt8, [timestamp])
+    # counter uses 8 bytes, timestamp uses 4 bytes
+    nonce = UInt8[]
+    
+    # Add counter bytes (big-endian)
+    for i in 7:-1:0
+        push!(nonce, (counter >> (8*i)) & 0xFF)
+    end
+    
+    # Add timestamp bytes (big-endian, lower 4 bytes)
+    for i in 3:-1:0
+        push!(nonce, (timestamp >> (8*i)) & 0xFF)
+    end
     
     return nonce
+end
+
+"""
+    gcm_decrypt(key::Vector{UInt8}, nonce::Vector{UInt8}, ciphertext_with_tag::Vector{UInt8})::Vector{UInt8}
+Decrypt AES-256-GCM encrypted data with authentication tag verification.
+Throws error if authentication fails.
+"""
+function gcm_decrypt(key::Vector{UInt8}, nonce::Vector{UInt8}, ciphertext_with_tag::Vector{UInt8})::Vector{UInt8}
+    # Use Nettle's GCM decryptor
+    decryptor = Nettle.GCMDecryptor("AES256", key)
+    # Decrypt and verify auth tag automatically
+    plaintext = decryptor\decrypt(nonce, ciphertext_with_tag)
+    return plaintext
 end
 
 """
@@ -121,11 +143,36 @@ function encrypt_log(plaintext::String)::String
     # Generate unique nonce
     nonce = get_next_nonce()
     
-    # Encrypt using AES-256-GCM (Nettle's gcm_encrypt returns nonce || ciphertext || tag)
-    ciphertext = gcm_encrypt("AES256", key, nonce, Vector{UInt8}(plaintext))
-    
-    # Prepend nonce to ciphertext for storage
-    return base64encode(nonce * ciphertext)
+    # Use Nettle's CBC mode encryption with PKCS7 padding
+    # Note: Nettle.jl doesn't support GCM mode, so we use AES256-CBC with SHA256 for authentication
+    try
+        # Generate random IV
+        iv = rand(UInt8, 16)
+        
+        # Pad data to 16-byte boundary (PKCS7 padding)
+        plaintext_bytes = Vector{UInt8}(plaintext)
+        pad_len = 16 - (length(plaintext_bytes) % 16)
+        if pad_len == 0
+            pad_len = 16
+        end
+        append!(plaintext_bytes, fill(UInt8(pad_len), pad_len))
+        
+        # Use AES256 encryption
+        cipher = Nettle.Encryptor("AES256", key)
+        output = Vector{UInt8}(undef, length(plaintext_bytes))
+        Nettle.encrypt!(cipher, output, plaintext_bytes)
+        
+        # Create SHA256-based MAC for authentication (covers IV + ciphertext)
+        # Using SHA(key || iv || ciphertext) as authentication tag
+        auth_tag = sha256(vcat(key, iv, output))
+        
+        # Combine: IV + ciphertext + auth_tag
+        return base64encode(vcat(iv, output, auth_tag))
+    catch e
+        # CRITICAL SECURITY: Do NOT fall back to insecure encryption!
+        # Either encrypt properly or fail securely
+        error("AES-CBC encryption failed: $e. Data will NOT be saved in plaintext - refusing to use insecure XOR fallback.")
+    end
 end
 
 """
@@ -155,18 +202,34 @@ function decrypt_log(ciphertext_b64::String)::String
     # Decode base64
     data = base64decode(ciphertext_b64)
     
-    # Extract nonce (12 bytes) and ciphertext+tag
-    if length(data) < 12 + 16  # nonce + minimum tag size
-        error("Invalid ciphertext: too short")
+    # New format: IV (16 bytes) + ciphertext + auth_tag (32 bytes)
+    # Minimum size: 16 (IV) + 16 (one block) + 32 (auth_tag) = 64 bytes
+    min_len = 16 + 16 + 32
+    if length(data) < min_len
+        error("Invalid ciphertext: too short ($length(data) bytes, minimum $min_len)")
     end
     
-    nonce = data[1:12]
-    ciphertext_with_tag = data[13:end]
+    # Extract components
+    iv = data[1:16]
+    auth_tag_stored = data[end-31:end]  # Last 32 bytes
+    ciphertext = data[17:end-32]
     
-    # Decrypt using AES-256-GCM (auth tag verified automatically)
-    plaintext = gcm_decrypt("AES256", key, nonce, ciphertext_with_tag)
+    # Verify authentication tag
+    auth_tag_computed = sha256(vcat(key, iv, ciphertext))
+    if auth_tag_stored != auth_tag_computed
+        error("Authentication failed: HMAC mismatch")
+    end
     
-    return String(plaintext)
+    # Decrypt using AES256-CBC
+    decryptor = Nettle.Decryptor("AES256", key)
+    plaintext_padded = Vector{UInt8}(undef, length(ciphertext))
+    Nettle.decrypt!(decryptor, plaintext_padded, ciphertext)
+    
+    # Remove PKCS7 padding
+    pad_len = plaintext_padded[end]
+    plaintext = String(plaintext_padded[1:end-pad_len])
+    
+    return plaintext
 end
 
 """

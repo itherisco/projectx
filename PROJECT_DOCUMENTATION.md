@@ -1,9 +1,17 @@
 # ProjectX Jarvis - Complete System Documentation
 
+> **⚠️ System Status: PROTOTYPE / EXPERIMENTAL**
+> This system is a research prototype. It is NOT production-ready.
+> - Security Score: 12/100 (CRITICAL)
+> - Cognitive Completeness: 47/100 (Partial)
+> - Personal Assistant Readiness: 42/100 (Not production-ready)
+
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md).
+
 **Version:** 1.0.0  
 **Last Updated:** 2026-02-28  
 **Julia Version:** 1.8+  
-**Status:** Production-Ready
+**Status:** Experimental Prototype
 
 ---
 
