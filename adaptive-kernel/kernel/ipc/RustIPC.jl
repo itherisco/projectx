@@ -40,7 +40,7 @@ using Base.Threads
 
 # Configurable shared memory path - can be overridden via environment variable
 function _get_shm_path()
-    get("ITHERIS_SHM_PATH", "/dev/shm/itheris_ipc")
+    get(ENV, "ITHERIS_SHM_PATH", "/dev/shm/itheris_ipc")
 end
 
 const SHM_PATH = _get_shm_path()
@@ -532,7 +532,7 @@ function connect_kernel()::KernelConnection
     # Open or create shared memory
     # O_RDWR = 0x02, O_CREAT = 0x200
     # Security: Using 0o600 (owner read/write only) instead of 0o666 (world-readable/writable)
-    const SHM_PERMISSIONS = 0o600  # Secure: owner only
+    local SHM_PERMISSIONS = 0o600  # Secure: owner only
     shm_fd = ccall(:shm_open, Int32, (Cstring, Int32, UInt32), 
                    SHM_PATH, 0x02 | 0x200, SHM_PERMISSIONS)
     
