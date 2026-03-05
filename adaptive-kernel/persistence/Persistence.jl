@@ -124,14 +124,13 @@ end
 
 """
     encrypt_log(plaintext::String)::String
-Encrypt plaintext using AES-256-GCM with a unique nonce per encryption.
-Returns base64-encoded nonce || ciphertext || auth_tag.
-If no key is configured, returns plaintext unchanged.
+Encrypt plaintext using AES-256-CBC with SHA256-HMAC authentication.
+Returns base64-encoded IV || ciphertext || auth_tag.
+Throws error if no encryption key is configured (fail-secure).
 """
 function encrypt_log(plaintext::String)::String
     if EVENT_LOG_KEY === nothing
-        @warn "No encryption key configured - storing plaintext"
-        return plaintext
+        error("SECURITY FAILURE: No encryption key configured. Refusing to store data in plaintext. Please configure JARVIS_EVENT_LOG_KEY environment variable or encryption_key in config.toml")
     end
     
     # Ensure we have a 32-byte key for AES-256
@@ -177,20 +176,13 @@ end
 
 """
     decrypt_log(ciphertext_b64::String)::String
-Decrypt base64-encoded ciphertext using AES-256-GCM.
+Decrypt base64-encoded ciphertext using AES-256-CBC with SHA256-HMAC verification.
 Returns plaintext on success, throws error on authentication failure.
-If no key is configured, returns ciphertext unchanged (for backwards compatibility).
+Throws error if no encryption key is configured (fail-secure).
 """
 function decrypt_log(ciphertext_b64::String)::String
     if EVENT_LOG_KEY === nothing
-        # No key configured - check if it's actually plaintext (JSON)
-        # If it looks like plaintext JSON, return as-is for backwards compatibility
-        try
-            JSON.parse(ciphertext_b64)
-            return ciphertext_b64  # It's valid JSON, treat as plaintext
-        catch
-            error("Cannot decrypt: no key configured and data is not plaintext JSON")
-        end
+        error("SECURITY FAILURE: No encryption key configured. Cannot decrypt data without a key. Please configure JARVIS_EVENT_LOG_KEY environment variable or encryption_key in config.toml")
     end
     
     # Ensure we have a 32-byte key for AES-256
@@ -356,18 +348,18 @@ end
 """
     save_encrypted_state(state::Dict{String, Any})
 Serialize and encrypt kernel state for multi-session continuity.
-Uses AES-256-GCM encryption with unique nonces.
+Uses AES-256-CBC encryption with SHA256-HMAC authentication.
+Throws error if no encryption key is configured (fail-secure).
 """
 function save_encrypted_state(state::Dict{String, Any})
     if EVENT_LOG_KEY === nothing
-        @warn "No encryption key configured - cannot save encrypted state"
-        return false
+        error("SECURITY FAILURE: No encryption key configured. Refusing to save unencrypted state. Please configure JARVIS_EVENT_LOG_KEY environment variable or encryption_key in config.toml")
     end
     
     # Serialize state to JSON
     plaintext = JSON.json(state)
     
-    # Encrypt using AES-256-GCM
+    # Encrypt using AES-256-CBC with SHA256-HMAC
     encrypted = encrypt_log(plaintext)
     
     # Write to file atomically
@@ -401,8 +393,7 @@ function load_encrypted_state()::Union{Dict{String, Any}, Nothing}
     end
     
     if EVENT_LOG_KEY === nothing
-        @warn "No encryption key configured - cannot load encrypted state"
-        return nothing
+        error("SECURITY FAILURE: No encryption key configured. Cannot load encrypted state without a key. Please configure JARVIS_EVENT_LOG_KEY environment variable or encryption_key in config.toml")
     end
     
     try

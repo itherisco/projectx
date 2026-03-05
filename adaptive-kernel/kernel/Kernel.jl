@@ -39,6 +39,10 @@ include(joinpath(@__DIR__, "..", "cognition", "metacognition", "SelfModel.jl"))
 include("trust/FlowIntegrity.jl")
 using .FlowIntegrity
 
+# Import Resilience module for circuit breaker protection
+include(joinpath(@__DIR__, "..", "resilience", "Resilience.jl"))
+using .Resilience
+
 # ============================================================================
 # SOVEREIGNTY GATEWAY - Hardened Checkpoint Types
 # ============================================================================
@@ -237,7 +241,9 @@ export Observation, KernelState, Goal, GoalState, WorldState, init_kernel, step_
        record_decision_outcome!,
        # FlowIntegrity for cryptographic sovereignty
        FlowIntegrityGate, issue_flow_token, serialize_token, verify_flow_token, enable_token_enforcement,
-       flow_secret_is_set, enable_flow_integrity!, get_flow_token, create_verified_executor
+       flow_secret_is_set, enable_flow_integrity!, get_flow_token, create_verified_executor,
+       # Resilience: Circuit Breaker for cascading failure protection
+       Resilience, get_resilience_summary, get_system_resilience_status
 
 # Decision types for kernel sovereignty
 @enum Decision APPROVED DENIED STOPPED
@@ -301,6 +307,10 @@ mutable struct KernelState
     # Audit log for tracking all brain fallback events
     fallback_audit_log::Vector{Dict{String, Any}}
     
+    # CircuitBreaker: Resilience protection for external services
+    # Protects against cascading failures from brain/API unavailability
+    circuit_breaker_manager::Union{Resilience.GlobalCircuitBreakerManager, Nothing}
+    
     # Mutable for runtime updates only—not structural logic
     KernelState(cycle::Int, goals::Vector{Goal}, world::WorldState, active_goal_id::String) =
         new(Threads.Atomic{Int}(cycle), goals, 
@@ -316,7 +326,8 @@ mutable struct KernelState
             FlowIntegrityGate(),  # FlowIntegrity gate (enabled for Sovereign AI)
             nothing,  # RustIPC connection initialized separately
             false,  # brain_verification_enabled: starts disabled until verified
-            Dict{String, Any}[]  # fallback_audit_log
+            Dict{String, Any}[],  # fallback_audit_log
+            nothing  # circuit_breaker_manager: initialized separately
         )
 end
 
@@ -466,6 +477,14 @@ function init_kernel(config::Dict)::KernelState
         # Enter safe mode - kernel will only allow safe operations
         @warn "Kernel entering SAFE MODE - human intervention required for full operation"
     end
+    
+    # Initialize Circuit Breaker for resilience against cascading failures
+    # This protects the kernel from failing when external services (brain, APIs) are unavailable
+    kernel.circuit_breaker_manager = Resilience.initialize_resilience()
+    
+    # Log circuit breaker status
+    cb_status = Resilience.get_resilience_summary()
+    @info "Circuit breakers initialized" status=cb_status
     
     @info "Kernel initialized with SystemObserver" num_goals=length(goals) active_goal=active_goal
     return kernel
@@ -1658,8 +1677,28 @@ function step_once(kernel::KernelState, capability_candidates::Vector{<:Any},
                 ))
             end
         catch e
-            @debug "Failed to submit thought cycle to Rust" error=e
+            @error "Failed to submit thought cycle to Rust - FAILING CLOSED" error=string(e)
+            # Fail-closed: IPC failure means we cannot verify, so halt execution
+            return (nothing, action, Dict{String, Any}(
+                "success" => false,
+                "effect" => "RUST_KERNEL_DENIAL: IPC failure - fail-closed for security",
+                "actual_confidence" => 0.0f0,
+                "energy_cost" => action.predicted_cost,
+                "denial_reason" => "IPC submission failed: $(string(e))"
+            ))
         end
+    else
+        # Fail-closed: No IPC connection means we cannot verify with Rust kernel
+        # This is a critical security requirement - kernel sovereignty requires
+        # verification before execution when Rust kernel is available
+        @error "Rust kernel verification unavailable (no IPC connection) - FAILING CLOSED" action=action.capability_id
+        return (nothing, action, Dict{String, Any}(
+            "success" => false,
+            "effect" => "RUST_KERNEL_DENIAL: No IPC connection to Rust kernel - fail-closed",
+            "actual_confidence" => 0.0f0,
+            "energy_cost" => action.predicted_cost,
+            "denial_reason" => "IPC connection not available - kernel sovereignty requires verification"
+        ))
     end
     
     kernel.last_action = action

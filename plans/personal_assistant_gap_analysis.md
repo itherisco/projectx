@@ -24,10 +24,10 @@ However, the system lacks the **peripheral integrations** and **consumer-facing 
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Adaptive Kernel | Production-ready | `adaptive-kernel/kernel/Kernel.jl` |
-| ITHERIS Brain | Production-ready | `adaptive-kernel/brain/Brain.jl` |
-| Capability Registry | Basic (7 capabilities) | `adaptive-kernel/registry/capability_registry.json` |
-| Trust Classification | Implemented (5 levels) | `jarvis/src/types.jl` |
+| Adaptive Kernel | 🟡 Experimental (Not production-ready) | `adaptive-kernel/kernel/Kernel.jl` |
+| ITHERIS Brain | 🔴 Under Development (Not production-ready) | `adaptive-kernel/brain/Brain.jl` |
+| Capability Registry | 🟡 Experimental (Basic - 7 capabilities) | `adaptive-kernel/registry/capability_registry.json` |
+| Trust Classification | 🟡 Experimental (5 levels - partial implementation) | `jarvis/src/types.jl` |
 | Memory System | Semantic + Vector | `jarvis/src/memory/` |
 | CommunicationBridge | Hooks exist | `jarvis/src/bridge/CommunicationBridge.jl` |
 | Task Orchestration | Basic | `jarvis/src/orchestration/TaskOrchestrator.jl` |
@@ -568,4 +568,4 @@ The current adaptive-kernel + JARVIS system provides a solid cognitive foundatio
 - **Phase 5 (Intelligence)**: Proactive features and knowledge graph
 - **Phase 6 (Reliability & UI)**: Error recovery and mobile apps
 
-The core cognitive architecture is production-ready; the focus should be on building out the I/O and user experience layers in an incremental, testable manner.
+The core cognitive architecture is experimental (not production-ready); the focus should be on building out the I/O and user experience layers while addressing security and cognitive completeness gaps. Security Score: 12/100, Cognitive Completeness: 47/100.

@@ -21,6 +21,61 @@ static PANIC_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 /// Maximum length of panic message to capture
 const MAX_PANIC_MESSAGE_LEN: usize = 4096;
 
+/// Keyword to exception code mapping for automatic panic message parsing
+const PANIC_KEYWORD_MAPPINGS: &[(&str, JuliaExceptionCode)] = &[
+    ("memory", JuliaExceptionCode::OutOfMemory),
+    ("out of memory", JuliaExceptionCode::OutOfMemory),
+    ("oom", JuliaExceptionCode::OutOfMemory),
+    ("alloc", JuliaExceptionCode::OutOfMemory),
+    ("lock", JuliaExceptionCode::LockError),
+    ("mutex", JuliaExceptionCode::LockError),
+    ("rwlock", JuliaExceptionCode::LockError),
+    ("poisoned", JuliaExceptionCode::LockError),
+    ("thread", JuliaExceptionCode::ThreadPanic),
+    ("task", JuliaExceptionCode::ThreadPanic),
+    ("crypto", JuliaExceptionCode::CryptoError),
+    ("encryption", JuliaExceptionCode::CryptoError),
+    ("decryption", JuliaExceptionCode::CryptoError),
+    ("invalid", JuliaExceptionCode::InvalidArgument),
+    ("null", JuliaExceptionCode::InvalidArgument),
+    ("not implemented", JuliaExceptionCode::NotImplemented),
+    ("unimplemented", JuliaExceptionCode::NotImplemented),
+    ("capability", JuliaExceptionCode::CapabilityDenied),
+    ("permission", JuliaExceptionCode::CapabilityDenied),
+    ("forbidden", JuliaExceptionCode::CapabilityDenied),
+    ("ipc", JuliaExceptionCode::IPCError),
+    ("channel", JuliaExceptionCode::IPCError),
+    ("kernel", JuliaExceptionCode::KernelViolation),
+    ("shared memory", JuliaExceptionCode::SharedMemoryError),
+    ("shm", JuliaExceptionCode::SharedMemoryError),
+    ("buffer full", JuliaExceptionCode::BufferFull),
+    ("buffer overflow", JuliaExceptionCode::BufferFull),
+    ("buffer empty", JuliaExceptionCode::BufferEmpty),
+    ("underflow", JuliaExceptionCode::BufferEmpty),
+];
+
+/// Analyze a panic message to infer the appropriate JuliaExceptionCode
+/// 
+/// This function searches for known keywords in the panic message to
+/// determine the most appropriate exception code.
+/// 
+/// # Arguments
+/// * `message` - The panic message to analyze
+/// 
+/// # Returns
+/// The inferred JuliaExceptionCode, or Unknown if no match found
+pub fn infer_exception_from_panic(message: &str) -> JuliaExceptionCode {
+    let lowercase_msg = message.to_lowercase();
+    
+    for (keyword, code) in PANIC_KEYWORD_MAPPINGS {
+        if lowercase_msg.contains(keyword) {
+            return *code;
+        }
+    }
+    
+    JuliaExceptionCode::Unknown
+}
+
 /// Julia exception codes that can be raised from Rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -75,6 +130,9 @@ pub struct TranslatedPanic {
 
 impl TranslatedPanic {
     /// Create a new translated panic from a panic info
+    /// 
+    /// Automatically infers the exception code from the panic message
+    /// using keyword matching.
     pub fn from_panic_info(info: &panic::PanicInfo) -> Self {
         let message = if let Some(s) = info.message() {
             let msg = format!("{:?}", s);
@@ -94,8 +152,16 @@ impl TranslatedPanic {
             ([0u8; 128], 0, 0)
         };
 
+        // Infer exception code from panic message
+        let msg_str = if let Some(s) = info.message() {
+            format!("{:?}", s)
+        } else {
+            String::new()
+        };
+        let inferred_code = infer_exception_from_panic(&msg_str);
+
         TranslatedPanic {
-            exception_code: JuliaExceptionCode::Unknown as u32,
+            exception_code: inferred_code as u32,
             message,
             file,
             line,
@@ -181,6 +247,82 @@ impl FFIResult {
 pub trait FFISafe {
     /// Convert to FFI-safe representation
     fn to_ffi(&self) -> FFIResult;
+}
+
+// ============================================================================
+// FFISafe Implementations for Common Rust Error Types
+// ============================================================================
+
+impl FFISafe for std::io::Error {
+    /// Convert std::io::Error to FFI result
+    /// 
+    /// Maps IO errors to appropriate Julia exception codes:
+    /// - NotFound -> InvalidArgument
+    /// - PermissionDenied -> CapabilityDenied
+    /// - OutOfMemory -> OutOfMemory (if applicable)
+    /// - Other -> RustError
+    fn to_ffi(&self) -> FFIResult {
+        let code = match self.kind() {
+            std::io::ErrorKind::NotFound => JuliaExceptionCode::InvalidArgument,
+            std::io::ErrorKind::PermissionDenied => JuliaExceptionCode::CapabilityDenied,
+            std::io::ErrorKind::OutOfMemory => JuliaExceptionCode::OutOfMemory,
+            std::io::ErrorKind::AddrInUse | std::io::ErrorKind::AddrNotAvailable => {
+                JuliaExceptionCode::LockError
+            }
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => {
+                JuliaExceptionCode::BufferEmpty
+            }
+            _ => JuliaExceptionCode::RustError,
+        };
+        
+        FFIResult::from_error(code, &self.to_string())
+    }
+}
+
+impl FFISafe for String {
+    /// Convert String to FFI result
+    /// 
+    /// Analyzes the string content to infer the appropriate exception code
+    /// using keyword matching, then wraps it in an FFI result.
+    fn to_ffi(&self) -> FFIResult {
+        let code = infer_exception_from_panic(self);
+        FFIResult::from_error(code, self)
+    }
+}
+
+impl FFISafe for &'static str {
+    /// Convert static string slice to FFI result
+    /// 
+    /// Analyzes the string content to infer the appropriate exception code
+    /// using keyword matching, then wraps it in an FFI result.
+    fn to_ffi(&self) -> FFIResult {
+        let code = infer_exception_from_panic(self);
+        FFIResult::from_error(code, self)
+    }
+}
+
+/// Extension trait for convenient FFI conversion
+pub trait IntoFFIResult {
+    /// Convert to FFI result
+    fn into_ffi(self) -> FFIResult;
+}
+
+impl IntoFFIResult for std::io::Error {
+    fn into_ffi(self) -> FFIResult {
+        FFISafe::to_ffi(&self)
+    }
+}
+
+impl IntoFFIResult for String {
+    fn into_ffi(self) -> FFIResult {
+        FFISafe::to_ffi(&self)
+    }
+}
+
+impl IntoFFIResult for &str {
+    fn into_ffi(self) -> FFIResult {
+        FFISafe::to_ffi(&self)
+    }
 }
 
 /// Execute a closure with panic catching, returning a FFI result
@@ -298,8 +440,10 @@ pub unsafe extern "C" fn raise_julia_exception(
     code: u32,
     message: *const libc::c_char,
 ) -> FFIResult {
+    // Use CStr::from_ptr to read the message without taking ownership
+    // This prevents memory leaks when the pointer is owned by Julia
     let msg = if !message.is_null() {
-        CString::from_raw(message as *mut libc::c_char)
+        CStr::from_ptr(message)
             .to_string_lossy()
             .into_owned()
     } else {
@@ -386,6 +530,11 @@ pub enum IPCPanicError {
 /// Convert a translated panic to IPC entry for transmission to Julia
 /// 
 /// This allows panic information to be sent through the existing IPC bridge.
+/// 
+/// Note: This module is available in both bare-metal and user-space modes.
+/// In bare-metal mode, it uses the full IPC implementation.
+/// In user-space mode, it provides a simplified fallback that writes to stderr
+/// and returns a basic response structure.
 #[cfg(feature = "bare-metal")]
 pub mod ipc_translation {
     use super::*;
@@ -419,6 +568,92 @@ pub mod ipc_translation {
         
         entry
     }
+}
+
+/// User-space fallback IPC translation (when bare-metal feature is not enabled)
+/// 
+/// This provides a simplified implementation for non-bare-metal environments.
+/// It writes panic information to stderr and returns a simple status code.
+#[cfg(not(feature = "bare-metal"))]
+pub mod ipc_translation {
+    use super::*;
+    use std::io::Write;
+    
+    /// Simplified IPC entry structure for user-space mode
+    #[derive(Debug, Clone)]
+    pub struct UserSpaceIPCEntry {
+        /// Whether the entry is valid
+        pub valid: bool,
+        /// Exception code from the panic
+        pub exception_code: u32,
+        /// Error message
+        pub message: String,
+    }
+    
+    impl Default for UserSpaceIPCEntry {
+        fn default() -> Self {
+            UserSpaceIPCEntry {
+                valid: false,
+                exception_code: 0,
+                message: String::new(),
+            }
+        }
+    }
+    
+    /// Convert a TranslatedPanic to a user-space IPC entry for Julia
+    /// 
+    /// In user-space mode, this writes the panic information to stderr
+    /// and returns a simplified entry structure.
+    pub fn panic_to_ipc_entry(panic: &TranslatedPanic) -> UserSpaceIPCEntry {
+        // Write to stderr for visibility
+        eprintln!(
+            "[PANIC_TRANSLATION] IPC Fallback: Exception {} - {} at {}:{}",
+            panic.exception_code,
+            panic.get_message(),
+            panic.get_file(),
+            panic.line
+        );
+        
+        UserSpaceIPCEntry {
+            valid: true,
+            exception_code: panic.exception_code,
+            message: panic.get_message(),
+        }
+    }
+    
+    /// Send panic notification via user-space IPC fallback
+    /// 
+    /// This function provides a simple mechanism to notify Julia of panics
+    /// without requiring the bare-metal IPC infrastructure.
+    pub fn send_panic_notification(panic: &TranslatedPanic) -> Result<(), IPCPanicError> {
+        let entry = panic_to_ipc_entry(panic);
+        
+        if entry.valid {
+            // In a real implementation, this could use pipes, Unix sockets,
+            // or other user-space IPC mechanisms
+            Ok(())
+        } else {
+            Err(IPCPanicError::InvalidEntry)
+        }
+    }
+}
+
+/// Helper function to translate a panic and optionally send via IPC
+/// 
+/// This is the main entry point for panic translation that works in both
+/// bare-metal and user-space modes.
+#[cfg(not(feature = "bare-metal"))]
+pub fn translate_panic_with_ipc(info: &panic::PanicInfo) -> TranslatedPanic {
+    let mut translated = TranslatedPanic::from_panic_info(info);
+    
+    // Infer exception code from panic message
+    let msg = translated.get_message();
+    translated.exception_code = infer_exception_from_panic(&msg) as u32;
+    
+    // Attempt to send via IPC (will use fallback in non-bare-metal mode)
+    let _ = ipc_translation::send_panic_notification(&translated);
+    
+    translated
 }
 
 #[cfg(test)]
@@ -575,4 +810,104 @@ mod tests {
         // Verify panic was caught
         assert!(panic_flag.load(Ordering::SeqCst));
     }
+
+    // ============================================================================
+    // Tests for new features: panic message parsing
+    // ============================================================================
+
+    #[test]
+    fn test_infer_exception_from_panic_memory_keywords() {
+        // Test memory-related keywords
+        assert_eq!(
+            infer_exception_from_panic("out of memory during allocation"),
+            JuliaExceptionCode::OutOfMemory
+        );
+        assert_eq!(
+            infer_exception_from_panic("memory allocation failed"),
+            JuliaExceptionCode::OutOfMemory
+        );
+    }
+
+    #[test]
+    fn test_infer_exception_from_panic_lock_keywords() {
+        // Test lock-related keywords
+        assert_eq!(
+            infer_exception_from_panic("lock is poisoned"),
+            JuliaExceptionCode::LockError
+        );
+    }
+
+    #[test]
+    fn test_infer_exception_from_panic_thread_keywords() {
+        // Test thread-related keywords
+        assert_eq!(
+            infer_exception_from_panic("thread panicked"),
+            JuliaExceptionCode::ThreadPanic
+        );
+    }
+
+    #[test]
+    fn test_infer_exception_from_panic_unknown() {
+        // Test unknown message returns Unknown code
+        assert_eq!(
+            infer_exception_from_panic("some random error"),
+            JuliaExceptionCode::Unknown
+        );
+    }
+
+    // ============================================================================
+    // Tests for FFISafe implementations
+    // ============================================================================
+
+    #[test]
+    fn test_ffi_safe_io_error_not_found() {
+        use std::io::ErrorKind;
+        let err = std::io::Error::new(ErrorKind::NotFound, "file not found");
+        let result = err.to_ffi();
+        assert_eq!(result.error_code, JuliaExceptionCode::InvalidArgument as u32);
+    }
+
+    #[test]
+    fn test_ffi_safe_string() {
+        let msg = String::from("out of memory error");
+        let result = msg.to_ffi();
+        assert_eq!(result.error_code, JuliaExceptionCode::OutOfMemory as u32);
+    }
+
+    #[test]
+    fn test_ffi_safe_static_str() {
+        let msg: &str = "lock mutex poisoned";
+        let result = msg.to_ffi();
+        assert_eq!(result.error_code, JuliaExceptionCode::LockError as u32);
+    }
+
+    // ============================================================================
+    // Backward compatibility tests
+    // ============================================================================
+
+    #[test]
+    fn test_backward_compatible_error_codes() {
+        // Ensure all original exception codes still work
+        let codes = vec![
+            JuliaExceptionCode::Unknown,
+            JuliaExceptionCode::OutOfMemory,
+            JuliaExceptionCode::InvalidArgument,
+            JuliaExceptionCode::NotImplemented,
+            JuliaExceptionCode::RustError,
+            JuliaExceptionCode::ThreadPanic,
+            JuliaExceptionCode::CapabilityDenied,
+            JuliaExceptionCode::CryptoError,
+            JuliaExceptionCode::IPCError,
+            JuliaExceptionCode::KernelViolation,
+            JuliaExceptionCode::SharedMemoryError,
+            JuliaExceptionCode::LockError,
+            JuliaExceptionCode::BufferFull,
+            JuliaExceptionCode::BufferEmpty,
+        ];
+        for code in codes {
+            let result = FFIResult::from_error(code, "Test");
+            assert_eq!(result.error_code, code as u32);
+        }
+    }
+
 }

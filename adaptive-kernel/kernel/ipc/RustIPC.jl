@@ -531,8 +531,10 @@ end
 function connect_kernel()::KernelConnection
     # Open or create shared memory
     # O_RDWR = 0x02, O_CREAT = 0x200
+    # Security: Using 0o600 (owner read/write only) instead of 0o666 (world-readable/writable)
+    const SHM_PERMISSIONS = 0o600  # Secure: owner only
     shm_fd = ccall(:shm_open, Int32, (Cstring, Int32, UInt32), 
-                   SHM_PATH, 0x02 | 0x200, 0o600)
+                   SHM_PATH, 0x02 | 0x200, SHM_PERMISSIONS)
     
     if shm_fd < 0
         error("Failed to open shared memory: $(Libc.errno())")
@@ -550,7 +552,8 @@ function connect_kernel()::KernelConnection
         error("Failed to map shared memory: $(Libc.errno())")
     end
     
-    println("[IPC] Connected to Rust kernel via shared memory")
+    # Log security confirmation with permission info
+    println("[IPC] Connected to Rust kernel via shared memory (permissions: 0o$(string(SHM_PERMISSIONS, base=8)))")
     
     KernelConnection(shm_fd, mapped, true)
 end

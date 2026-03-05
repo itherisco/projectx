@@ -20,7 +20,7 @@ adaptive-kernel/
 ├── registry/
 │   └── capability_registry.json        # Metadata-only capability declarations
 ├── tests/
-│   ├── unit_kernel_test.jl             # Kernel logic determinism & correctness
+│   ├── unit_kernel_test.jl             # Kernel core logic (deterministic; broader system has entropy injection)
 │   ├── unit_capability_test.jl         # Capability interface validation
 │   └── integration_simulation_test.jl  # 20-cycle end-to-end simulation
 ├── tools/

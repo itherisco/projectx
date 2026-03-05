@@ -232,8 +232,8 @@ jobs:
     - name: Run security tests with evidence
       id: security_tests
       run: |
-ernel
-        julia --project=.        cd adaptive-k -e '
+        cd adaptive-kernel
+        julia --project=. -e '
         using Pkg
         using Test
         

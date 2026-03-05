@@ -162,11 +162,16 @@ Capability Interface Tests |   25     25  2.0s
 
 The Bare-Metal Cognitive OS Architecture has been successfully implemented according to the specification in [`BAREMETAL_OS_ARCHITECTURE.md`](plans/BAREMETAL_OS_ARCHITECTURE.md). The core functionality is verified through 75+ passing tests across unit, integration, and capability test cycles.
 
-The implementation is production-ready for:
+> ⚠️ **IMPORTANT**: Despite test passing, the overall system is NOT production-ready. See Security Score: 12/100, Cognitive Completeness: 47/100.
+
+The implementation is experimental/prototyue-ready for:
 - User-space operation (with ZMQ/Tokio IPC)
 - Bare-metal deployment (with feature flag "bare-metal")
 
-For full bare-metal deployment, the following is needed:
+> **Note**: Full bare-metal deployment requires the items listed below and should NOT be attempted in production without security hardening.
+
+For full bare-metal deployment, the following is needed and this is NOT production-ready:
 1. Actual TPM 2.0 hardware or emulator
 2. Build system for generating bootable image (GRUB/custom bootloader)
 3. QEMU or physical hardware for testing
+4. Security hardening (current score: 12/100)

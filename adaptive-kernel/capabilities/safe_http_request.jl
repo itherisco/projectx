@@ -3,7 +3,26 @@ using UUIDs
 using HTTP
 using URIs
 
-export meta, execute, is_url_allowed, parse_url_strictly
+# Import circuit breaker for resilience
+const _circuit_breaker_enabled = Ref(false)
+
+"""
+    Enable or disable circuit breaker protection for HTTP requests
+"""
+function enable_circuit_breaker(enabled::Bool=true)
+    _circuit_breaker_enabled[] = enabled
+    if enabled
+        println("[HTTP] Circuit breaker protection ENABLED")
+    else
+        println("[HTTP] Circuit breaker protection DISABLED")
+    end
+end
+
+function is_circuit_breaker_enabled()::Bool
+    return _circuit_breaker_enabled[]
+end
+
+export meta, execute, is_url_allowed, parse_url_strictly, enable_circuit_breaker, is_circuit_breaker_enabled
 
 function meta()::Dict{String,Any}
     return Dict(
@@ -190,6 +209,115 @@ function execute(params::Dict{String,Any})::Dict{String,Any}
         )
     end
     
+    # Check circuit breaker if enabled
+    if _circuit_breaker_enabled[]
+        # Check if the breaker allows requests
+        # For now, we implement a simple in-memory circuit breaker check
+        # In production, this would integrate with the global circuit breaker manager
+        circuit_open = _check_http_circuit_breaker(url)
+        if circuit_open
+            return Dict(
+                "success"=>false,
+                "effect"=>"circuit_breaker_open",
+                "actual_confidence"=>0.0,
+                "energy_cost"=>0.0,
+                "filter_reason"=>"Circuit breaker is open for HTTP requests"
+            )
+        end
+    end
+    
+    # Execute HTTP request with circuit breaker tracking
+    _execute_http_request(url, max_size, timeout)
+end
+
+# ============================================================================
+# Circuit Breaker State for HTTP Requests
+# ============================================================================
+
+# Simple in-memory circuit breaker state
+const _http_failure_count = Ref(0)
+const _http_last_failure = Ref(0.0)
+const _http_circuit_open = Ref(false)
+const _http_circuit_open_time = Ref(0.0)
+
+const HTTP_FAILURE_THRESHOLD = 5
+const HTTP_CIRCUIT_TIMEOUT = 60.0  # seconds
+
+"""
+    Check if circuit breaker is open for HTTP requests
+"""
+function _check_http_circuit_breaker(url::String)::Bool
+    if _http_circuit_open[]
+        # Check if timeout has elapsed
+        elapsed = time() - _http_circuit_open_time[]
+        if elapsed > HTTP_CIRCUIT_TIMEOUT
+            # Transition to half-open (allow one request)
+            _http_circuit_open[] = false
+            _http_failure_count[] = 0
+            println("[HTTP] Circuit breaker entering HALF_OPEN state")
+            return false
+        end
+        return true
+    end
+    return false
+end
+
+"""
+    Record HTTP success and potentially close the circuit
+"""
+function _record_http_success()
+    _http_failure_count[] = 0
+    # If we were in half-open state (failure_count was reset), close the circuit
+    if _http_circuit_open[]
+        elapsed = time() - _http_circuit_open_time[]
+        if elapsed > HTTP_CIRCUIT_TIMEOUT
+            _http_circuit_open[] = false
+            println("[HTTP] Circuit breaker CLOSED after successful recovery")
+        end
+    end
+end
+
+"""
+    Record HTTP failure and potentially open the circuit
+"""
+function _record_http_failure()
+    _http_failure_count[] += 1
+    _http_last_failure[] = time()
+    
+    if _http_failure_count[] >= HTTP_FAILURE_THRESHOLD
+        _http_circuit_open[] = true
+        _http_circuit_open_time[] = time()
+        println("[HTTP] Circuit breaker OPENED after $(_http_failure_count[]) failures")
+    end
+end
+
+"""
+    Get HTTP circuit breaker status
+"""
+function get_http_circuit_status()::Dict{String, Any}
+    Dict(
+        "open"=>_http_circuit_open[],
+        "failure_count"=>_http_failure_count[],
+        "last_failure"=>_http_last_failure[],
+        "time_open"=>_http_circuit_open[] ? time() - _http_circuit_open_time[] : 0
+    )
+end
+
+"""
+    Reset HTTP circuit breaker (for testing or manual recovery)
+"""
+function reset_http_circuit_breaker()
+    _http_failure_count[] = 0
+    _http_last_failure[] = 0.0
+    _http_circuit_open[] = false
+    _http_circuit_open_time[] = 0.0
+    println("[HTTP] Circuit breaker manually reset")
+end
+
+"""
+    Execute the actual HTTP request with circuit breaker tracking
+"""
+function _execute_http_request(url::String, max_size::Int, timeout::Int)::Dict{String,Any}
     # Use HTTP.jl with proper timeout instead of curl
     try
         # Parse URL for HTTP request
@@ -200,6 +328,11 @@ function execute(params::Dict{String,Any})::Dict{String,Any}
             timeout=timeout,
             readtimeout=timeout
         )
+        
+        # Record success
+        if _circuit_breaker_enabled[]
+            _record_http_success()
+        end
         
         status_code = response.status
         content_type = get(response.headers, "Content-Type", "text/plain")
@@ -244,6 +377,11 @@ function execute(params::Dict{String,Any})::Dict{String,Any}
             )
         )
     catch e
+        # Record failure
+        if _circuit_breaker_enabled[]
+            _record_http_failure()
+        end
+        
         return Dict(
             "success"=>false, 
             "effect"=>"http_failed: $(typeof(e))", 
@@ -253,4 +391,6 @@ function execute(params::Dict{String,Any})::Dict{String,Any}
     end
 end
 
-end
+export get_http_circuit_status, reset_http_circuit_breaker
+
+end  # module

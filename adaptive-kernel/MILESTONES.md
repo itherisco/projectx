@@ -9,7 +9,7 @@ This plan outlines 8 incremental milestones (each ~3–5 days of focused work) t
 ## Milestone 1: Foundation & Verification (Days 1–3)
 **Goal**: Deliver runnable, tested kernel with clean interfaces.
 
-- ✓ Kernel ≤400 lines with deterministic logic
+- ✓ Kernel ≤400 lines with deterministic scoring logic (core is deterministic; broader cognition system includes entropy injection)
 - ✓ Registry-based capability system
 - ✓ Append-only event log for auditability
 - ✓ Unit + integration tests passing
@@ -188,7 +188,7 @@ This plan outlines 8 incremental milestones (each ~3–5 days of focused work) t
 
 By milestone 8, you will have:
 
-1. **A secure cognitive kernel**: ≤400 lines, fully auditable, deterministic, extensible, security-hardened
+1. **A secure cognitive kernel**: ≤400 lines, fully auditable, deterministic scoring in core, extensible, security-hardened
 2. **A proven capability system**: 50+ safe, composable capabilities (observe, analyze, remediate, escalate)
 3. **A comprehensive audit trail**: every decision logged, every action traced
 4. **A team confident in autonomous reasoning**: humans understand the kernel, trust its decisions, can explain them to others

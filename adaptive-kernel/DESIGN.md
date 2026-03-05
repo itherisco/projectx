@@ -14,7 +14,14 @@ By separating cognition (kernel) from capability (modules), we achieve plug-and-
 
 ### 3. **Determinism & Reproducibility**
 
-The kernel's decision logic uses no randomness—all choices flow from weights and priorities. Given identical observations and goals, it will always select the same action. This is crucial for testing, debugging, and regulatory compliance. By contrast, RL agents or neural networks produce non-deterministic, non-transparent outputs unsuitable for safety-critical domains.
+The kernel's core decision logic uses no randomness in its scoring formula—all choices flow from weights and priorities. However, the broader cognitive system includes non-deterministic components:
+
+- **Entropy injection**: DecisionSpine injects randomness when agents agree too often (exploration)
+- **Neural brain**: ITHERIS uses stochastic neural networks
+- **Learning**: Online learning uses random gradient sampling
+- **Chaos engineering**: Built-in random failure injection for testing
+
+This is crucial for testing, debugging, and regulatory compliance in the kernel core. By contrast, RL agents or neural networks produce non-deterministic, non-transparent outputs unsuitable for safety-critical domains without kernel oversight.
 
 ### 4. **Performance & Scaling**
 

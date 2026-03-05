@@ -386,8 +386,10 @@ score = priority × (reward − risk)
 1. All actions pass through `Kernel.approve()`
 2. Fail-closed behavior on errors
 3. Append-only audit trail
-4. Deterministic decision logic (no randomness)
+4. Kernel-core decision logic is deterministic (no randomness in priority scoring)
 5. Type-stable code (no `Any` in critical paths)
+
+> ⚠️ **Important Note**: While the kernel's core scoring is deterministic, the broader system includes non-deterministic components including the neural brain (ITHERIS), entropy injection for exploration, chaos engineering features, and stochastic learning components. These are clearly marked as experimental.
 
 ---
 

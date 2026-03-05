@@ -100,8 +100,8 @@ julia --project=. harness/run.jl --cycles 50 --registry custom.json
 
 **unit_kernel_test.jl** (~150 lines):
 - ✓ Kernel initialization
-- ✓ Priority evaluation (deterministic weighting)
-- ✓ Action selection (best candidate chosen consistently)
+- ⚠️ Priority evaluation (deterministic weighting in kernel core, but entropy injection is non-deterministic)
+- ⚠️ Action selection (best candidate chosen by default, but entropy injection can override)
 - ✓ Reflection & memory updates
 - ✓ Single-step execution
 - ✓ Permission handler enforcement (denies high-risk)

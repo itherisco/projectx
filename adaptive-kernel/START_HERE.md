@@ -9,7 +9,7 @@ You now have a cognitive kernel for building safe, auditable, and adaptive syste
 📦 WHAT YOU RECEIVED
 ====================
 
-✅ Kernel (1790 lines | Julia) — deterministic reasoning engine
+✅ Kernel (1790 lines | Julia) — deterministic scoring engine (core is deterministic; entropy injection for exploration is non-deterministic)
 ✅ 4 Capabilities — observe_cpu, analyze_logs, write_file, safe_shell
 ✅ Persistence — append-only JSONL event audit trail
 ✅ Harness — event loop orchestrator with CLI
