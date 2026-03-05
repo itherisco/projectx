@@ -21,12 +21,25 @@ export
     CommittedDecision,
     SpineConfig,
     
+    # ReAct
+    ReAct,
+    ReActState,
+    ReActStep,
+    ReActContext,
+    create_react_context,
+    run_react_cycle,
+    
     # Agents
     Agents,
     ExecutorAgent,
     StrategistAgent,
     AuditorAgent,
     EvolutionEngineAgent,
+    
+    # Auxiliary agents (Phase 4 - expanded hierarchy)
+    WebSearchAgent,
+    CodeAgent,
+    MindMapAgent,
     
     # Memory
     WeaponizedMemory,
@@ -120,6 +133,10 @@ using .GoalSystem
 
 include("worldmodel/WorldModel.jl")
 using .WorldModel
+
+# ReAct (Reason + Act) Framework
+include("ReAct.jl")
+using .ReAct
 
 # Autonomous Planning (Phase 4 - Self-improvement)
 include(joinpath(@__DIR__, "..", "planning", "AutonomousPlanner.jl"))
@@ -254,6 +271,30 @@ end
 # ============================================================================
 
 """
+    _estimate_task_complexity - Estimate complexity of the current task
+    
+    Returns a value between 0 and 1 indicating how complex the current task is.
+    High complexity (> 0.7) triggers ReAct reasoning for interleaved thought/action.
+"""
+function _estimate_task_complexity(perception::Perception)::Float64
+    complexity = 0.0
+    
+    # Threat level contributes to complexity
+    complexity += perception.threat_level * 0.3
+    
+    # Low confidence increases complexity (need more reasoning)
+    complexity += (1.0 - perception.confidence) * 0.3
+    
+    # Energy level affects complexity (low energy = simpler decisions)
+    complexity += (1.0 - perception.energy_level) * 0.2
+    
+    # Number of active goals adds complexity
+    complexity += min(length(perception.active_goals) * 0.1, 0.2)
+    
+    return clamp(complexity, 0.0, 1.0)
+end
+
+"""
     CognitiveEngine - Main engine for sovereign cognition
 """
 mutable struct CognitiveEngine
@@ -270,6 +311,11 @@ mutable struct CognitiveEngine
     auditor::AuditorAgent
     evolution_engine::EvolutionEngineAgent
     
+    # Auxiliary agents (Phase 4 - expanded hierarchy)
+    websearch_agent::Union{WebSearchAgent, Nothing}
+    code_agent::Union{CodeAgent, Nothing}
+    mindmap_agent::Union{MindMapAgent, Nothing}
+    
     # Memory
     doctrine::DoctrineMemory
     tactical::TacticalMemory
@@ -280,6 +326,11 @@ mutable struct CognitiveEngine
     strategist_performance::AgentPerformance
     auditor_performance::AgentPerformance
     evolution_performance::AgentPerformance
+    
+    # Auxiliary agent performance tracking (Phase 4)
+    websearch_performance::AgentPerformance
+    code_performance::AgentPerformance
+    mindmap_performance::AgentPerformance
     
     # CAUSAL EMOTIONAL INTEGRATION: Affective state influences decision-making
     # Emotions are NOT just tracked - they CAUSALLY affect proposal confidence
@@ -304,12 +355,20 @@ mutable struct CognitiveEngine
             StrategistAgent("strategist_001"),
             AuditorAgent("auditor_001"),
             EvolutionEngineAgent("evolution_001"),
+            # Initialize auxiliary agents (Phase 4)
+            WebSearchAgent("websearch_001"),
+            CodeAgent("code_agent_001"),
+            MindMapAgent("mindmap_001"),
             DoctrineMemory(),
             TacticalMemory(1000),
             AgentPerformance("executor_001", :executor),
             AgentPerformance("strategist_001", :strategist),
             AgentPerformance("auditor_001", :auditor),
             AgentPerformance("evolution_001", :evolution),
+            # Initialize auxiliary agent performance tracking (Phase 4)
+            AgentPerformance("websearch_001", :websearch),
+            AgentPerformance("code_agent_001", :code),
+            AgentPerformance("mindmap_001", :mindmap),
             AffectiveState(),  # Initialize emotional state
             OptionalityTracker(),
             PowerMetric(now()),
@@ -492,6 +551,42 @@ function run_sovereign_cycle(
     augmented_perception = perception
     
     # =========================================================================
+    # Step 1b: ReAct Framework - Check if complex reasoning is needed
+    # =========================================================================
+    # ReAct (Reason + Act) is triggered for complex tasks that require
+    # interleaved reasoning and action planning. This includes:
+    # - High threat situations requiring careful planning
+    # - Novel situations without clear precedent
+    # - Multi-step tasks requiring chain-of-thought
+    # - Low confidence scenarios needing deeper analysis
+    
+    use_react = false
+    react_proposals = AgentProposal[]
+    
+    # Determine if ReAct reasoning is needed
+    task_complexity = _estimate_task_complexity(augmented_perception)
+    if task_complexity > 0.7 && engine.mindmap_agent !== nothing
+        use_react = true
+        @info "ReAct reasoning triggered" complexity=task_complexity
+        
+        # Create ReAct context for complex reasoning
+        react_context = create_react_context(
+            augmented_perception,
+            "Complex task reasoning with interleaved thought and action",
+            engine.mindmap_agent
+        )
+        
+        # Run ReAct cycle to generate enhanced proposals
+        react_result = run_react_cycle(react_context, augmented_perception)
+        
+        # Convert ReAct results to proposals if available
+        if react_result !== nothing && react_result.final_proposal !== nothing
+            push!(react_proposals, react_result.final_proposal)
+            @info "ReAct cycle completed" proposal=react_result.final_proposal.decision
+        end
+    end
+    
+    # =========================================================================
     # Step 2: Run parallel agent proposals
     # CAUSAL EMOTIONAL INTEGRATION: Emotions affect proposal confidence
     # =========================================================================
@@ -586,6 +681,100 @@ function run_sovereign_cycle(
         evidence = evolution_prop.evidence
     )
     push!(proposals, evolution_prop)
+    
+    # =========================================================================
+    # Step 2b: Auxiliary agents generate proposals (Phase 4 - expanded hierarchy)
+    # =========================================================================
+    # These agents provide specialized capabilities:
+    # - WebSearchAgent: Information retrieval
+    # - CodeAgent: Quantitative/analytical tasks
+    # - MindMapAgent: Logical coherence validation and hallucination detection
+    
+    # WebSearchAgent proposal - for information retrieval tasks
+    if engine.websearch_agent !== nothing
+        websearch_context = Dict{String, Any}(
+            "query" => get(augmented_perception.system_state, "query", ""),
+            "intent" => get(augmented_perception.system_state, "intent", "information_retrieval"),
+            "threat_level" => augmented_perception.threat_level
+        )
+        websearch_prop = generate_proposal(
+            engine.websearch_agent,
+            augmented_perception,
+            websearch_context
+        )
+        websearch_emotional_confidence = apply_emotional_influence_to_confidence(
+            websearch_prop.confidence,
+            engine.affective_state
+        )
+        websearch_prop = AgentProposal(
+            websearch_prop.agent_id,
+            websearch_prop.agent_type,
+            websearch_prop.decision,
+            websearch_emotional_confidence * engine.websearch_performance.current_weight,
+            reasoning = websearch_prop.reasoning * " [emotional_modulation=$emotional_modulation]",
+            weight = engine.websearch_performance.current_weight,
+            evidence = websearch_prop.evidence
+        )
+        push!(proposals, websearch_prop)
+    end
+    
+    # CodeAgent proposal - for computational/quantitative tasks
+    if engine.code_agent !== nothing
+        code_context = Dict{String, Any}(
+            "task" => get(augmented_perception.system_state, "task", ""),
+            "type" => get(augmented_perception.system_state, "task_type", "analysis"),
+            "threat_level" => augmented_perception.threat_level
+        )
+        code_prop = generate_proposal(
+            engine.code_agent,
+            augmented_perception,
+            code_context
+        )
+        code_emotional_confidence = apply_emotional_influence_to_confidence(
+            code_prop.confidence,
+            engine.affective_state
+        )
+        code_prop = AgentProposal(
+            code_prop.agent_id,
+            code_prop.agent_type,
+            code_prop.decision,
+            code_emotional_confidence * engine.code_performance.current_weight,
+            reasoning = code_prop.reasoning * " [emotional_modulation=$emotional_modulation]",
+            weight = engine.code_performance.current_weight,
+            evidence = code_prop.evidence
+        )
+        push!(proposals, code_prop)
+    end
+    
+    # MindMapAgent proposal - logical coherence validation
+    # MindMapAgent validates logical consistency BEFORE final decision
+    if engine.mindmap_agent !== nothing
+        mindmap_context = Dict{String, Any}(
+            "proposals" => [p.decision for p in proposals],
+            "threat_level" => augmented_perception.threat_level,
+            "validation_mode" => "coherence_check"
+        )
+        mindmap_prop = generate_proposal(
+            engine.mindmap_agent,
+            augmented_perception,
+            mindmap_context
+        )
+        # MindMapAgent confidence is about logical coherence
+        mindmap_emotional_confidence = apply_emotional_influence_to_confidence(
+            mindmap_prop.confidence,
+            engine.affective_state
+        )
+        mindmap_prop = AgentProposal(
+            mindmap_prop.agent_id,
+            mindmap_prop.agent_type,
+            mindmap_prop.decision,
+            mindmap_emotional_confidence * engine.mindmap_performance.current_weight,
+            reasoning = mindmap_prop.reasoning * " [emotional_modulation=$emotional_modulation]",
+            weight = engine.mindmap_performance.current_weight,
+            evidence = mindmap_prop.evidence
+        )
+        push!(proposals, mindmap_prop)
+    end
     
     # =========================================================================
     # Step 3: Conflict resolution

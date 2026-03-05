@@ -13,6 +13,9 @@ export
     StrategistAgent,
     AuditorAgent,
     EvolutionEngineAgent,
+    WebSearchAgent,
+    CodeAgent,
+    MindMapAgent,
     ProposedChange,
     Perception,  # Typed perception for run_sovereign_cycle
     
@@ -186,6 +189,68 @@ struct EvolutionEngineAgent <: CognitiveAgent
         0.1,  # 10% mutation rate
         AgentState(AGENT_IDLE),
         ProposedChange[], 0
+    )
+end
+
+"""
+    WebSearchAgent - Provides internet retrieval capabilities for cognition
+    Analyzes queries for information retrieval needs and generates search proposals
+"""
+struct WebSearchAgent <: CognitiveAgent
+    id::String
+    name::String
+    capabilities::Vector{String}
+    state::AgentState
+    historical_accuracy::Float64
+    search_history::Vector{Dict{String, Any}}
+    successful_retrievals::Int
+    failed_retrievals::Int
+    whitelist::Vector{String}
+    
+    WebSearchAgent(id::String = "websearch_001") = new(
+        id, 
+        "WebSearch",
+        ["web_search", "url_retrieval", "information_extraction"],
+        AgentState(AGENT_IDLE),
+        0.75,
+        Dict{String, Any}[],
+        0,
+        0,
+        [
+            "api.ipify.org",
+            "httpbin.org",
+            "jsonplaceholder.typicode.com",
+            "en.wikipedia.org",
+            "api.github.com"
+        ]
+    )
+end
+
+"""
+    CodeAgent - Quantitative and analytical task capabilities for the multi-agent hierarchy
+    Analyzes computational tasks, categorizes them, and generates code/execution strategy proposals
+"""
+struct CodeAgent <: CognitiveAgent
+    id::String
+    name::String
+    capabilities::Vector{String}
+    state::AgentState
+    historical_accuracy::Float64
+    task_history::Vector{Dict{String, Any}}
+    successful_executions::Int
+    failed_executions::Int
+    supported_languages::Vector{String}
+    
+    CodeAgent(id::String = "code_agent_001") = new(
+        id, 
+        "Code",
+        ["code_analysis", "code_generation", "execution_strategy", "calculation", "simulation"],
+        AgentState(AGENT_IDLE),
+        0.70,
+        Dict{String, Any}[],
+        0,
+        0,
+        ["julia", "python", "javascript", "shell"]
     )
 end
 
