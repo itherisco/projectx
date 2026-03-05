@@ -81,6 +81,34 @@ const EVENT_LOG_KEY = let
     end
 end
 
+"""
+    get_encryption_key()::Union{Vector{UInt8}, Nothing}
+
+Get the AES-256 encryption key from environment variables.
+Enforces fail-closed security: in production mode, missing encryption key halts boot.
+In training mode, allows plaintext storage with a warning.
+
+# Returns
+- `Vector{UInt8}`: 32-byte AES-256 key if configured
+- `nothing`: Only in training mode when no key is configured
+
+# Throws
+- `ErrorException`: When JARVIS_ENCRYPTION_KEY is missing in production mode
+"""
+function get_encryption_key()
+    key_hex = get(ENV, "JARVIS_ENCRYPTION_KEY", "")
+    if isempty(key_hex)
+        # FORCE FAIL-CLOSED: Do not allow the brain to boot in plaintext in production
+        if get(ENV, "ITHERIS_MODE", "training") == "production"
+            error("CRITICAL SECURITY FAULT: JARVIS_ENCRYPTION_KEY is missing. Halting boot to prevent plaintext memory exposure.")
+        else
+            @warn "No encryption key configured - storing plaintext (Training Mode Only)"
+            return nothing
+        end
+    end
+    return hex2bytes(key_hex)
+end
+
 # Nonce counter for AES-GCM (incremented for each encryption)
 const NONCE_COUNTER = Threads.Atomic{UInt64}(0)
 

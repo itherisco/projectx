@@ -178,7 +178,7 @@ const _key_source = Ref{String}("none")
     Returns: (key::Vector{UInt8}, source::String) or throws KeyManagementError
 """
 function load_key_from_environment()::Tuple{Vector{UInt8}, String}
-    env_key = get(ENV_KEY_VAR, nothing)
+    env_key = get(ENV, ENV_KEY_VAR, nothing)
     
     if env_key === nothing
         throw(KeyManagementError("Environment variable $ENV_KEY_VAR not set"))

@@ -745,7 +745,7 @@ function select_action(kernel::KernelState, capability_candidates::Vector{<:Any}
         get(chosen, "id", "unknown"),
         Float32(get(chosen, "confidence", 0.7)),
         Float32(get(chosen, "cost", 0.1)),
-        best_score,
+        Float32(best_score),
         risk_value,
         "Selected by priority heuristic (score=$(round(best_score, digits=3)))"
     )

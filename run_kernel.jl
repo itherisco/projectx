@@ -28,9 +28,9 @@ println("Kernel initialized successfully!")
 
 # Mock candidates for the kernel to choose from
 candidates = [
-    Dict("id" => "observe_cpu", "cost" => 0.05, "risk" => "low", "confidence" => 0.85),
-    Dict("id" => "analyze_logs", "cost" => 0.08, "risk" => "medium", "confidence" => 0.8),
-    Dict("id" => "write_file", "cost" => 0.03, "risk" => "low", "confidence" => 0.9)
+    Dict("id" => "observe_cpu", "cost" => 0.05f0, "risk" => "low", "confidence" => 0.85f0),
+    Dict("id" => "analyze_logs", "cost" => 0.08f0, "risk" => "medium", "confidence" => 0.8f0),
+    Dict("id" => "write_file", "cost" => 0.03f0, "risk" => "low", "confidence" => 0.9f0)
 ]
 
 # Execution function - simulates capability execution
