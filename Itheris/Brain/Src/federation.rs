@@ -1,4 +1,21 @@
 //! Multi-Agent Federation - network layer for agent communication
+//!
+//! ⚠️  EXPERIMENTAL/STUB MODULE - NOT FOR PRODUCTION USE  ⚠️
+//!
+//! # ⚠️  SECURITY WARNING
+//! This module is a SIMULATION for testing multi-agent coordination.
+//! In production:
+//! - Messages are NOT actually sent over a network
+//! - Signatures are NOT verified
+//! - Consensus is NOT real (just simulated)
+//! - This is an in-memory mock for development/testing only
+//!
+//! # Current Status
+//! - Agent registration: Working (in-memory)
+//! - Message routing: Working (in-memory)
+//! - Heartbeat/failure detection: Working (in-memory)
+//! - Consensus: SIMULATED (not real)
+//! - Signature verification: STUB (always accepts)
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -77,6 +94,9 @@ impl Federation {
     }
 
     /// Queue a message
+    ///
+    /// ⚠️  WARNING: Signature is stored but NOT verified in this stub!
+    /// In production, must verify message signatures before accepting.
     pub fn send_message(&mut self, msg: Message) -> Result<(), String> {
         if !self.agents.contains_key(&msg.to) {
             return Err(format!("Recipient not found: {}", msg.to));
@@ -88,6 +108,9 @@ impl Federation {
     }
 
     /// Request consensus
+    ///
+    /// ⚠️  WARNING: This is SIMULATED consensus, not real!
+    /// In production, this would query actual agents and gather real votes.
     pub fn request_consensus(&self, proposal: &str) -> Result<bool, String> {
         let total = self.agents.len() as f32;
         let required = (total * self.consensus_threshold).ceil() as usize;

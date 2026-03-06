@@ -1,4 +1,19 @@
 //! IoT Bridge - control physical devices via cryptographically-signed commands
+//!
+//! ⚠️  EXPERIMENTAL/STUB MODULE - NOT FOR PRODUCTION USE  ⚠️
+//!
+//! # ⚠️  SECURITY WARNING
+//! This module is a SIMULATION for testing purposes. In production:
+//! - Commands are NOT actually verified against signatures
+//! - Device execution is mocked (returns fake results)
+//! - No real hardware communication is performed
+//! - This should NEVER be used to control actual physical devices
+//!
+//! # Current Status
+//! - Device registry: Working (in-memory)
+//! - Command queue: Working (in-memory)
+//! - Signature verification: STUB (always accepts)
+//! - Device execution: STUB (returns mock data)
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -75,6 +90,9 @@ impl IoTBridge {
     }
 
     /// Queue a command for execution
+    ///
+    /// ⚠️  WARNING: Signature is stored but NOT verified in this stub!
+    /// In production, this must verify the signature before queuing.
     pub fn queue_command(
         &mut self,
         device_id: &str,
@@ -85,6 +103,11 @@ impl IoTBridge {
         if !self.devices.contains_key(device_id) {
             return Err(format!("Device not found: {}", device_id));
         }
+
+        // ⚠️  STUB: Signature verification not implemented!
+        // In production, verify signature before accepting command:
+        // self.verify_signature(device_id, &command_data, &signature)?;
+        println!("[IOT_BRIDGE] ⚠️  WARNING: Signature not verified (STUB)");
 
         let command = Command {
             id: uuid::Uuid::new_v4().to_string(),
@@ -110,6 +133,9 @@ impl IoTBridge {
     }
 
     /// Execute a queued command
+    ///
+    /// ⚠️  WARNING: This returns MOCK data, not real device responses!
+    /// In production, this would communicate with actual hardware.
     pub fn execute_command(&mut self, command_id: &str) -> Result<CommandResult, String> {
         let command = self
             .command_queue

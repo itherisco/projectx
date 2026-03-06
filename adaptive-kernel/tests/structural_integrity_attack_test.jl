@@ -362,4 +362,12 @@ function run_all_tests()
     println("2. NaN values accepted in ActionProposal - breaks decision logic")
     println("3. Hardcoded default secret - FIXED (now fails-secure)")
     println("4. Inf values accepted - causes arithmetic overflows")
-    # Memory module has no thread synchronization
+    println("5. Memory module has no thread synchronization")
+end
+
+# Run all tests if executed directly
+if abspath(PROGRAM_FILE) == @__FILE__()
+    run_all_tests()
+end
+
+end  # End module

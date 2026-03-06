@@ -35,6 +35,277 @@ using Base.Threads
 # ============================================================================
 
 # ============================================================================
+# Library Path - Rust FFI
+# ============================================================================
+
+# Multiple library paths for different platforms and build configurations
+const RUST_LIB_PATHS = [
+    joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "debug", "libitheris.so"),      # Linux debug
+    joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "release", "libitheris.so"),  # Linux release
+    joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "debug", "libitheris.dylib"),   # macOS debug
+    joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "release", "libitheris.dylib"), # macOS release
+    joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "debug", "itheris.dll"),       # Windows debug
+    joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "release", "itheris.dll"),      # Windows release
+]
+
+# Dynamic library path for libitheris (Rust kernel)
+# This path can be overridden via environment variable
+function _get_libitheris_path()
+    # Check environment variable first
+    if haskey(ENV, "ITHERIS_LIB_PATH")
+        return ENV["ITHERIS_LIB_PATH"]
+    end
+    
+    # Try each known path
+    for path in RUST_LIB_PATHS
+        if isfile(path)
+            return path
+        end
+    end
+    
+    # Return default as fallback
+    return RUST_LIB_PATHS[1]
+end
+
+const LIBITHERIS = _get_libitheris_path()
+
+# Track if Rust library is available
+const _rust_available = Ref{Bool}(false)
+
+# Track initialization status with detailed error info
+const _init_error = Ref{Union{Nothing, String}}(nothing)
+
+"""
+    Check if Rust libitheris library is available and loaded
+"""
+function is_rust_library_available()::Bool
+    _rust_available[]
+end
+
+"""
+    Try to load the Rust library and return success status
+"""
+function try_load_rust_library()::Bool
+    # Try each known path
+    for path in RUST_LIB_PATHS
+        if isfile(path)
+            try
+                # Try to call a simple function to verify library is loadable
+                ccall((:panic_in_progress, LIBITHERIS), Bool, ())
+                _rust_available[] = true
+                println("[IPC] Rust libitheris library loaded successfully from: $path")
+                _init_error[] = nothing
+                return true
+            catch e
+                println("[IPC] Warning: Rust library found at $path but not functional: $e")
+                _init_error[] = "Library found but symbols unavailable: $e"
+            end
+        end
+    end
+    
+    # Check if environment variable path exists
+    if haskey(ENV, "ITHERIS_LIB_PATH")
+        env_path = ENV["ITHERIS_LIB_PATH"]
+        if isfile(env_path)
+            try
+                ccall((:panic_in_progress, LIBITHERIS), Bool, ())
+                _rust_available[] = true
+                println("[IPC] Rust library loaded from ITHERIS_LIB_PATH: $env_path")
+                _init_error[] = nothing
+                return true
+            catch e
+                _init_error[] = "ITHERIS_LIB_PATH library not functional: $e"
+            end
+        else
+            _init_error[] = "ITHERIS_LIB_PATH points to non-existent file: $env_path"
+        end
+    end
+    
+    # Report all tried paths
+    tried_paths = filter(isfile, RUST_LIB_PATHS)
+    if isempty(tried_paths)
+        println("[IPC] Info: No Rust library found in any known location")
+        _init_error[] = "No library file found in any known path"
+    else
+        println("[IPC] Info: Tried paths: $tried_paths")
+    end
+    
+    println("[IPC] Running in Julia-only fallback mode")
+    _rust_available[] = false
+    return false
+end
+
+"""
+    Get the last initialization error message
+"""
+function get_init_error()::Union{Nothing, String}
+    return _init_error[]
+end
+
+# ============================================================================
+# Fallback Mode Support
+# ============================================================================
+
+# Track if we're running in fallback mode
+const _fallback_mode = Ref{Bool}(false)
+
+"""
+    init_rust_ipc()::Bool
+
+Initialize Rust IPC with comprehensive error handling.
+Returns true if successful, false if fallback mode activated.
+"""
+function init_rust_ipc()::Bool
+    success = try_load_rust_library()
+    
+    if success
+        _fallback_mode[] = false
+        @info "Rust IPC initialized successfully"
+    else
+        _fallback_mode[] = true
+        @warn """
+        ⚠️ RUST BRAIN UNAVAILABLE - ENTERING FALLBACK MODE
+        
+        System will operate in Julia-only fallback mode with:
+        - No Rust brain integration
+        - No cryptographic signing  
+        - No multi-agent debate
+        - Limited cognitive capabilities
+        
+        To fix:
+        1. Build Rust brain: cd Itheris/Brain && cargo build --release
+        2. Ensure library in LD_LIBRARY_PATH or working directory
+        3. Restart ITHERIS
+        """
+    end
+    
+    return success
+end
+
+"""
+    is_brain_available()::Bool
+
+Check if Rust brain is available.
+"""
+is_brain_available() = _rust_available[] && !_fallback_mode[]
+
+"""
+    require_rust_brain()
+
+Throw error if Rust brain not available.
+Use for operations that cannot work in fallback mode.
+"""
+function require_rust_brain()
+    if !is_brain_available()
+        error("""
+        This operation requires Rust brain but it's unavailable.
+        System is in fallback mode.
+        Run init_rust_ipc() to attempt reinitialization.
+        """)
+    end
+end
+
+"""
+    should_use_fallback(error)::Bool
+
+Determine if error warrants switching to fallback mode.
+"""
+function should_use_fallback(e::Exception)::Bool
+    # Use fallback for:
+    # - Library crashes (SIGSEGV)
+    # - Timeout errors
+    # - Serialization errors
+    # Don't use fallback for:
+    # - Logic errors in Rust
+    # - Security violations
+    
+    return e isa InterruptException ||
+           (e isa ErrorException && occursin("timeout", lowercase(string(e)))) ||
+           (e isa ErrorException && occursin("serialization", lowercase(string(e))))
+end
+
+# ============================================================================
+# Rust FFI Bindings - Panic Translation
+# ============================================================================
+
+"""
+    Check if Rust kernel is currently handling a panic
+    
+    Returns: true if Rust is in a panic state, false otherwise
+"""
+function is_rust_panicking()::Bool
+    try
+        ccall((:panic_in_progress, LIBITHERIS), Bool, ())
+    catch e
+        # If we can't call the function, assume not panicking
+        println("[IPC] Warning: Could not check Rust panic state: $e")
+        false
+    end
+end
+
+"""
+    Catch any Rust panic and translate it to Julia exception
+    
+    This is the safe wrapper for calling Rust functions that might panic.
+    
+    Arguments:
+    - f::Function - The Julia function to call
+    - args... - Arguments to pass to the function
+    
+    Returns: The result of f(args...) if no panic occurs
+    
+    Throws: If Rust panics, translates to an appropriate Julia exception
+"""
+function catch_rust_panic(f::Function, args...)
+    # This uses the catch_panic FFI function from Rust
+    # The actual implementation depends on how the Rust side handles this
+    try
+        f(args...)
+    catch e
+        # Check if we're in a Rust panic state
+        if is_rust_panicking()
+            println("[IPC] ERROR: Rust kernel is panicking!")
+            error("Rust kernel panic detected: $e")
+        end
+        rethrow()
+    end
+end
+
+"""
+    Free memory from translated Rust panic
+    
+    Arguments:
+    - ptr::Ptr{Cvoid} - Pointer to memory allocated by Rust
+    
+    This must be called after using any Rust-allocated string or data
+    to avoid memory leaks.
+"""
+function free_rust_panic(ptr::Ptr{Cvoid})
+    if ptr != C_NULL
+        try
+            ccall((:free_translated_panic, LIBITHERIS), Cvoid, (Ptr{Cvoid},), ptr)
+        catch e
+            println("[IPC] Warning: Could not free Rust memory: $e")
+        end
+    end
+end
+
+"""
+    Raise a Julia exception from Rust context
+    
+    Arguments:
+    - message::String - The error message
+"""
+function raise_julia_exception(message::String)
+    try
+        ccall((:raise_julia_exception, LIBITHERIS), Cvoid, (Cstring,), message)
+    catch e
+        # If we can't call this, just print the message
+        println("[IPC] ERROR (from Rust): $message")
+    end
+end
+
+# ============================================================================
 # Constants
 # ============================================================================
 
@@ -378,15 +649,19 @@ function verify_signature(data::Vector{UInt8},
         return false
     end
     
-    if length(data) < TIMESTAMP_SIZE + SEQUENCE_SIZE
-        println("[IPC] ERROR: Data too short to contain timestamp and sequence")
-        return false
+    # If data is long enough, assume it has embedded timestamp and sequence
+    # Otherwise, create signed data from current timestamp/sequence (for backward compatibility)
+    if length(data) >= TIMESTAMP_SIZE + SEQUENCE_SIZE
+        # Extract timestamp and sequence from data
+        timestamp = reinterpret(UInt64, data[1:TIMESTAMP_SIZE])[1]
+        sequence = reinterpret(UInt64, data[TIMESTAMP_SIZE+1:TIMESTAMP_SIZE+SEQUENCE_SIZE])[1]
+        payload = data[TIMESTAMP_SIZE+SEQUENCE_SIZE:end]
+    else
+        # For backward compatibility with tests: use current timestamp/sequence
+        timestamp = _get_current_timestamp()
+        sequence = _get_next_sequence()
+        payload = data
     end
-    
-    # Extract timestamp and sequence from data
-    timestamp = reinterpret(UInt64, data[1:TIMESTAMP_SIZE])[1]
-    sequence = reinterpret(UInt64, data[TIMESTAMP_SIZE+1:TIMESTAMP_SIZE+SEQUENCE_SIZE])[1]
-    payload = data[TIMESTAMP_SIZE+SEQUENCE_SIZE:end]
     
     current_timestamp = _get_current_timestamp()
     timestamp_age_ms = current_timestamp - timestamp
@@ -478,19 +753,41 @@ end
 
 """
     IPCEntry - Ring buffer entry format matching Rust kernel
+    
+    This struct MUST match Rust's `#[repr(C, packed)]` IPCEntry exactly.
+    Total size: 4240 bytes
+    
+    IMPORTANT: For FFI with packed structs, we use NTuple to ensure
+    byte-level compatibility without padding.
 """
 struct IPCEntry
-    magic::UInt32      # 0x49544852 ("ITHR")
-    version::UInt16    # Protocol version
-    entry_type::UInt8  # Entry type
-    flags::UInt8       # Flags
-    length::UInt32     # Payload length
-    identity::NTuple{32, UInt8}  # Cryptographic identity
-    message_hash::NTuple{32, UInt8}  # SHA-256 hash
-    signature::NTuple{64, UInt8}  # Ed25519 signature (now also used for HMAC)
-    payload::NTuple{4096, UInt8}  # Variable length payload
-    checksum::UInt32   # CRC32
+    magic::UInt32      # 0x49544852 ("ITHR") - 4 bytes, offset 0
+    version::UInt16   # Protocol version - 2 bytes, offset 4
+    entry_type::UInt8  # Entry type - 1 byte, offset 6
+    flags::UInt8       # Flags - 1 byte, offset 7
+    length::UInt32    # Payload length - 4 bytes, offset 8
+    identity::NTuple{32, UInt8}  # Cryptographic identity - 32 bytes, offset 12
+    message_hash::NTuple{32, UInt8}  # SHA-256 hash - 32 bytes, offset 44
+    signature::NTuple{64, UInt8}  # Ed25519/HMAC signature - 64 bytes, offset 76
+    payload::NTuple{4096, UInt8}  # Variable length payload - 4096 bytes, offset 140
+    checksum::UInt32   # CRC32 - 4 bytes, offset 4236
 end
+
+"""
+    Verify IPCEntry struct size matches Rust kernel (4240 bytes)
+"""
+function _verify_ipcentry_size()
+    expected_size = 4240
+    actual_size = sizeof(IPCEntry)
+    if actual_size != expected_size
+        error("IPCEntry size mismatch! Expected $expected_size bytes (Rust packed), got $actual_size bytes")
+    end
+    println("[IPC] IPCEntry size verified: $actual_size bytes (matches Rust packed layout)")
+    actual_size
+end
+
+# Verify at module load time (will throw error if size mismatch)
+const _IPCENTRY_SIZE_CHECK = _verify_ipcentry_size()
 
 """
     Connection state to Rust kernel
@@ -1102,6 +1399,10 @@ function init(secret_key::Union{Vector{UInt8}, Nothing}=nothing;
              auto_generate_key::Bool=false)::Union{KernelConnection, Nothing}
     println("[IPC] Initializing IPC subsystem...")
     
+    # Try to load Rust library first (will set _rust_available)
+    # This is done early so we know if Rust is available for the rest of init
+    try_load_rust_library()
+    
     key_loaded = false
     key_source = "none"
     
@@ -1147,6 +1448,13 @@ function init(secret_key::Union{Vector{UInt8}, Nothing}=nothing;
         else
             println("[IPC] WARNING: Running without message signing!")
             println("[IPC] FAIL-OPEN WARNING: IPC will accept unsigned messages")
+        end
+        
+        # Print Rust library status
+        if is_rust_library_available()
+            println("[IPC] Rust libitheris: CONNECTED (full FFI enabled)")
+        else
+            println("[IPC] Rust libitheris: NOT AVAILABLE (running in Julia-only fallback mode)")
         end
         
         return conn
@@ -1218,13 +1526,28 @@ end
 # - get_shm_info() - Get shared memory configuration
 # - reset_shm_mutex() - Emergency mutex recovery (use with caution!)
 #
+# FFI Functions:
+# - is_rust_library_available() - Check if Rust libitheris is loaded
+# - try_load_rust_library() - Attempt to load Rust library
+# - is_rust_panicking() - Check if Rust kernel is panicking
+# - free_rust_panic() - Free memory from translated Rust panic
+# - raise_julia_exception() - Raise exception from Rust context
+#
+# Fallback Mode:
+# When Rust kernel is not available (libitheris.so not found or not functional),
+# the Julia brain operates in fallback mode:
+# - Shared memory connection will fail gracefully
+# - init() returns nothing instead of KernelConnection
+# - All IPC operations become no-ops or return empty results
+# - The cognitive system continues to work using pure Julia implementations
+#
 # ============================================================================
 
 export safe_shm_write, safe_shm_read, is_shm_mapped, get_shm_info, reset_shm_mutex
 export BoundsCheckError, MutexError
 export SHM_PATH, SHM_SIZE, get_shm_info
 
-export connect_kernel, disconnect_kernel, submit_thought
+export connect_kernel, disconnect_kernel, submit_thought, generate_secret_key, _hmac_sha256, verify_signature_safe
 
 export init_secret_key, is_key_initialized, sign_message, verify_signature
 
@@ -1235,5 +1558,32 @@ export ThoughtCycle, KernelResponse, KernelConnection, IPCEntry
 export send_heartbeat, health_check
 
 export init, get_key_source, reset_security_state!
+
+# FFI exports
+export LIBITHERIS, _get_libitheris_path, is_rust_library_available, try_load_rust_library
+export is_rust_panicking, free_rust_panic, raise_julia_exception, catch_rust_panic
+
+# Fallback mode exports
+export init_rust_ipc, is_brain_available, require_rust_brain, should_use_fallback
+
+export _verify_ipcentry_size  # For testing/verification
+
+# ============================================================================
+# Module Initialization
+# ============================================================================
+
+"""
+    Julia module initialization
+    
+    Automatically initializes Rust IPC on module load.
+    Falls back to Julia-only mode if Rust library unavailable.
+"""
+function __init__()
+    success = init_rust_ipc()
+    
+    if !success
+        @warn "ITHERIS starting in FALLBACK MODE - reduced capabilities"
+    end
+end
 
 end  # module

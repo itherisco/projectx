@@ -25,7 +25,10 @@ module TestC1PromptInjection
 
 using Test
 using JSON
-using ..LLMOutputValidator
+
+# Include the LLMOutputValidator module
+push!(LOAD_PATH, joinpath(@__DIR__, ".."))
+include("../kernel/validation/LLMOutputValidator.jl")
 
 # ============================================================================
 # TEST 1: Valid LLM Output Should Pass

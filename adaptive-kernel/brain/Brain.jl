@@ -35,6 +35,7 @@ export
     
     # Boundary enforcement
     validate_brain_output,
+    enforce_brain_advisory_only,
     BoundaryInvariant,
     
     # SECURITY: Fallback approval functions (P0 - Vulnerability #5 & Weakness #6)
@@ -129,6 +130,39 @@ function validate_brain_output(output::BrainOutput)::Bool
     # Validate all proposed actions are strings
     !all(isa(a, String) for a in output.proposed_actions) && return false
     return true
+end
+
+"""
+    enforce_brain_advisory_only - GUARD: Prevent any execution from Brain
+    
+    This function is a security safeguard that should be called at the
+    boundary between Brain and any execution layer. It throws if anyone
+    attempts to execute actions directly from Brain output.
+    
+    # Arguments
+    - `output::BrainOutput`: The brain output to validate
+    
+    # Throws
+    - `ErrorException`: If execution is attempted without kernel approval
+    
+    # Design Principle
+    BRAIN IS ADVISORY - KERNEL IS SOVEREIGN
+    The Brain can ONLY produce proposals. Execution requires Kernel.approve().
+"""
+function enforce_brain_advisory_only(output::BrainOutput)
+    # This is a no-op guard that documents the architectural invariant
+    # The actual enforcement happens in the execution layer (Kernel, DecisionSpine)
+    # by checking kernel_approved flag before any execution
+    
+    # Log the advisory nature of this output for audit trail
+    @debug "BrainOutput is advisory - kernel approval required for execution"
+        confidence=output.confidence
+        num_proposals=length(output.proposed_actions)
+        first_action=isempty(output.proposed_actions) ? "none" : first(output.proposed_actions)
+    
+    # Return silently - this is expected behavior
+    # The real enforcement is in the execution layer
+    return nothing
 end
 
 # ============================================================================

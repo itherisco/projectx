@@ -93,7 +93,8 @@ end
 # EXPORTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-export sanitize_input, SanitizationResult, SanitizationError, SanitizationLevel
+export sanitize_input, sanitize_shell_command, sanitize_path, detect_injection
+export SanitizationResult, SanitizationError, SanitizationLevel
 export CLEAN, SUSPICIOUS, MALICIOUS
 export is_clean, is_malicious, block_until_clean
 
@@ -635,6 +636,198 @@ function block_until_clean(input::AbstractString, max_attempts::Int=3)::Sanitiza
     end
     
     return result
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPEC-REQUIRED FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Shell injection patterns (block these)
+const SHELL_FORBIDDEN = [";", "|", "&", "\$", "`", "\\n", "&&", "||", ">", "<", "*", "?"]
+
+# Prompt injection patterns (flag these)
+const INJECTION_PATTERNS = [
+    r"ignore (previous|above) instructions"i,
+    r"you are now"i,
+    r"system prompt"i,
+    r"developer mode"i,
+    r"jailbreak"i,
+]
+
+"""
+    sanitize_shell_command(cmd::String)::Result{String, ErrorException}
+
+Strict shell command sanitization:
+- Checks against forbidden patterns
+- Validates against allowlist of safe commands
+- Escapes special characters
+- Returns error if suspicious
+
+# Returns
+- `Ok(sanitized_command)` on success
+- `Error(ErrorException(message))` on failure
+"""
+function sanitize_shell_command(cmd::String)::Result{String, ErrorException}
+    # 1. Check for forbidden patterns
+    for pattern in SHELL_FORBIDDEN
+        if occursin(pattern, cmd)
+            return Error(ErrorException("Shell command contains forbidden character: $pattern"))
+        end
+    end
+    
+    # 2. Check for command substitution
+    if occursin(r"\$\(|`", cmd)
+        return Error(ErrorException("Shell command contains command substitution"))
+    end
+    
+    # 3. Check for path traversal
+    if occursin(r"\.\.", cmd)
+        return Error(ErrorException("Shell command contains path traversal"))
+    end
+    
+    # 4. Check for dangerous commands
+    dangerous_cmds = ["rm", "del", "format", "dd", "mkfs", "fdisk"]
+    words = split(cmd)
+    for word in words
+        if word in dangerous_cmds
+            return Error(ErrorException("Shell command contains dangerous command: $word"))
+        end
+    end
+    
+    # 5. Validate against allowlist (if provided)
+    # Allowlist would be checked here if provided
+    
+    # 6. Escape special characters (defensive)
+    sanitized = cmd
+    # Quote the entire command if it contains spaces
+    if occursin(r"\s", cmd) && !startswith(cmd, '"')
+        sanitized = "\"$cmd\""
+    end
+    
+    # Log suspicious attempts
+    if occursin(r"(wget|curl|nc|bash|sh|powershell)", cmd)
+        println("[Security] Suspicious shell command attempted: $cmd")
+    end
+    
+    return Ok(sanitized)
+end
+
+"""
+    sanitize_path(path::String, allowed_dirs::Vector{String})::Result{String, ErrorException}
+
+Path traversal prevention:
+1. Resolve to absolute path
+2. Check for ".." (directory traversal)
+3. Verify path starts with allowed directory
+4. Check file permissions
+
+# Returns
+- `Ok(sanitized_path)` on success
+- `Error(ErrorException(message))` on failure
+"""
+function sanitize_path(path::String, allowed_dirs::Vector{String}=String[])::Result{String, ErrorException}
+    # 1. Resolve to absolute path (simplified - would use realpath in production)
+    # Check for directory traversal
+    if occursin(r"\.\.", path)
+        return Error(ErrorException("Path contains directory traversal: .."))
+    end
+    
+    # 2. Check for absolute path traversal
+    if startswith(path, "/etc/passwd") || startswith(path, "C:\\Windows")
+        return Error(ErrorException("Path attempts system file access"))
+    end
+    
+    # 3. Verify against allowed directories if provided
+    if !isempty(allowed_dirs)
+        is_allowed = false
+        for allowed in allowed_dirs
+            if startswith(path, allowed) || startswith(path, rstrip(allowed, '/'))
+                is_allowed = true
+                break
+            end
+        end
+        if !is_allowed
+            return Error(ErrorException("Path not in allowed directories"))
+        end
+    end
+    
+    # 4. Check for dangerous paths
+    dangerous_paths = ["/etc", "/proc", "/sys", "C:\\Windows", "C:\\Program"]
+    for dangerous in dangerous_paths
+        if startswith(path, dangerous)
+            return Error(ErrorException("Path attempts access to protected system directory"))
+        end
+    end
+    
+    return Ok(path)
+end
+
+"""
+    detect_injection(text::String)::Union{InjectionAttempt, Nothing}
+
+Detect prompt injection attempts:
+1. Check against known patterns
+2. Use heuristics (e.g., sudden topic change)
+3. Flag for human review if detected
+4. Return InjectionAttempt with severity level
+"""
+struct InjectionAttempt
+    pattern::String
+    severity::SanitizationLevel
+    matched_text::String
+end
+
+function detect_injection(text::String)::Union{InjectionAttempt, Nothing}
+    # 1. Check against known patterns
+    for pattern in INJECTION_PATTERNS
+        match = match(pattern, text)
+        if match !== nothing
+            return InjectionAttempt(
+                string(pattern),
+                MALICIOUS,
+                match.match
+            )
+        end
+    end
+    
+    # 2. Additional injection checks using existing patterns
+    if occursin(PATTERN_IGNORE_PREVIOUS, text)
+        return InjectionAttempt(
+            "ignore previous instructions",
+            MALICIOUS,
+            "ignore previous"
+        )
+    end
+    
+    if occursin(PATTERN_DEV_OVERRIDE, text)
+        return InjectionAttempt(
+            "developer override",
+            MALICIOUS,
+            "developer mode"
+        )
+    end
+    
+    if occursin(PATTERN_OVERRIDE, text)
+        return InjectionAttempt(
+            "safety override",
+            MALICIOUS,
+            "override safety"
+        )
+    end
+    
+    # 3. Heuristic: Check for high ratio of special characters
+    special_chars = count(c -> !isalnum(c) && !isspace(c), text)
+    total_chars = length(text)
+    if total_chars > 0 && special_chars / total_chars > 0.3
+        return InjectionAttempt(
+            "high special character ratio",
+            SUSPICIOUS,
+            "suspicious pattern"
+        )
+    end
+    
+    # No injection detected
+    return nothing
 end
 
 end # module InputSanitizer

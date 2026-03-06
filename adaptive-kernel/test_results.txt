@@ -1,0 +1,28 @@
+Adaptive Kernel Test Results
+============================
+Timestamp: 2026-03-06T04:28:08.448
+Total: 10
+Passed: 3
+Failed: 7
+Skipped: 0
+Execution Time: 112.26s
+
+Detailed Results:
+----------------
+failed: unit_kernel_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl", 12, Some tests did not pass: 39 passed, 1 failed, 1 errored, 0 broken.)
+passed: unit_capability_test.jl
+failed: integration_simulation_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl", 16, Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.)
+passed: test_emotional_causal_integration.jl
+failed: integration_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/integration_test.jl", 4, Test.FallbackTestSetException("There was an error during testing"))
+failed: stress_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/stress_test.jl", 347, Some tests did not pass: 5 passed, 0 failed, 1 errored, 0 broken.)
+failed: test_c1_prompt_injection.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl", 24, Some tests did not pass: 0 passed, 2 failed, 4 errored, 0 broken.)
+failed: test_flow_integrity.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl", 15, Some tests did not pass: 0 passed, 0 failed, 7 errored, 0 broken.)
+passed: test_context_poisoning.jl
+failed: structural_integrity_attack_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/structural_integrity_attack_test.jl", 9, LoadError("/home/user/projectx/jarvis/src/types.jl", 4, LoadError("/home/user/projectx/jarvis/src/config/SecureKeystore.jl", 5, ArgumentError("Package Crypto not found in current path.\n- Run `import Pkg; Pkg.add(\"Crypto\")` to install the Crypto package."))))

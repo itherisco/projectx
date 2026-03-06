@@ -1,9 +1,19 @@
 //! TPM 2.0 Integration Module
 //!
+//! ⚠️  EXPERIMENTAL/STUB MODULE - NOT FOR PRODUCTION USE  ⚠️
+//!
 //! This module provides TPM 2.0 integration for secure key storage and signing.
 //! The cryptographic authority uses TPM-bound keys for sovereign verification.
 //!
-//! # TPM 2.0 Capabilities Used
+//! # ⚠️  SECURITY WARNING
+//! This module is currently a STUB that always returns `TPMError::NotAvailable`.
+//! It is designed to fall back to software crypto (CryptoAuthority) when TPM
+//! is not available. In production, this requires:
+//! - Actual TPM 2.0 hardware
+//! - TSS2 (TPM Software Stack) library
+//! - Proper TCTI (TPM Command Transport Interface) configuration
+//!
+//! # TPM 2.0 Capabilities Used (when implemented)
 //! - Key generation (TPM2_Create)
 //! - Signing (TPM2_Sign)
 //! - Verification (TPM2_VerifySignature)

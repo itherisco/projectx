@@ -588,10 +588,10 @@ function parse_user_intent(
 )::LLMResponse
     # SECURITY: Sanitize input using InputSanitizer module
     sanitized = sanitize_input(user_input)
-    if is_malicious(sanitized)
+    if sanitized.level == MALICIOUS
         error("SECURITY: InputSanitizer blocked malicious input: $(sanitized.errors)")
     end
-    user_input = sanitized.clean_text  # Use sanitized version
+    user_input = sanitized.sanitized !== nothing ? sanitized.sanitized : user_input  # Use sanitized version
     
     # Build context from history
     history_text = ""
@@ -795,10 +795,10 @@ function generate_response(
 )::String
     # SECURITY: Sanitize input using InputSanitizer module
     sanitized = sanitize_input(user_input)
-    if is_malicious(sanitized)
+    if sanitized.level == MALICIOUS
         error("SECURITY: InputSanitizer blocked malicious input: $(sanitized.errors)")
     end
-    user_input = sanitized.clean_text  # Use sanitized version
+    user_input = sanitized.sanitized !== nothing ? sanitized.sanitized : user_input  # Use sanitized version
     
     # Build context strings
     history_text = isempty(conversation_history) ? "No recent context" : 

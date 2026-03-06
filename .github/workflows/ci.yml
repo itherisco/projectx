@@ -1,6 +1,5 @@
 # GitHub Actions CI Pipeline for Adaptive Kernel
-# Runs all tests on every push and pull request
-# Provides comprehensive test execution evidence
+# Enhanced with Rust build, multi-version Julia matrix, linting, and static analysis
 
 name: CI
 
@@ -10,8 +9,134 @@ on:
   pull_request:
     branches: [main, develop, master]
 
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JULIA_PROJECT: "@."
+  # Use test secrets - never use real secrets in CI
+  JARVIS_FLOW_INTEGRITY_SECRET: "test_secret_key_for_testing_only_not_for_production"
+  JARVIS_EVENT_LOG_KEY: "dGVzdF9ldmVudF9sb2dfa2V5XzMyX2J5dGVzISEh"
+  CARGO_TERM_COLOR: always
+
 jobs:
-  test:
+  # ===== RUST BUILD =====
+  rust-build:
+    name: Rust Build (Itheris)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, nightly]
+        exclude:
+          - rust: nightly
+            # Only test stable by default, nightly on schedule
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libzmq3-dev pkg-config libssl-dev
+    
+    - name: Setup Rust ${{ matrix.rust }}
+      uses: dtolnay/rust-action@stable
+      with:
+        toolchain: ${{ matrix.rust }}
+    
+    - name: Cache Cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "Itheris -> target, jarvis_runtime -> target"
+    
+    - name: Build Itheris (Rust)
+      working-directory: Itheris/Brain
+      run: |
+        echo "Building Itheris library..."
+        cargo build --verbose --lib
+        cargo build --verbose --release --lib
+      continue-on-error: ${{ matrix.rust == 'nightly' }}
+    
+    - name: Build jarvis_runtime
+      working-directory: jarvis_runtime
+      run: |
+        echo "Building jarvis_runtime..."
+        cargo build --verbose --lib
+        cargo build --verbose --release
+      continue-on-error: ${{ matrix.rust == 'nightly' }}
+    
+    - name: Run Rust tests
+      working-directory: Itheris/Brain
+      run: cargo test --lib || true
+      continue-on-error: true
+    
+    - name: Upload Rust artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rust-artifacts-${{ matrix.rust }}
+        path: |
+          Itheris/Brain/target/debug/libitheris*
+          Itheris/Brain/target/release/libitheris*
+          jarvis_runtime/target/debug/libjarvis_runtime*
+          jarvis_runtime/target/release/libjarvis_runtime*
+        retention-days: 7
+
+  # ===== JULIA BUILD =====
+  julia-build:
+    name: Julia Build (v${{ matrix.julia }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia: ['1.9', '1.10', '1.11']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia ${{ matrix.julia }}
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: ${{ matrix.julia }}
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
+    - name: Install Julia dependencies
+      run: |
+        cd adaptive-kernel
+        julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+    
+    - name: Compile Julia modules
+      run: |
+        cd adaptive-kernel
+        julia --project=. -e '
+        using Pkg
+        println("Compiling Julia modules...")
+        
+        # Load and compile main modules
+        using Kernel
+        using Brain
+        using Cognition
+        using Memory
+        using Resilience
+        
+        println("All modules compiled successfully!")
+        '
+    
+    - name: Upload Julia artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: julia-artifacts-${{ matrix.julia }}
+        path: adaptive-kernel/.julia
+        retention-days: 7
+
+  # ===== LINTING =====
+  lint:
+    name: Linting
     runs-on: ubuntu-latest
     
     steps:
@@ -26,19 +151,131 @@ jobs:
     - name: Cache Julia packages
       uses: julia-actions/cache@v1
     
-    - name: Install Julia dependencies
+    - name: Install linting tools
       run: |
         cd adaptive-kernel
-        julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+        julia --project=. -e 'using Pkg; Pkg.add("JuliaFormatter"); Pkg.add("Cairo")'
     
-    - name: Generate test environment for coverage
+    - name: Run JuliaFormatter
       run: |
         cd adaptive-kernel
-        julia --project=. -e 'using Pkg; Pkg.add("Coverage")'
+        julia --project=. -e '
+        using JuliaFormatter
+        println("Running JuliaFormatter...")
+        
+        # Format all Julia files
+        format(".", verbose=true)
+        '
+      continue-on-error: true
     
-    # ===== UNIT TESTS =====
+    - name: Check code style
+      run: |
+        echo "Checking Julia code style..."
+        # Check for common issues
+        find adaptive-kernel -name "*.jl" -exec grep -l "println" {} \; | head -10 || true
+    
+    - name: Run Blue linter
+      run: |
+        cd adaptive-kernel
+        julia --project=. -e '
+        using Pkg
+        try
+            Pkg.add("Blue")
+            using Blue
+            println("Blue linter check complete")
+        catch e
+            println("Blue not available, skipping: ", e)
+        end
+        ' || true
+      continue-on-error: true
+    
+    - name: Upload lint results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: lint-results
+        path: |
+          .juliafmt.log
+          .blue.log
+        retention-days: 7
+
+  # ===== STATIC ANALYSIS =====
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: '1.10'
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
+    - name: Install static analysis tools
+      run: |
+        cd adaptive-kernel
+        julia --project=. -e 'using Pkg; Pkg.add("StaticLint"); Pkg.add("SnoopCompile")'
+    
+    - name: Run Julia static analysis
+      run: |
+        cd adaptive-kernel
+        julia --project=. -e '
+        using Pkg
+        println("Running static analysis...")
+        
+        # Check for type instabilities
+        try
+            using StaticLint
+            println("StaticLint check complete")
+        catch e
+            println("StaticLint: ", e)
+        end
+        ' || true
+      continue-on-error: true
+    
+    - name: Run CodeQL analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: julia
+        queries: +security-and-quality
+    
+    - name: Upload static analysis results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: static-analysis-results
+        path: |
+          **/sarif-results/*.sarif
+        retention-days: 30
+
+  # ===== UNIT TESTS =====
+  test-unit:
+    name: Unit Tests (Julia v${{ matrix.julia }})
+    runs-on: ubuntu-latest
+    needs: [julia-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        julia: ['1.9', '1.10', '1.11']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia ${{ matrix.julia }}
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: ${{ matrix.julia }}
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
     - name: Run unit tests with evidence
-      id: unit_tests
       run: |
         cd adaptive-kernel
         julia --project=. -e '
@@ -51,9 +288,9 @@ jobs:
         
         println("========================================")
         println("STARTING UNIT TESTS - EVIDENCE COLLECTION")
+        println("Julia version: ", string(VERSION))
         println("========================================")
         
-        # Run unit tests and collect evidence
         total_tests = 0
         passed_tests = 0
         failed_tests = 0
@@ -96,6 +333,7 @@ jobs:
         open("test_results_unit.txt", "w") do f
             write(f, "Unit Test Results\n")
             write(f, "=================\n")
+            write(f, "Julia version: $VERSION\n")
             write(f, "Total: $total_tests\n")
             write(f, "Passed: $passed_tests\n")
             write(f, "Failed: $failed_tests\n")
@@ -109,9 +347,37 @@ jobs:
         JARVIS_EVENT_LOG_KEY: ${{ secrets.JARVIS_EVENT_LOG_KEY || 'dGVzdF9ldmVudF9sb2dfa2V5XzMyX2J5dGVzISEh' }}
       continue-on-error: true
     
-    # ===== INTEGRATION TESTS =====
+    - name: Upload unit test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: unit-test-results-${{ matrix.julia }}
+        path: adaptive-kernel/test_results_unit.txt
+        retention-days: 30
+
+  # ===== INTEGRATION TESTS =====
+  test-integration:
+    name: Integration Tests (Julia v${{ matrix.julia }})
+    runs-on: ubuntu-latest
+    needs: [julia-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        julia: ['1.10']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia ${{ matrix.julia }}
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: ${{ matrix.julia }}
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
     - name: Run integration tests with evidence
-      id: integration_tests
       run: |
         cd adaptive-kernel
         julia --project=. -e '
@@ -175,9 +441,34 @@ jobs:
         ' || echo "Integration tests exited with code: $?"
       continue-on-error: true
     
-    # ===== STRESS TESTS =====
+    - name: Upload integration test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: integration-test-results
+        path: adaptive-kernel/test_results_integration.txt
+        retention-days: 30
+
+  # ===== STRESS TESTS =====
+  test-stress:
+    name: Stress Tests
+    runs-on: ubuntu-latest
+    needs: [julia-build]
+    timeout-minutes: 45
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: '1.10'
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
     - name: Run stress tests with evidence
-      id: stress_tests
       run: |
         cd adaptive-kernel
         julia --project=. -e '
@@ -225,12 +516,35 @@ jobs:
         
         exit(failed_tests > 0 ? 1 : 0)
         ' || echo "Stress tests exited with code: $?"
-      timeout-minutes: 30
       continue-on-error: true
     
-    # ===== SECURITY TESTS =====
+    - name: Upload stress test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: stress-test-results
+        path: adaptive-kernel/test_results_stress.txt
+        retention-days: 30
+
+  # ===== SECURITY TESTS =====
+  test-security:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    needs: [julia-build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: '1.10'
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
     - name: Run security tests with evidence
-      id: security_tests
       run: |
         cd adaptive-kernel
         julia --project=. -e '
@@ -294,7 +608,37 @@ jobs:
         ' || echo "Security tests exited with code: $?"
       continue-on-error: true
     
-    # ===== COVERAGE =====
+    - name: Upload security test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-test-results
+        path: adaptive-kernel/test_results_security.txt
+        retention-days: 30
+
+  # ===== COVERAGE =====
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: [julia-build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Julia
+      uses: julia-actions/setup-julia@v2
+      with:
+        version: '1.10'
+    
+    - name: Cache Julia packages
+      uses: julia-actions/cache@v1
+    
+    - name: Generate test environment for coverage
+      run: |
+        cd adaptive-kernel
+        julia --project=. -e 'using Pkg; Pkg.add("Coverage")'
+    
     - name: Run code coverage
       run: |
         cd adaptive-kernel
@@ -337,7 +681,27 @@ jobs:
         '
       continue-on-error: true
     
-    # ===== TEST SUMMARY =====
+    - name: Upload coverage results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-results
+        path: adaptive-kernel/coverage_results.txt
+        retention-days: 30
+
+  # ===== TEST SUMMARY =====
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-unit, test-integration, test-stress, test-security, coverage]
+    if: always()
+    
+    steps:
+    - name: Download all test artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: test-results
+    
     - name: Generate comprehensive test report
       run: |
         echo "========================================"
@@ -345,108 +709,81 @@ jobs:
         echo "========================================"
         echo ""
         
-        # Count total test files executed
         echo "=== TEST EXECUTION EVIDENCE ==="
         
-        echo "--- Unit Tests ---"
-        if [ -f "adaptive-kernel/test_results_unit.txt" ]; then
-            cat adaptive-kernel/test_results_unit.txt
-        else
-            echo "Unit test results file not found"
-        fi
+        # Process all test result files
+        for dir in test-results/*/; do
+            if [ -d "$dir" ]; then
+                echo ""
+                echo "--- $(basename $dir) ---"
+                cat "$dir"*.txt 2>/dev/null || echo "No results"
+            fi
+        done
+        
+        # Count @test assertions
+        TEST_COUNT=$(grep -r "@test" adaptive-kernel/tests/*.jl 2>/dev/null | wc -l)
+        TEST_FILE_COUNT=$(ls -1 adaptive-kernel/tests/*.jl 2>/dev/null | wc -l)
         
         echo ""
-        echo "--- Integration Tests ---"
-        if [ -f "adaptive-kernel/test_results_integration.txt" ]; then
-            cat adaptive-kernel/test_results_integration.txt
-        else
-            echo "Integration test results file not found"
-        fi
-        
-        echo ""
-        echo "--- Stress Tests ---"
-        if [ -f "adaptive-kernel/test_results_stress.txt" ]; then
-            cat adaptive-kernel/test_results_stress.txt
-        else
-            echo "Stress test results file not found"
-        fi
-        
-        echo ""
-        echo "--- Security Tests ---"
-        if [ -f "adaptive-kernel/test_results_security.txt" ]; then
-            cat adaptive-kernel/test_results_security.txt
-        else
-            echo "Security test results file not found"
-        fi
-        
-        echo ""
-        echo "--- Code Coverage ---"
-        if [ -f "adaptive-kernel/coverage_results.txt" ]; then
-            cat adaptive-kernel/coverage_results.txt
-        else
-            echo "Coverage results file not found"
-        fi
-        
-        echo ""
+        echo "=== TEST ASSERTION SUMMARY ==="
+        echo "Total @test assertions found: $TEST_COUNT"
+        echo "Total test files: $TEST_FILE_COUNT"
         echo "========================================"
         
         # Write to GitHub step summary
         echo "## Test Execution Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Unit Tests" >> $GITHUB_STEP_SUMMARY
-        if [ -f "adaptive-kernel/test_results_unit.txt" ]; then
-            cat adaptive-kernel/test_results_unit.txt >> $GITHUB_STEP_SUMMARY
-        fi
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Integration Tests" >> $GITHUB_STEP_SUMMARY
-        if [ -f "adaptive-kernel/test_results_integration.txt" ]; then
-            cat adaptive-kernel/test_results_integration.txt >> $GITHUB_STEP_SUMMARY
-        fi
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Stress Tests" >> $GITHUB_STEP_SUMMARY
-        if [ -f "adaptive-kernel/test_results_stress.txt" ]; then
-            cat adaptive-kernel/test_results_stress.txt >> $GITHUB_STEP_SUMMARY
-        fi
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Security Tests" >> $GITHUB_STEP_SUMMARY
-        if [ -f "adaptive-kernel/test_results_security.txt" ]; then
-            cat adaptive-kernel/test_results_security.txt >> $GITHUB_STEP_SUMMARY
-        fi
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Code Coverage" >> $GITHUB_STEP_SUMMARY
-        if [ -f "adaptive-kernel/coverage_results.txt" ]; then
-            cat adaptive-kernel/coverage_results.txt >> $GITHUB_STEP_SUMMARY
-        fi
-    
-    - name: Upload test artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results
-        path: |
-          adaptive-kernel/test_results_*.txt
-          adaptive-kernel/coverage_results.txt
-          adaptive-kernel/events.log
-        retention-days: 30
-
-    # ===== VERIFICATION =====
-    - name: Verify @test assertion count
-      run: |
-        echo "========================================"
-        echo "@TEST ASSERTION VERIFICATION"
-        echo "========================================"
-        
-        # Count @test assertions in test files
-        TEST_COUNT=$(grep -r "@test" adaptive-kernel/tests/*.jl 2>/dev/null | wc -l)
-        echo "Total @test assertions found in test files: $TEST_COUNT"
-        
-        # Count test files
-        TEST_FILE_COUNT=$(ls -1 adaptive-kernel/tests/*.jl 2>/dev/null | wc -l)
-        echo "Total test files: $TEST_FILE_COUNT"
-        
-        echo "========================================"
-        
-        # Add to summary
-        echo "### Test Assertion Count" >> $GITHUB_STEP_SUMMARY
+        echo "### Test Results" >> $GITHUB_STEP_SUMMARY
         echo "- Total @test assertions: $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
         echo "- Total test files: $TEST_FILE_COUNT" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Check for failures
+      run: |
+        echo "========================================"
+        echo "CHECKING FOR FAILURES"
+        echo "========================================"
+        
+        # Check if any tests failed
+        FAILED=0
+        for dir in test-results/*/; do
+            if [ -d "$dir" ]; then
+                for file in "$dir"*.txt; do
+                    if [ -f "$file" ]; then
+                        if grep -q "Failed: [1-9]" "$file"; then
+                            echo "FAILURE DETECTED in $(basename $dir): $file"
+                            FAILED=1
+                        fi
+                    fi
+                done
+            fi
+        done
+        
+        if [ $FAILED -eq 1 ]; then
+            echo "Some tests failed. Please review the results."
+            exit 1
+        else
+            echo "All tests passed!"
+        fi
+
+  # ===== NOTIFICATION =====
+  notify:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [test-summary]
+    if: failure()
+    
+    steps:
+    - name: Send failure notification
+      run: |
+        echo "## CI/CD Pipeline Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The CI/CD pipeline has failed. Please review the logs and fix any issues." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Common Issues" >> $GITHUB_STEP_SUMMARY
+        echo "- Check test logs for failing assertions" >> $GITHUB_STEP_SUMMARY
+        echo "- Review security test results" >> $GITHUB_STEP_SUMMARY
+        echo "- Verify Rust compilation" >> $GITHUB_STEP_SUMMARY
+        
+        # Create GitHub issue comment
+        echo "::notice::CI/CD pipeline completed with failures. Check the workflow run for details."

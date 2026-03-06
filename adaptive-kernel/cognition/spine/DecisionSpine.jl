@@ -41,7 +41,9 @@ export
     commit_to_decision,
     ProposalAggregator,
     ConflictResolver,
-    DecisionCommitment
+    DecisionCommitment,
+    # GUARD: Sovereignty enforcement
+    verify_kernel_sovereignty
 
 # ============================================================================
 # CONFIGURATION
@@ -508,6 +510,79 @@ function log_immutable_entry!(cycle::DecisionCycle)
         "timestamp" => now()
     )
     cycle.logged = true
+end
+
+# ============================================================================
+# GUARD: KERNEL SOVEREIGNTY VERIFICATION
+# ============================================================================
+
+"""
+    verify_kernel_sovereignty - GUARD: Verify kernel approved before execution
+    
+    This is the definitive check that enforces the "BRAIN IS ADVISORY -
+    KERNEL IS SOVEREIGN" principle. Any code attempting to execute actions
+    must call this function first.
+    
+    # Arguments
+    - `decision::CommittedDecision`: The decision to verify
+    
+    # Returns
+    - `true`: Kernel approved - execution allowed
+    
+    # Throws
+    - `ErrorException`: If kernel did not approve - sovereignty violation
+    
+    # Execution Path Enforcement
+    Brain → Kernel.approve() → DecisionSpine → Execution
+    
+    This function ensures execution ONLY happens after Kernel.approve().
+"""
+function verify_kernel_sovereignty(decision::CommittedDecision)::Bool
+    if !decision.kernel_approved
+        error("""
+            SOVEREIGNTY VIOLATION ATTEMPTED!
+            
+            BRAIN IS ADVISORY - KERNEL IS SOVEREIGN
+            
+            Execution was attempted without Kernel approval!
+            Decision ID: $(decision.id)
+            Decision: $(decision.decision)
+            Kernel Approved: $(decision.kernel_approved)
+            
+            The correct execution path is:
+            Brain → Kernel.approve() → DecisionSpine → Execution
+            
+            This attempted to skip the Kernel.approve() step.
+        """)
+    end
+    
+    # Log successful verification for audit
+    @debug "Kernel sovereignty verified" 
+        decision_id=string(decision.id)
+        decision=decision.decision
+        approval_timestamp=decision.kernel_approval_timestamp
+    
+    return true
+end
+
+"""
+    verify_kernel_sovereignty(cycle::DecisionCycle) - Verify entire cycle had kernel approval
+"""
+function verify_kernel_sovereignty(cycle::DecisionCycle)::Bool
+    if !cycle.kernel_approved
+        error("""
+            SOVEREIGNTY VIOLATION!
+            
+            Decision cycle $(cycle.cycle_number) executed without kernel approval.
+            Cycle ID: $(cycle.id)
+            Kernel Approved: $(cycle.kernel_approved)
+            Rejection Reason: $(cycle.kernel_rejection_reason)
+            
+            BRAIN IS ADVISORY - KERNEL IS SOVEREIGN
+        """)
+    end
+    
+    return true
 end
 
 end # module DecisionSpine

@@ -36,10 +36,86 @@ function weighted_sample(probs::Vector{Float32})::Int
 end
 
 # Export the missing Goal struct
-export BrainCore,  Experience,  Thought,  NeuralLayer,  Goal,  ActionProposal,
+export BrainCore,  Experience,  Thought,  NeuralLayer,  Goal,  ActionProposal,  Plan,
        initialize_brain,  infer,  learn!,  dream!,  encode_perception,  
        get_stats,  forward_pass,  plan,  evaluate_plan,  adapt_strategy,
-       run_dream_cycle,  train_brain!
+       run_dream_cycle,  train_brain!,  GradientFailureTracker,  GRADIENT_TRACKER,
+       has_invalid_gradients,  handle_critical_gradient_failure,  reset_gradient_tracker!
+
+# ============================================================================
+# GRADIENT FAILURE TRACKING
+# ============================================================================
+
+"""
+Global gradient failure tracking for training reliability.
+Tracks consecutive failures and alerts when threshold is exceeded.
+"""
+mutable struct GradientFailureTracker
+    value_failures::Int
+    policy_failures::Int
+    attention_failures::Int
+    main_failures::Int
+    last_failure_time::Dates.DateTime
+    consecutive_failures::Int
+    total_updates::Int
+    failure_threshold::Int
+    
+    GradientFailureTracker() = new(0, 0, 0, 0, Dates.now(), 0, 0, 10)
+end
+
+const GRADIENT_TRACKER = GradientFailureTracker()
+
+"""
+    has_invalid_gradients(grads)::Bool
+
+Check if gradients contain NaN or Inf values.
+"""
+function has_invalid_gradients(grads)::Bool
+    for p in grads
+        grad = grads[p]
+        if grad === nothing
+            continue
+        end
+        if any(isnan, grad) || any(isinf, grad)
+            return true
+        end
+    end
+    return false
+end
+
+"""
+    handle_critical_gradient_failure(network::String)
+
+Handle critical gradient failures by logging and alerting.
+"""
+function handle_critical_gradient_failure(network::String)
+    @error "CRITICAL: Too many consecutive gradient failures in $network" threshold=GRADIENT_TRACKER.failure_threshold
+    
+    # Log to audit trail
+    total_failures = GRADIENT_TRACKER.value_failures + GRADIENT_TRACKER.policy_failures + 
+                     GRADIENT_TRACKER.attention_failures + GRADIENT_TRACKER.main_failures
+    @error "Gradient Failure Stats" 
+        value_failures=GRADIENT_TRACKER.value_failures 
+        policy_failures=GRADIENT_TRACKER.policy_failures
+        attention_failures=GRADIENT_TRACKER.attention_failures
+        main_failures=GRADIENT_TRACKER.main_failures
+        total_failures=total_failures
+        consecutive=GRADIENT_TRACKER.consecutive_failures
+end
+
+"""
+    reset_gradient_tracker!()
+
+Reset gradient failure counters (call after successful recovery).
+"""
+function reset_gradient_tracker!()
+    GRADIENT_TRACKER.value_failures = 0
+    GRADIENT_TRACKER.policy_failures = 0
+    GRADIENT_TRACKER.attention_failures = 0
+    GRADIENT_TRACKER.main_failures = 0
+    GRADIENT_TRACKER.consecutive_failures = 0
+    @info "Gradient failure tracker reset"
+end
 
 # ============================================================================
 # CORE STRUCTURES - Flux-compatible
@@ -64,8 +140,26 @@ function NeuralLayer(in_dims::Int,  out_dims::Int,  activation_func::Function = 
     return NeuralLayer(model,  activation_func)
 end
 
-function forward_pass(layer::NeuralLayer,  input::Vector{Float32})
+function forward_pass(layer::NeuralLayer,  input::Vector{Float32})::Vector{Float32}
+    # Validate input is non-empty and has correct dimensions
+    if isempty(input)
+        error("forward_pass: input vector is empty")
+    end
+    
+    # Get expected input size from the first dense layer (Flux uses weight instead of W)
+    first_dense = layer.model.layers[1]
+    expected_in = size(first_dense.weight, 2)
+    if length(input) != expected_in
+        error("forward_pass: input size ($(length(input))) does not match expected size ($expected_in)")
+    end
+    
     output = layer.model(input)
+    
+    # Validate output is non-empty
+    if isempty(output)
+        error("forward_pass: model output is empty")
+    end
+    
     # Check if activation is a vector->vector function (like softmax) vs element-wise
     # by testing if it can be called with a scalar
     try
@@ -412,81 +506,167 @@ function learn!(brain::BrainCore,
     # Convert to proper format for Flux
     recurrence_input = brain.recurrence_buffer
     
-    # Value network update using Flux - FIXED
-    ps_value = Flux.trainable(brain.value_net.model)
-    gs_value = gradient(ps_value) do
-        h1_temp = forward_pass(brain.layers[1],  recurrence_input)
-        h2_temp = forward_pass(brain.layers[2],  h1_temp)
-        value_temp = forward_pass(brain.value_net,  h2_temp)[1]
-        loss = (reward + brain.gamma * next_value - value_temp)^2
-        return loss
+    # Validate recurrence_input before gradient computation
+    if isempty(recurrence_input) || length(recurrence_input) < 140
+        # Initialize with zeros if not properly set up
+        recurrence_input = zeros(Float32, 140)
     end
-    # FIXED:  Proper update call
-    Flux.Optimise.update!(brain.optimizers["value"],  ps_value,  gs_value)
+    
+    # Value network update using Flux - FIXED with error handling and tracking
+    GRADIENT_TRACKER.total_updates += 1
+    value_success = false
+    
+    try
+        ps_value = Flux.params(brain.value_net.model)
+        gs_value = gradient(ps_value) do
+            h1_temp = forward_pass(brain.layers[1],  recurrence_input)
+            h2_temp = forward_pass(brain.layers[2],  h1_temp)
+            value_temp = forward_pass(brain.value_net,  h2_temp)[1]
+            loss = (reward + brain.gamma * next_value - value_temp)^2
+            return loss
+        end
+        # Check for NaN/Inf gradients
+        if has_invalid_gradients(gs_value)
+            throw(ErrorException("Invalid gradients detected (NaN/Inf)"))
+        end
+        # FIXED:  Proper update call
+        Flux.Optimise.update!(brain.optimizers["value"],  ps_value,  gs_value)
+        value_success = true
+    catch e
+        GRADIENT_TRACKER.value_failures += 1
+        GRADIENT_TRACKER.consecutive_failures += 1
+        GRADIENT_TRACKER.last_failure_time = Dates.now()
+        
+        @warn "Value network gradient failed" exception=e failures=GRADIENT_TRACKER.value_failures
+        
+        # Check if failures exceeded threshold
+        if GRADIENT_TRACKER.consecutive_failures > GRADIENT_TRACKER.failure_threshold
+            handle_critical_gradient_failure("value_network")
+        end
+    end
     
     # Policy gradient update with entropy regularization using Flux - FIXED
     action_idx = thought.action
     probs = thought.probs
+    policy_success = false
     
     if action_idx > 0 && action_idx <= length(probs)
-        ps_policy = Flux.trainable(brain.policy_net.model)
-        gs_policy = gradient(ps_policy) do
-            h1_temp = forward_pass(brain.layers[1],  recurrence_input)
-            h2_temp = forward_pass(brain.layers[2],  h1_temp)
-            action_probs_temp = forward_pass(brain.policy_net,  h2_temp)
+        try
+            ps_policy = Flux.params(brain.policy_net.model)
+            gs_policy = gradient(ps_policy) do
+                h1_temp = forward_pass(brain.layers[1],  recurrence_input)
+                h2_temp = forward_pass(brain.layers[2],  h1_temp)
+                action_probs_temp = forward_pass(brain.policy_net,  h2_temp)
+                
+                # Advantage calculation
+                h1_val_temp = forward_pass(brain.layers[1],  recurrence_input)
+                h2_val_temp = forward_pass(brain.layers[2],  h1_val_temp)
+                value_temp = forward_pass(brain.value_net,  h2_val_temp)[1]
+                advantage_temp = reward + brain.gamma * next_value - value_temp
+                
+                # Entropy bonus
+                entropy_temp = -sum(action_probs_temp .* log.(action_probs_temp .+ 1f-8))
+                advantage_temp += brain.entropy_coeff * entropy_temp
+                
+                # Policy gradient loss
+                selected_prob = action_probs_temp[action_idx]
+                loss = -advantage_temp * log(selected_prob + 1f-8)
+                return loss
+            end
+            # Check for NaN/Inf gradients
+            if has_invalid_gradients(gs_policy)
+                throw(ErrorException("Invalid gradients detected (NaN/Inf)"))
+            end
+            # FIXED:  Proper update call
+            Flux.Optimise.update!(brain.optimizers["policy"],  ps_policy,  gs_policy)
+            policy_success = true
+        catch e
+            GRADIENT_TRACKER.policy_failures += 1
+            GRADIENT_TRACKER.consecutive_failures += 1
+            GRADIENT_TRACKER.last_failure_time = Dates.now()
             
-            # Advantage calculation
-            h1_val_temp = forward_pass(brain.layers[1],  recurrence_input)
-            h2_val_temp = forward_pass(brain.layers[2],  h1_val_temp)
-            value_temp = forward_pass(brain.value_net,  h2_val_temp)[1]
-            advantage_temp = reward + brain.gamma * next_value - value_temp
+            @warn "Policy network gradient failed" exception=e failures=GRADIENT_TRACKER.policy_failures
             
-            # Entropy bonus
-            entropy_temp = -sum(action_probs_temp .* log.(action_probs_temp .+ 1f-8))
-            advantage_temp += brain.entropy_coeff * entropy_temp
-            
-            # Policy gradient loss
-            selected_prob = action_probs_temp[action_idx]
-            loss = -advantage_temp * log(selected_prob + 1f-8)
-            return loss
+            if GRADIENT_TRACKER.consecutive_failures > GRADIENT_TRACKER.failure_threshold
+                handle_critical_gradient_failure("policy_network")
+            end
         end
-        # FIXED:  Proper update call
-        Flux.Optimise.update!(brain.optimizers["policy"],  ps_policy,  gs_policy)
     end
     
     # Attention network update using Flux - FIXED
-    ps_attention = Flux.trainable(brain.attention_net.model)
-    gs_attention = gradient(ps_attention) do
-        h1_temp = forward_pass(brain.layers[1],  recurrence_input)
-        attention_raw = forward_pass(brain.attention_net,  h1_temp)
-        attention_weights_temp = attention_raw .* brain.attention_coeff
+    attention_success = false
+    try
+        ps_attention = Flux.params(brain.attention_net.model)
+        gs_attention = gradient(ps_attention) do
+            h1_temp = forward_pass(brain.layers[1],  recurrence_input)
+            attention_raw = forward_pass(brain.attention_net,  h1_temp)
+            attention_weights_temp = attention_raw .* brain.attention_coeff
+            
+            # Simple attention loss (unsupervised learning)
+            target_attention = softmax(abs.(h1_temp))
+            attention_loss = sum((attention_weights_temp .- target_attention).^2)
+            return attention_loss
+        end
+        # Check for NaN/Inf gradients
+        if has_invalid_gradients(gs_attention)
+            throw(ErrorException("Invalid gradients detected (NaN/Inf)"))
+        end
+        # FIXED:  Proper update call
+        Flux.Optimise.update!(brain.optimizers["attention"],  ps_attention,  gs_attention)
+        attention_success = true
+    catch e
+        GRADIENT_TRACKER.attention_failures += 1
+        GRADIENT_TRACKER.consecutive_failures += 1
+        GRADIENT_TRACKER.last_failure_time = Dates.now()
         
-        # Simple attention loss (unsupervised learning)
-        target_attention = softmax(abs.(h1_temp))
-        attention_loss = sum((attention_weights_temp .- target_attention).^2)
-        return attention_loss
+        @warn "Attention network gradient failed" exception=e failures=GRADIENT_TRACKER.attention_failures
+        
+        if GRADIENT_TRACKER.consecutive_failures > GRADIENT_TRACKER.failure_threshold
+            handle_critical_gradient_failure("attention_network")
+        end
     end
-    # FIXED:  Proper update call
-    Flux.Optimise.update!(brain.optimizers["attention"],  ps_attention,  gs_attention)
     
     # Main network update using Flux - FIXED
-    # For multiple models, we need to chain them properly
-    ps_main = (Flux.trainable(brain.layers[1].model)..., Flux.trainable(brain.layers[2].model)...)
-    gs_main = gradient(ps_main) do
-        h1_temp = forward_pass(brain.layers[1],  recurrence_input)
-        h2_temp = forward_pass(brain.layers[2],  h1_temp)
+    main_success = false
+    try
+        # For multiple models, we need to chain them properly
+        ps_main = Flux.params(brain.layers[1].model, brain.layers[2].model)
+        gs_main = gradient(ps_main) do
+            h1_temp = forward_pass(brain.layers[1],  recurrence_input)
+            h2_temp = forward_pass(brain.layers[2],  h1_temp)
+            
+            # Combined loss from value and policy gradients
+            value_temp = forward_pass(brain.value_net,  h2_temp)[1]
+            value_loss = (reward + brain.gamma * next_value - value_temp)^2
+            
+            action_probs_temp = forward_pass(brain.policy_net,  h2_temp)
+            policy_loss = -reward * log(action_probs_temp[action_idx] + 1f-8)
+            
+            return value_loss + 0.1f0 * policy_loss
+        end
+        # Check for NaN/Inf gradients
+        if has_invalid_gradients(gs_main)
+            throw(ErrorException("Invalid gradients detected (NaN/Inf)"))
+        end
+        # FIXED:  Proper update call
+        Flux.Optimise.update!(brain.optimizers["main"],  ps_main,  gs_main)
+        main_success = true
+    catch e
+        GRADIENT_TRACKER.main_failures += 1
+        GRADIENT_TRACKER.consecutive_failures += 1
+        GRADIENT_TRACKER.last_failure_time = Dates.now()
         
-        # Combined loss from value and policy gradients
-        value_temp = forward_pass(brain.value_net,  h2_temp)[1]
-        value_loss = (reward + brain.gamma * next_value - value_temp)^2
+        @warn "Main network gradient failed" exception=e failures=GRADIENT_TRACKER.main_failures
         
-        action_probs_temp = forward_pass(brain.policy_net,  h2_temp)
-        policy_loss = -reward * log(action_probs_temp[action_idx] + 1f-8)
-        
-        return value_loss + 0.1f0 * policy_loss
+        if GRADIENT_TRACKER.consecutive_failures > GRADIENT_TRACKER.failure_threshold
+            handle_critical_gradient_failure("main_network")
+        end
     end
-    # FIXED:  Proper update call
-    Flux.Optimise.update!(brain.optimizers["main"],  ps_main,  gs_main)
+    
+    # Reset consecutive failures on any success
+    if value_success || policy_success || attention_success || main_success
+        GRADIENT_TRACKER.consecutive_failures = 0
+    end
     
     # Store experience
     experience = Experience(
@@ -525,7 +705,7 @@ end
 # PLANNING AND STRATEGIC THINKING
 # ============================================================================
 
-function plan(brain::BrainCore,  perception::Dict{String,  Any},  horizon::Int=5)::Plan
+function plan(brain::BrainCore,  perception::Dict{String,  Any}; horizon::Int=5)::Plan
     # Generate a multi-step plan by simulating future actions
     plan_id = uuid4()
     actions = Int[]
@@ -559,9 +739,12 @@ function plan(brain::BrainCore,  perception::Dict{String,  Any},  horizon::Int=5
         estimated_reward = forward_pass(brain.value_net,  h2)[1]
         push!(rewards,  estimated_reward)
         
-        # Update confidence based on certainty
-        certainty = 1f0 - sum(action_probs .* log.(action_probs .+ 1f-8)) / log(6f0)
-        confidence *= certainty
+        # Update confidence based on certainty (clamp to valid range)
+        # Clamp probabilities to valid range to avoid log of negative numbers
+        clamped_probs = clamp.(action_probs, 1f-10, 1f0)
+        certainty = 1f0 - sum(clamped_probs .* log.(clamped_probs)) / log(6f0)
+        # Ensure confidence stays in [0, 1] range
+        confidence = clamp(confidence * max(0f0, certainty), 0f0, 1f0)
         
         # Simulate next state (simplified world model)
         prediction = forward_pass(brain.predictor_net,  h2)
@@ -676,17 +859,21 @@ function dream!(brain::BrainCore)::Float32
         loss = sum(error .^ 2)
         total_prediction_error += loss
         
-        # Update predictor using Flux - FIXED
-        ps_predictor = Flux.trainable(brain.predictor_net.model)
-        gs_predictor = gradient(ps_predictor) do
-            h1_temp = forward_pass(brain.layers[1],  dream_input)
-            h2_temp = forward_pass(brain.layers[2],  h1_temp)
-            pred_temp = forward_pass(brain.predictor_net,  h2_temp)
-            pred_loss = sum((pred_temp .- exp.next_perception).^2)
-            return pred_loss
+        # Update predictor using Flux - FIXED with error handling
+        try
+            ps_predictor = Flux.trainable(brain.predictor_net.model)
+            gs_predictor = gradient(ps_predictor) do
+                h1_temp = forward_pass(brain.layers[1],  dream_input)
+                h2_temp = forward_pass(brain.layers[2],  h1_temp)
+                pred_temp = forward_pass(brain.predictor_net,  h2_temp)
+                pred_loss = sum((pred_temp .- exp.next_perception).^2)
+                return pred_loss
+            end
+            # FIXED:  Proper update call
+            Flux.Optimise.update!(brain.optimizers["predictor"],  ps_predictor,  gs_predictor)
+        catch e
+            @warn "Predictor gradient computation failed in dream!: $(typeof(e)). Using fallback."
         end
-        # FIXED:  Proper update call
-        Flux.Optimise.update!(brain.optimizers["predictor"],  ps_predictor,  gs_predictor)
         
         # Attention learning (unsupervised)
         attention_target = softmax(abs.(h1))  # Attend to salient features
@@ -694,17 +881,21 @@ function dream!(brain::BrainCore)::Float32
         attention_loss = sum(attention_error .^ 2)
         total_attention_loss += attention_loss
         
-        # Update attention using Flux - FIXED
-        ps_attention = Flux.trainable(brain.attention_net.model)
-        gs_attention = gradient(ps_attention) do
-            h1_temp = forward_pass(brain.layers[1],  dream_input)
-            attention_raw = forward_pass(brain.attention_net,  h1_temp)
-            attention_weights_temp = attention_raw .* brain.attention_coeff
-            att_loss = sum((attention_weights_temp .- attention_target).^2)
-            return att_loss
+        # Update attention using Flux - FIXED with error handling
+        try
+            ps_attention = Flux.trainable(brain.attention_net.model)
+            gs_attention = gradient(ps_attention) do
+                h1_temp = forward_pass(brain.layers[1],  dream_input)
+                attention_raw = forward_pass(brain.attention_net,  h1_temp)
+                attention_weights_temp = attention_raw .* brain.attention_coeff
+                att_loss = sum((attention_weights_temp .- attention_target).^2)
+                return att_loss
+            end
+            # FIXED:  Proper update call
+            Flux.Optimise.update!(brain.optimizers["attention"],  ps_attention,  gs_attention)
+        catch e
+            @warn "Attention gradient computation failed in dream!: $(typeof(e)). Using fallback."
         end
-        # FIXED:  Proper update call
-        Flux.Optimise.update!(brain.optimizers["attention"],  ps_attention,  gs_attention)
     end
     
     # Memory consolidation:   strengthen important memories

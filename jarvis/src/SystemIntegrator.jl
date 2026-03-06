@@ -234,6 +234,8 @@ export BrainWrapper, KernelWrapper
 export _load_capability_registry, _get_capability_by_id, _execute_capability
 export _execute_builtin_capability, _get_cpu_info, _get_process_info
 export _get_network_info, _get_filesystem_info
+# GUARD: Sovereignty verification
+export verify_kernel_sovereignty
 # Export action ID validation (SECURITY)
 export AUTHORIZED_ACTIONS, validate_action_id, get_authorized_action_ids
 export _update_memory, _handle_brain_nothing, _handle_kernel_denial

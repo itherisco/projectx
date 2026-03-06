@@ -1,0 +1,80 @@
+{
+  "total_tests": 10,
+  "passed": 3,
+  "execution_time": 109.64082098007202,
+  "timestamp": "2026-03-06T04:28:05.832",
+  "failed": 7,
+  "skipped": 0,
+  "tests": [
+    {
+      "name": "unit_kernel_test.jl",
+      "time": 35.101189851760864,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl\", 12, Some tests did not pass: 39 passed, 1 failed, 1 errored, 0 broken.)",
+      "assertions": 0
+    },
+    {
+      "name": "unit_capability_test.jl",
+      "time": 36.94589900970459,
+      "status": "passed",
+      "error": null,
+      "assertions": 1
+    },
+    {
+      "name": "integration_simulation_test.jl",
+      "time": 41.82393503189087,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl\", 16, Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.)",
+      "assertions": 0
+    },
+    {
+      "name": "test_emotional_causal_integration.jl",
+      "time": 42.428098917007446,
+      "status": "passed",
+      "error": null,
+      "assertions": 1
+    },
+    {
+      "name": "integration_test.jl",
+      "time": 52.29910397529602,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/integration_test.jl\", 4, Test.FallbackTestSetException(\"There was an error during testing\"))",
+      "assertions": 0
+    },
+    {
+      "name": "stress_test.jl",
+      "time": 93.05608201026917,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/stress_test.jl\", 347, Some tests did not pass: 5 passed, 0 failed, 1 errored, 0 broken.)",
+      "assertions": 0
+    },
+    {
+      "name": "test_c1_prompt_injection.jl",
+      "time": 95.98894786834717,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl\", 24, Some tests did not pass: 0 passed, 2 failed, 4 errored, 0 broken.)",
+      "assertions": 0
+    },
+    {
+      "name": "test_flow_integrity.jl",
+      "time": 100.87852096557617,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl\", 15, Some tests did not pass: 0 passed, 0 failed, 7 errored, 0 broken.)",
+      "assertions": 0
+    },
+    {
+      "name": "test_context_poisoning.jl",
+      "time": 109.58325099945068,
+      "status": "passed",
+      "error": null,
+      "assertions": 1
+    },
+    {
+      "name": "structural_integrity_attack_test.jl",
+      "time": 109.64003801345825,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/structural_integrity_attack_test.jl\", 9, LoadError(\"/home/user/projectx/jarvis/src/types.jl\", 4, LoadError(\"/home/user/projectx/jarvis/src/config/SecureKeystore.jl\", 5, ArgumentError(\"Package Crypto not found in current path.\\n- Run `import Pkg; Pkg.add(\\\"Crypto\\\")` to install the Crypto package.\"))))",
+      "assertions": 0
+    }
+  ]
+}
