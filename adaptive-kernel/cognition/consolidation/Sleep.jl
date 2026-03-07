@@ -8,6 +8,10 @@ using UUIDs
 using Statistics
 using Logging
 
+# Import Oneiric (Dream) module for enhanced dream processing
+include(joinpath(@__DIR__, "..", "oneiric", "OneiricController.jl"))
+using .OneiricController
+
 # Export all functions and types
 export
     # Sleep state
@@ -21,7 +25,12 @@ export
     regularize_weights!,
     snapshot_brain,
     restore_brain!,
-    should_enter_sleep
+    should_enter_sleep,
+    
+    # Oneiric integration
+    enter_oneiric_mode,
+    run_oneiric_dream,
+    integrate_with_oneiric!
 
 # ============================================================================
 # SLEEP PHASES
@@ -770,6 +779,151 @@ function exit_sleep_mode(brain_state::Any)::Bool
         @error "Failed to exit sleep mode" error=e
         return false
     end
+end
+
+# ============================================================================
+# ONEIRIC (DREAM STATE) INTEGRATION
+# ============================================================================
+
+# Global Oneiric state for integration
+const _oneiric_state = Ref{Union{OneiricState, Nothing}}(nothing)
+
+"""
+    integrate_with_oneiric!(memory_store::MemoryStore)
+
+Integrate the Sleep module with the Oneiric (dream state) controller.
+This enables enhanced dream processing with memory replay, hallucination 
+training, and synaptic homeostasis.
+
+# Arguments
+- `memory_store::MemoryStore`: The memory store to use for dream processing
+
+# Example
+```julia
+memory_store = MemoryStore()
+integrate_with_oneiric!(memory_store)
+```
+"""
+function integrate_with_oneiric!(memory_store::MemoryStore)
+    config = OneiricConfig(
+        min_energy_for_dream=0.35f0,
+        dream_duration_min=300.0,
+        dream_duration_max=1800.0,
+        enable_replay=true,
+        enable_hallucination_training=true,
+        enable_homeostasis=true
+    )
+    
+    _oneiric_state[] = OneiricState(
+        config;
+        sleep_state=nothing,
+        memory_store=memory_store
+    )
+    
+    @info "Integrated Oneiric controller with Sleep module"
+end
+
+"""
+    enter_oneiric_mode(; energy_level::Float32=1.0f0, is_idle::Bool=false, idle_duration::Float64=0.0)
+
+Enter the Oneiric (dream) state if conditions are met.
+
+# Arguments
+- `energy_level::Float32`: Current energy level (default: 1.0)
+- `is_idle::Bool`: Whether system is idle (default: false)
+- `idle_duration::Float64`: Duration of idle state in seconds (default: 0.0)
+
+# Returns
+- `Dict{String, Any}`: Result of entering dream state
+
+# Example
+```julia
+result = enter_oneiric_mode(energy_level=0.25f0, is_idle=true, idle_duration=300.0)
+```
+"""
+function enter_oneiric_mode(
+    ;
+    energy_level::Float32=1.0f0,
+    is_idle::Bool=false,
+    idle_duration::Float64=0.0
+)::Dict{String, Any}
+    state = _oneiric_state[]
+    
+    if state === nothing
+        return Dict{String, Any}(
+            "status" => "not_integrated",
+            "message" => "Call integrate_with_oneiric! first"
+        )
+    end
+    
+    # Check if should enter
+    if !should_enter_dream(energy_level, is_idle, idle_duration, state)
+        return Dict{String, Any}(
+            "status" => "conditions_not_met",
+            "energy_level" => energy_level,
+            "is_idle" => is_idle,
+            "idle_duration" => idle_duration
+        )
+    end
+    
+    # Enter dream state
+    return enter_dream_state!(state)
+end
+
+"""
+    run_oneiric_dream(; max_cycles::Int=10)
+
+Run a complete Oneiric (dream) processing session.
+
+# Arguments
+- `max_cycles::Int`: Maximum number of dream cycles (default: 10)
+
+# Returns
+- `Dict{String, Any}`: Complete dream session results
+
+# Example
+```julia
+results = run_oneiric_dream(max_cycles=5)
+```
+"""
+function run_oneiric_dream(; max_cycles::Int=10)::Dict{String, Any}
+    state = _oneiric_state[]
+    
+    if state === nothing
+        return Dict{String, Any}(
+            "status" => "not_integrated",
+            "message" => "Call integrate_with_oneiric! first"
+        )
+    end
+    
+    # Run dream processing
+    return run_dream_processing!(state; max_cycles=max_cycles)
+end
+
+"""
+    get_oneiric_status()
+
+Get the current status of the Oneiric (dream) system.
+
+# Returns
+- `Dict{String, Any}`: Status information
+
+# Example
+```julia
+status = get_oneiric_status()
+```
+"""
+function get_oneiric_status()::Dict{String, Any}
+    state = _oneiric_state[]
+    
+    if state === nothing
+        return Dict{String, Any}(
+            "status" => "not_integrated",
+            "message" => "Call integrate_with_oneiric! first"
+        )
+    end
+    
+    return get_oneiric_statistics(state)
 end
 
 end # module Sleep

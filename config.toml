@@ -23,6 +23,39 @@ vlm_api_key = ""  # Your API key
 require_confirmation_threshold = "TRUST_STANDARD"  # TRUST_RESTRICTED, TRUST_LIMITED, TRUST_STANDARD, TRUST_FULL
 
 # ============================================================================
+# SECURITY CONFIG (CRITICAL)
+# ============================================================================
+
+[security]
+# Fail-closed security model - block by default
+fail_closed = true
+
+# Require kernel approval for all actions
+require_kernel_approval = true
+
+# Minimum score threshold (0-100)
+score_threshold = 70
+
+# Enable all security features
+warden_enabled = true
+sovereignty_gate_enabled = true
+capability_registry_enabled = true
+
+# Kernel approval bypass is DISABLED - cannot be overridden
+kernel_approval_bypass = false
+kernel_approval_bypass_override = false
+
+# Input sanitization
+input_sanitizer_strict = true
+prompt_injection_block = true
+
+# Encryption settings
+encryption_algorithm = "AES-256-GCM"  # Not XOR
+
+# Audit logging
+audit_all_decisions = true
+
+# ============================================================================
 # OPENCLAW CONFIG (Tool Container)
 # ============================================================================
 

@@ -69,6 +69,41 @@ end
 
 const LIBITHERIS = _get_libitheris_path()
 
+# Library handle for dlsym - loaded lazily
+const _lib_handle = Ref{Union{Ptr{Cvoid}, Nothing}}(nothing)
+
+"""
+    Load the Rust library and return handle
+"""
+function _load_library()::Bool
+    if _lib_handle[] !== nothing
+        return true  # Already loaded
+    end
+    
+    if !isfile(LIBITHERIS)
+        println("[IPC] Library not found: $LIBITHERIS")
+        return false
+    end
+    
+    try
+        # Use dlsym to load the library
+        handle = ccall(:dlopen, Ptr{Cvoid}, (Cstring, Cstring), LIBITHERIS, RTLD_LAZY)
+        if handle == C_NULL
+            println("[IPC] Failed to load library: $LIBITHERIS")
+            return false
+        end
+        _lib_handle[] = handle
+        println("[IPC] Library loaded successfully: $LIBITHERIS")
+        return true
+    catch e
+        println("[IPC] Error loading library: $e")
+        return false
+    end
+end
+
+# Constant for dlsym flags
+const RTLD_LAZY = 1  # Lazy binding
+
 # Track if Rust library is available
 const _rust_available = Ref{Bool}(false)
 
@@ -86,53 +121,26 @@ end
     Try to load the Rust library and return success status
 """
 function try_load_rust_library()::Bool
-    # Try each known path
-    for path in RUST_LIB_PATHS
-        if isfile(path)
-            try
-                # Try to call a simple function to verify library is loadable
-                ccall((:panic_in_progress, LIBITHERIS), Bool, ())
-                _rust_available[] = true
-                println("[IPC] Rust libitheris library loaded successfully from: $path")
-                _init_error[] = nothing
-                return true
-            catch e
-                println("[IPC] Warning: Rust library found at $path but not functional: $e")
-                _init_error[] = "Library found but symbols unavailable: $e"
-            end
-        end
+    # First try to load the library
+    if !_load_library()
+        println("[IPC] Failed to load Rust library")
+        return false
     end
     
-    # Check if environment variable path exists
-    if haskey(ENV, "ITHERIS_LIB_PATH")
-        env_path = ENV["ITHERIS_LIB_PATH"]
-        if isfile(env_path)
-            try
-                ccall((:panic_in_progress, LIBITHERIS), Bool, ())
-                _rust_available[] = true
-                println("[IPC] Rust library loaded from ITHERIS_LIB_PATH: $env_path")
-                _init_error[] = nothing
-                return true
-            catch e
-                _init_error[] = "ITHERIS_LIB_PATH library not functional: $e"
-            end
-        else
-            _init_error[] = "ITHERIS_LIB_PATH points to non-existent file: $env_path"
-        end
+    # Now try to call a function to verify it works
+    try
+        # Try to call a simple function to verify library is loadable
+        ccall((:panic_in_progress, LIBITHERIS), Bool, ())
+        _rust_available[] = true
+        println("[IPC] Rust libitheris library loaded and verified successfully")
+        _init_error[] = nothing
+        return true
+    catch e
+        println("[IPC] Warning: Rust library loaded but symbols unavailable: $e")
+        _init_error[] = "Library loaded but symbols unavailable: $e"
+        _rust_available[] = false
+        return false
     end
-    
-    # Report all tried paths
-    tried_paths = filter(isfile, RUST_LIB_PATHS)
-    if isempty(tried_paths)
-        println("[IPC] Info: No Rust library found in any known location")
-        _init_error[] = "No library file found in any known path"
-    else
-        println("[IPC] Info: Tried paths: $tried_paths")
-    end
-    
-    println("[IPC] Running in Julia-only fallback mode")
-    _rust_available[] = false
-    return false
 end
 
 """
@@ -234,6 +242,11 @@ end
     Returns: true if Rust is in a panic state, false otherwise
 """
 function is_rust_panicking()::Bool
+    # First check if library is available
+    if !_rust_available[]
+        return false
+    end
+    
     try
         ccall((:panic_in_progress, LIBITHERIS), Bool, ())
     catch e
@@ -281,6 +294,11 @@ end
     to avoid memory leaks.
 """
 function free_rust_panic(ptr::Ptr{Cvoid})
+    # First check if library is available
+    if !_rust_available[]
+        return
+    end
+    
     if ptr != C_NULL
         try
             ccall((:free_translated_panic, LIBITHERIS), Cvoid, (Ptr{Cvoid},), ptr)
@@ -297,12 +315,121 @@ end
     - message::String - The error message
 """
 function raise_julia_exception(message::String)
+    # First check if library is available
+    if !_rust_available[]
+        println("[IPC] ERROR (from Rust): $message")
+        return
+    end
+    
     try
         ccall((:raise_julia_exception, LIBITHERIS), Cvoid, (Cstring,), message)
     catch e
         # If we can't call this, just print the message
         println("[IPC] ERROR (from Rust): $message")
     end
+end
+
+# ============================================================================
+# Additional FFI Functions
+# ============================================================================
+
+"""
+    Get kernel status as a string
+"""
+function get_kernel_status_string()::String
+    if !_rust_available[]
+        return "unavailable"
+    end
+    
+    try
+        status = ccall((:get_kernel_status, LIBITHERIS), Int32, ())
+        return status == 0 ? "uninitialized" :
+               status == 1 ? "initialized" :
+               status == 2 ? "running" :
+               status == 3 ? "panicked" : "stopped"
+    catch e
+        return "error"
+    end
+end
+
+"""
+    Check if kernel is ready for messages
+"""
+function is_kernel_ready()::Bool
+    if !_rust_available[]
+        return false
+    end
+    
+    try
+        result = ccall((:kernel_ready, LIBITHERIS), Int32, ())
+        return result == 1
+    catch e
+        return false
+    end
+end
+
+"""
+    Initialize the kernel via FFI
+"""
+function init_kernel_ffi()::Bool
+    if !_rust_available[]
+        println("[IPC] Cannot initialize kernel: Rust library not available")
+        return false
+    end
+    
+    try
+        result = ccall((:kernel_init, LIBITHERIS), Int32, ())
+        return result == 0
+    catch e
+        println("[IPC] Failed to initialize kernel via FFI: $e")
+        return false
+    end
+end
+
+"""
+    Get message count
+"""
+function get_message_count()::Int
+    if !_rust_available[]
+        return 0
+    end
+    
+    try
+        return ccall((:get_message_count, LIBITHERIS), UInt32, ())
+    catch e
+        return 0
+    end
+end
+
+"""
+    Get shared memory info
+"""
+function get_shm_info_ffi()::Dict{Symbol, Any}
+    if !_rust_available[]
+        return Dict(:path => SHM_PATH, :size => SHM_SIZE, :entries => RING_BUFFER_ENTRIES, :available => false)
+    end
+    
+    try
+        path_buf = Vector{UInt8}(undef, 256)
+        size_out = Ref{Usize}(0)
+        entries_out = Ref{Usize}(0)
+        
+        result = ccall((:get_shm_info, LIBITHERIS), Int32,
+                       (Ptr{UInt8}, Ref{Usize}, Ref{Usize}),
+                       path_buf, size_out, entries_out)
+        
+        if result == 0
+            return Dict(
+                :path => String(path_buf[1:findfirst(==(0), path_buf).-1]),
+                :size => size_out[],
+                :entries => entries_out[],
+                :available => true
+            )
+        end
+    catch e
+    end
+    
+    return Dict(:path => SHM_PATH, :size => SHM_SIZE, :entries => RING_BUFFER_ENTRIES, :available => false)
 end
 
 # ============================================================================

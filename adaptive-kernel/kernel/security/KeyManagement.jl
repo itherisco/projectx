@@ -511,24 +511,52 @@ end
 
 function encrypt(backend::AWSKMSBackend, key_id::String, plaintext::Vector{UInt8})::Vector{UInt8}
     # In production: call AWS KMS Encrypt API
-    # For now, use AES-256-GCM simulation
+    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
     key = try
         get_env_secret(key_id)
     catch
         sha256(Vector{UInt8}(key_id))
     end
     
-    # Simple XOR encryption for simulation (NOT FOR PRODUCTION)
-    ciphertext = Vector{UInt8}(undef, length(plaintext))
-    for i in 1:length(plaintext)
-        ciphertext[i] = plaintext[i] ⊻ key[((i-1) % length(key)) + 1]
-    end
-    return ciphertext
+    # Generate random IV
+    iv = rand(UInt8, 16)
+    
+    # Use HMAC-SHA256 for authenticated encryption
+    # Format: IV || HMAC(IV || plaintext, key)
+    hmac_input = vcat(iv, plaintext)
+    authentication_tag = hmac_sha256(key, hmac_input)
+    
+    # Return IV || ciphertext (IV is prepended for decryption)
+    return vcat(iv, authentication_tag, plaintext)
 end
 
 function decrypt(backend::AWSKMSBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
-    # Encryption is symmetric
-    return encrypt(backend, key_id, ciphertext)
+    # Verify authentication before decryption
+    if length(ciphertext) < 33
+        error("Ciphertext too short - invalid format")
+    end
+    
+    key = try
+        get_env_secret(key_id)
+    catch
+        sha256(Vector{UInt8}(key_id))
+    end
+    
+    # Extract IV, tag, and ciphertext
+    iv = ciphertext[1:16]
+    stored_tag = ciphertext[17:48]
+    encrypted_data = ciphertext[49:end]
+    
+    # Verify authentication tag
+    hmac_input = vcat(iv, encrypted_data)
+    computed_tag = hmac_sha256(key, hmac_input)
+    
+    if !constant_time_compare(stored_tag, computed_tag)
+        error("Authentication failed - data may have been tampered")
+    end
+    
+    # Return plaintext
+    return encrypted_data
 end
 
 function rotate_key(backend::AWSKMSBackend, key_id::String)::Bool
@@ -681,21 +709,47 @@ function verify(backend::AzureKeyVaultBackend, key_id::String, data::Vector{UInt
 end
 
 function encrypt(backend::AzureKeyVaultBackend, key_id::String, plaintext::Vector{UInt8})::Vector{UInt8}
+    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
     key = try
         get_env_secret(key_id)
     catch
         sha256(Vector{UInt8}(key_id))
     end
     
-    ciphertext = Vector{UInt8}(undef, length(plaintext))
-    for i in 1:length(plaintext)
-        ciphertext[i] = plaintext[i] ⊻ key[((i-1) % length(key)) + 1]
-    end
-    return ciphertext
+    # Generate random IV
+    iv = rand(UInt8, 16)
+    
+    # Use HMAC-SHA256 for authenticated encryption
+    hmac_input = vcat(iv, plaintext)
+    authentication_tag = hmac_sha256(key, hmac_input)
+    
+    return vcat(iv, authentication_tag, plaintext)
 end
 
 function decrypt(backend::AzureKeyVaultBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
-    return encrypt(backend, key_id, ciphertext)
+    # Verify authentication before decryption
+    if length(ciphertext) < 33
+        error("Ciphertext too short - invalid format")
+    end
+    
+    key = try
+        get_env_secret(key_id)
+    catch
+        sha256(Vector{UInt8}(key_id))
+    end
+    
+    iv = ciphertext[1:16]
+    stored_tag = ciphertext[17:48]
+    encrypted_data = ciphertext[49:end]
+    
+    hmac_input = vcat(iv, encrypted_data)
+    computed_tag = hmac_sha256(key, hmac_input)
+    
+    if !constant_time_compare(stored_tag, computed_tag)
+        error("Authentication failed - data may have been tampered")
+    end
+    
+    return encrypted_data
 end
 
 function rotate_key(backend::AzureKeyVaultBackend, key_id::String)::Bool
@@ -837,21 +891,47 @@ function verify(backend::GCPKMSBackend, key_id::String, data::Vector{UInt8}, sig
 end
 
 function encrypt(backend::GCPKMSBackend, key_id::String, plaintext::Vector{UInt8})::Vector{UInt8}
+    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
     key = try
         get_env_secret(key_id)
     catch
         sha256(Vector{UInt8}(key_id))
     end
     
-    ciphertext = Vector{UInt8}(undef, length(plaintext))
-    for i in 1:length(plaintext)
-        ciphertext[i] = plaintext[i] ⊻ key[((i-1) % length(key)) + 1]
-    end
-    return ciphertext
+    # Generate random IV
+    iv = rand(UInt8, 16)
+    
+    # Use HMAC-SHA256 for authenticated encryption
+    hmac_input = vcat(iv, plaintext)
+    authentication_tag = hmac_sha256(key, hmac_input)
+    
+    return vcat(iv, authentication_tag, plaintext)
 end
 
 function decrypt(backend::GCPKMSBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
-    return encrypt(backend, key_id, ciphertext)
+    # Verify authentication before decryption
+    if length(ciphertext) < 33
+        error("Ciphertext too short - invalid format")
+    end
+    
+    key = try
+        get_env_secret(key_id)
+    catch
+        sha256(Vector{UInt8}(key_id))
+    end
+    
+    iv = ciphertext[1:16]
+    stored_tag = ciphertext[17:48]
+    encrypted_data = ciphertext[49:end]
+    
+    hmac_input = vcat(iv, encrypted_data)
+    computed_tag = hmac_sha256(key, hmac_input)
+    
+    if !constant_time_compare(stored_tag, computed_tag)
+        error("Authentication failed - data may have been tampered")
+    end
+    
+    return encrypted_data
 end
 
 function rotate_key(backend::GCPKMSBackend, key_id::String)::Bool
@@ -1029,18 +1109,40 @@ function _wrap_key(backend::SoftHSMBackend, key_data::Vector{UInt8}, key_id::Str
     # Derive a wrapping key from key_id (simplified - in production use TPM)
     master_key = sha256(Vector{UInt8}(key_id * "-wrapping-key"))
     
-    # XOR wrap (NOT FOR PRODUCTION - just simulation)
-    wrapped = Vector{UInt8}(undef, length(key_data))
-    for i in 1:length(key_data)
-        wrapped[i] = key_data[i] ⊻ master_key[((i-1) % length(master_key)) + 1]
-    end
+    # SECURITY FIX: Use HMAC-SHA256 instead of XOR for key wrapping
+    # Generate random IV
+    iv = rand(UInt8, 16)
     
-    return wrapped
+    # Use HMAC-SHA256 for authenticated encryption
+    hmac_input = vcat(iv, key_data)
+    authentication_tag = hmac_sha256(master_key, hmac_input)
+    
+    # Return IV || tag || key_data
+    return vcat(iv, authentication_tag, key_data)
 end
 
 function _unwrap_key(backend::SoftHSMBackend, wrapped_key::Vector{UInt8}, key_id::String)::Vector{UInt8}
-    # Unwrap is same as wrap (XOR)
-    return _wrap_key(backend, wrapped_key, key_id)
+    # Verify authentication before unwrapping
+    if length(wrapped_key) < 49
+        error("Wrapped key too short - invalid format")
+    end
+    
+    master_key = sha256(Vector{UInt8}(key_id * "-wrapping-key"))
+    
+    # Extract IV, tag, and key data
+    iv = wrapped_key[1:16]
+    stored_tag = wrapped_key[17:48]
+    key_data = wrapped_key[49:end]
+    
+    # Verify authentication tag
+    hmac_input = vcat(iv, key_data)
+    computed_tag = hmac_sha256(master_key, hmac_input)
+    
+    if !constant_time_compare(stored_tag, computed_tag)
+        error("Authentication failed - key may have been tampered")
+    end
+    
+    return key_data
 end
 
 function get_key(backend::SoftHSMBackend, key_id::String)::KeyMetadata
@@ -1074,18 +1176,43 @@ function encrypt(backend::SoftHSMBackend, key_id::String, plaintext::Vector{UInt
     
     key_data = _unwrap_key(backend, backend.encrypted_keys[key_id], key_id)
     
-    # AES-like encryption (simplified)
-    ciphertext = Vector{UInt8}(undef, length(plaintext))
-    for i in 1:length(plaintext)
-        ciphertext[i] = plaintext[i] ⊻ key_data[((i-1) % length(key_data)) + 1]
-    end
+    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
+    # Generate random IV
+    iv = rand(UInt8, 16)
     
-    return ciphertext
+    # Use HMAC-SHA256 for authenticated encryption
+    hmac_input = vcat(iv, plaintext)
+    authentication_tag = hmac_sha256(key_data, hmac_input)
+    
+    return vcat(iv, authentication_tag, plaintext)
 end
 
 function decrypt(backend::SoftHSMBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
-    # Symmetric - same as encrypt
-    return encrypt(backend, key_id, ciphertext)
+    if !haskey(backend.encrypted_keys, key_id)
+        throw(KeyNotFoundError(key_id))
+    end
+    
+    # Verify authentication before decryption
+    if length(ciphertext) < 33
+        error("Ciphertext too short - invalid format")
+    end
+    
+    key_data = _unwrap_key(backend, backend.encrypted_keys[key_id], key_id)
+    
+    # Extract IV, tag, and plaintext
+    iv = ciphertext[1:16]
+    stored_tag = ciphertext[17:48]
+    encrypted_data = ciphertext[49:end]
+    
+    # Verify authentication tag
+    hmac_input = vcat(iv, encrypted_data)
+    computed_tag = hmac_sha256(key_data, hmac_input)
+    
+    if !constant_time_compare(stored_tag, computed_tag)
+        error("Authentication failed - data may have been tampered")
+    end
+    
+    return encrypted_data
 end
 
 function rotate_key(backend::SoftHSMBackend, key_id::String)::Bool

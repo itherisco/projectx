@@ -1,10 +1,15 @@
 # capabilities/safe_shell.jl - Restricted shell execution
 # SECURITY HARDENED: Blocked dangerous characters, null bytes, newlines, globbing
 # PATH TRAVERSAL FIX: Added canonicalization, whitelist directories, explicit errors
+# SHELL INJECTION FIX: Enhanced with comprehensive pattern matching
 
 module SafeShell
 
 export meta, execute
+
+# ============================================================================
+# SECURITY CONFIGURATION - FAIL CLOSED
+# ============================================================================
 
 # Whitelist of allowed commands (for security)
 # SECURITY HARDENED: Principle of Least Privilege - only safe output commands
@@ -57,8 +62,55 @@ const BLOCKED_PATTERNS = [
     r"^/lost\+found",  # Filesystem recovery
 ]
 
+# SECURITY FIX: Shell injection specific patterns
+const SHELL_INJECTION_PATTERNS = [
+    r"\$\([^)]+\)",           # Command substitution $(...)
+    r"`[^`]+`",                 # Backtick command substitution
+    r"\|\s*bash",              # Pipe to bash
+    r"\|\s*sh",                # Pipe to sh
+    r"&&\s+",                  # Command chaining
+    r"\|\s*",                  # Pipe commands
+    r";#",                      # Comment injection
+    r"\s>\s*/tmp",             # Output redirect to tmp
+    r"\s>>\s*/tmp",            # Output append to tmp
+    r"\s\d?>\s*",             # Any output redirect
+    r";\s*rm\s",              # Semicolon + rm
+    r";\s*wget\s",            # Semicolon + wget
+    r";\s*curl\s",            # Semicolon + curl
+    r";\s*nc\s",              # Semicolon + netcat
+    r";\s*nmap\s",            # Semicolon + nmap
+    r"\|\s*nc\s",             # Pipe + netcat
+    r"\|\s*nmap\s",           # Pipe + nmap
+    r"\bexec\s",              # exec command
+    r"\beval\s",              # eval command
+    r"\bsource\s",            # source command
+    r"\.\s*/",                # Execute from path
+]
+
 # Maximum command length to prevent buffer overflow attacks
 const MAX_COMMAND_LENGTH = 256
+
+# SHELL INJECTION FIX: Validate input is purely alphanumeric
+function validate_no_injection(command::String)::Tuple{Bool, String}
+    # Check for command substitution
+    for pattern in SHELL_INJECTION_PATTERNS
+        if occursin(pattern, command)
+            return (false, "Shell injection pattern detected: $(pattern)")
+        end
+    end
+    
+    # Check for dangerous characters
+    if occursin(DANGEROUS_CHARS, command)
+        return (false, "Shell metacharacters detected")
+    end
+    
+    # Ensure command only contains safe characters
+    if !occursin(r"^[a-zA-Z0-9_\-\s]+$", command)
+        return (false, "Command contains invalid characters")
+    end
+    
+    return (true, "OK")
+end
 
 function meta()::Dict{String, Any}
     return Dict(
@@ -87,6 +139,12 @@ function sanitize_argument(arg::String)::Tuple{Bool, String, String}
             # PATH TRAVERSAL FIX: Return explicit error instead of throwing
             return (false, "", "SECURITY: Blocked dangerous pattern detected: $(pattern)")
         end
+    end
+    
+    # SHELL INJECTION FIX: Additional validation for arguments
+    valid, error_msg = validate_no_injection(arg)
+    if !valid
+        return (false, "", "SECURITY: $error_msg")
     end
     
     # Remove any remaining special characters
@@ -177,9 +235,16 @@ function validate_command(command::String)::Tuple{Bool, String}
         return (false, "Newline/carriage return injection detected")
     end
     
-    # Check 4: Shell metacharacters
+    # SHELL INJECTION FIX: Enhanced shell metacharacter check
+    # Check 4: Shell metacharacters AND injection patterns
     if occursin(DANGEROUS_CHARS, command)
         return (false, "Shell metacharacters detected")
+    end
+    
+    # Check 4b: Shell injection patterns (comprehensive)
+    valid, error_msg = validate_no_injection(command)
+    if !valid
+        return (false, error_msg)
     end
     
     # Check 5: Get command base

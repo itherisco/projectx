@@ -5,6 +5,9 @@
 
 mod kernel;
 mod secure_boot;
+mod shared_memory;
+mod ffi;
+mod julia_runtime;
 
 use chrono::Utc;
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
