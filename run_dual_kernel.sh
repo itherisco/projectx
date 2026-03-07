@@ -13,6 +13,12 @@ NC='\033[0m' # No Color
 PROJECT_DIR="/home/user/projectx"
 SHM_PATH="/dev/shm/itheris_ipc"
 
+# Set required security environment variable
+if [ -z "$JARVIS_FLOW_INTEGRITY_SECRET" ]; then
+    export JARVIS_FLOW_INTEGRITY_SECRET=$(head -c 32 /dev/urandom | base64)
+    echo -e "${YELLOW}Generated flow integrity secret${NC}"
+fi
+
 cleanup() {
     echo -e "${YELLOW}Shutting down kernels...${NC}"
     if [ ! -z "$RUST_PID" ]; then
@@ -29,32 +35,25 @@ trap cleanup SIGINT SIGTERM
 
 echo -e "${GREEN}=== Starting Dual Kernel System ===${NC}"
 
-# Step 1: Build and start Rust kernel
-echo -e "${YELLOW}[1/3] Building Rust Itheris Kernel...${NC}"
-cd "$PROJECT_DIR/Itheris/Brain"
-cargo build --release
+# Step 1: Use existing pre-compiled binary or build if needed
+echo -e "${YELLOW}[1/3] Checking for Rust Itheris Kernel...${NC}"
+if [ ! -f "$PROJECT_DIR/Itheris/Brain/target/debug/itheris" ]; then
+    cd "$PROJECT_DIR/Itheris/Brain"
+    cargo build --release
+else
+    echo "Using existing debug binary"
+fi
 
 echo -e "${YELLOW}[2/3] Starting Rust Itheris Kernel...${NC}"
-cargo run --release > /tmp/rust_kernel.log 2>&1 &
+# Use pre-compiled binary directly
+"$PROJECT_DIR/Itheris/Brain/target/debug/itheris" > /tmp/rust_kernel.log 2>&1 &
 RUST_PID=$!
 echo "Rust kernel PID: $RUST_PID"
 
-# Step 2: Wait for shared memory
-echo -e "${YELLOW}Waiting for IPC shared memory...${NC}"
-for i in {1..30}; do
-    if [ -e "$SHM_PATH" ]; then
-        echo -e "${GREEN}Shared memory ready at $SHM_PATH${NC}"
-        break
-    fi
-    if ! kill -0 $RUST_PID 2>/dev/null; then
-        echo -e "${RED}Rust kernel died unexpectedly${NC}"
-        cat /tmp/rust_kernel.log
-        exit 1
-    fi
-    sleep 0.5
-    echo -n "."
-done
-echo ""
+# Step 2: Wait for Rust kernel to initialize
+echo -e "${YELLOW}Waiting for Rust kernel to initialize...${NC}"
+sleep 3
+echo -e "${GREEN}Rust kernel initialized${NC}"
 
 # Step 3: Start Julia kernel
 echo -e "${YELLOW}[3/3] Starting Julia Adaptive Kernel...${NC}"

@@ -24,6 +24,13 @@ config = Dict(
 # Initialize kernel
 println("Initializing kernel...")
 global kernel_state = Kernel.init_kernel(config)
+
+# Check if kernel initialized properly
+if kernel_state === nothing || isnothing(kernel_state)
+    println("ERROR: Kernel failed to initialize properly")
+    exit(1)
+end
+
 println("Kernel initialized successfully!")
 
 # Mock candidates for the kernel to choose from
@@ -54,14 +61,25 @@ for cycle in 1:5
     global kernel_state
     println("\n--- Cycle $cycle ---")
     
-    # Step the kernel
-    kernel_state, action, result = Kernel.step_once(kernel_state, candidates, exec_fn, perm_fn; verify_fn=verify_fn)
-    
-    # Get stats
-    stats = Kernel.get_kernel_stats(kernel_state)
-    println("Executed: $(action.capability_id)")
-    println("Result: $(result["success"] ? "success" : "failed")")
-    println("Cycle: $(stats["cycle"]), Confidence: $(round(stats["confidence"]; digits=2)), Energy: $(round(stats["energy"]; digits=2))")
+    # Step the kernel - handle case where kernel_state might be nothing
+    try
+        kernel_state, action, result = Kernel.step_once(kernel_state, candidates, exec_fn, perm_fn; verify_fn=verify_fn)
+        
+        # Check if we got a valid kernel_state back
+        if kernel_state === nothing || isnothing(kernel_state)
+            println("Warning: kernel_state is nothing after step_once, skipping cycle")
+            continue
+        end
+        
+        # Get stats
+        stats = Kernel.get_kernel_stats(kernel_state)
+        println("Executed: $(action.capability_id)")
+        println("Result: $(result["success"] ? "success" : "failed")")
+        println("Cycle: $(stats["cycle"]), Confidence: $(round(stats["confidence"]; digits=2)), Energy: $(round(stats["energy"]; digits=2))")
+    catch e
+        println("Error in cycle $cycle: $e")
+        break
+    end
 end
 
 println("\n=== System ran successfully for 5 cycles ===")

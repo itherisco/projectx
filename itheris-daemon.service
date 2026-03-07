@@ -1,0 +1,39 @@
+[Unit]
+Description=ITHERIS Sovereign Runtime Daemon
+Documentation=https://github.com/itheris/itheris
+After=network.target
+
+[Service]
+Type=simple
+User=itheris
+Group=itheris
+WorkingDirectory=/home/user/projectx
+
+# Environment
+Environment=RUST_LOG=info
+
+# Executable paths
+ExecStart=/home/user/projectx/itheris-daemon/target/release/itheris-daemon
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/itheris-daemon
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=itheris-daemon
+
+[Install]
+WantedBy=multi-user.target
