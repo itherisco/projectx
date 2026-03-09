@@ -5,6 +5,9 @@
 # Starts the ITHERIS sovereign runtime daemon with Julia brain integration
 #===============================================================================
 
+# Trap SIGINT (Ctrl+C) and SIGTERM to clean up all background processes
+trap 'echo "🛑 Shutting down ITHERIS stack..."; kill 0' SIGINT SIGTERM EXIT
+
 set -e
 
 # Colors for output
@@ -16,7 +19,7 @@ NC='\033[0m' # No Color
 # Configuration
 DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/itheris-daemon"
 DAEMON_BIN="$DAEMON_DIR/target/release/itheris-daemon"
-LOG_FILE="/var/log/itheris-daemon.log"
+LOG_FILE="$DAEMON_DIR/itheris-daemon.log"
 
 echo -e "${GREEN}===========================================${NC}"
 echo -e "${GREEN}  ITHERIS Sovereign Runtime Launcher${NC}"
@@ -35,6 +38,7 @@ echo -e "${GREEN}Found:${NC} $JULIA_VERSION"
 # Build the daemon if needed
 if [ ! -f "$DAEMON_BIN" ]; then
     echo -e "${YELLOW}Building ITHERIS daemon...${NC}"
+    export PATH="$HOME/.cargo/bin:$PATH"
     cd "$DAEMON_DIR"
     cargo build --release
     if [ $? -ne 0 ]; then
