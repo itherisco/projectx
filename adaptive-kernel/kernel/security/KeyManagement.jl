@@ -22,6 +22,7 @@ module KeyManagement
 
 using JSON3
 using Dates
+using ..Crypto  # Import AES-256-GCM encryption from Crypto module
 
 # =============================================================================
 # Abstract HSM Backend Interface
@@ -511,29 +512,30 @@ end
 
 function encrypt(backend::AWSKMSBackend, key_id::String, plaintext::Vector{UInt8})::Vector{UInt8}
     # In production: call AWS KMS Encrypt API
-    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
+    # SECURITY FIX: Use AES-256-GCM for authenticated encryption (replaces XOR cipher)
     key = try
         get_env_secret(key_id)
     catch
         sha256(Vector{UInt8}(key_id))
     end
     
-    # Generate random IV
-    iv = rand(UInt8, 16)
+    # Ensure key is 32 bytes for AES-256
+    if length(key) < 32
+        key = sha256(key)
+    end
     
-    # Use HMAC-SHA256 for authenticated encryption
-    # Format: IV || HMAC(IV || plaintext, key)
-    hmac_input = vcat(iv, plaintext)
-    authentication_tag = hmac_sha256(key, hmac_input)
+    # Use AES-256-GCM for authenticated encryption
+    result = encrypt_aes256_gcm(plaintext, key[1:32])
     
-    # Return IV || ciphertext (IV is prepended for decryption)
-    return vcat(iv, authentication_tag, plaintext)
+    # Return format: nonce (12) || tag (16) || ciphertext
+    return vcat(result.nonce, result.tag, result.ciphertext)
 end
 
 function decrypt(backend::AWSKMSBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
     # Verify authentication before decryption
-    if length(ciphertext) < 33
-        error("Ciphertext too short - invalid format")
+    # New format: nonce (12) || tag (16) || ciphertext (AES-256-GCM)
+    if length(ciphertext) < 28
+        error("Ciphertext too short - invalid AES-256-GCM format")
     end
     
     key = try
@@ -542,21 +544,21 @@ function decrypt(backend::AWSKMSBackend, key_id::String, ciphertext::Vector{UInt
         sha256(Vector{UInt8}(key_id))
     end
     
-    # Extract IV, tag, and ciphertext
-    iv = ciphertext[1:16]
-    stored_tag = ciphertext[17:48]
-    encrypted_data = ciphertext[49:end]
-    
-    # Verify authentication tag
-    hmac_input = vcat(iv, encrypted_data)
-    computed_tag = hmac_sha256(key, hmac_input)
-    
-    if !constant_time_compare(stored_tag, computed_tag)
-        error("Authentication failed - data may have been tampered")
+    # Ensure key is 32 bytes for AES-256
+    if length(key) < 32
+        key = sha256(key)
     end
     
-    # Return plaintext
-    return encrypted_data
+    # Extract nonce, tag, and ciphertext
+    nonce = ciphertext[1:12]
+    tag = ciphertext[13:28]
+    encrypted_data = ciphertext[29:end]
+    
+    # Reconstruct the AES256GCMResult for decryption
+    encrypted_result = AES256GCMResult(encrypted_data, nonce, tag)
+    
+    # Decrypt using AES-256-GCM (verifies authentication tag)
+    return decrypt_aes256_gcm(encrypted_result, key[1:32])
 end
 
 function rotate_key(backend::AWSKMSBackend, key_id::String)::Bool
@@ -709,27 +711,30 @@ function verify(backend::AzureKeyVaultBackend, key_id::String, data::Vector{UInt
 end
 
 function encrypt(backend::AzureKeyVaultBackend, key_id::String, plaintext::Vector{UInt8})::Vector{UInt8}
-    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
+    # SECURITY FIX: Use AES-256-GCM for authenticated encryption (replaces XOR cipher)
     key = try
         get_env_secret(key_id)
     catch
         sha256(Vector{UInt8}(key_id))
     end
     
-    # Generate random IV
-    iv = rand(UInt8, 16)
+    # Ensure key is 32 bytes for AES-256
+    if length(key) < 32
+        key = sha256(key)
+    end
     
-    # Use HMAC-SHA256 for authenticated encryption
-    hmac_input = vcat(iv, plaintext)
-    authentication_tag = hmac_sha256(key, hmac_input)
+    # Use AES-256-GCM for authenticated encryption
+    result = encrypt_aes256_gcm(plaintext, key[1:32])
     
-    return vcat(iv, authentication_tag, plaintext)
+    # Return format: nonce (12) || tag (16) || ciphertext
+    return vcat(result.nonce, result.tag, result.ciphertext)
 end
 
 function decrypt(backend::AzureKeyVaultBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
     # Verify authentication before decryption
-    if length(ciphertext) < 33
-        error("Ciphertext too short - invalid format")
+    # Format: nonce (12) || tag (16) || ciphertext (AES-256-GCM)
+    if length(ciphertext) < 28
+        error("Ciphertext too short - invalid AES-256-GCM format")
     end
     
     key = try
@@ -738,18 +743,21 @@ function decrypt(backend::AzureKeyVaultBackend, key_id::String, ciphertext::Vect
         sha256(Vector{UInt8}(key_id))
     end
     
-    iv = ciphertext[1:16]
-    stored_tag = ciphertext[17:48]
-    encrypted_data = ciphertext[49:end]
-    
-    hmac_input = vcat(iv, encrypted_data)
-    computed_tag = hmac_sha256(key, hmac_input)
-    
-    if !constant_time_compare(stored_tag, computed_tag)
-        error("Authentication failed - data may have been tampered")
+    # Ensure key is 32 bytes for AES-256
+    if length(key) < 32
+        key = sha256(key)
     end
     
-    return encrypted_data
+    # Extract nonce, tag, and ciphertext
+    nonce = ciphertext[1:12]
+    tag = ciphertext[13:28]
+    encrypted_data = ciphertext[29:end]
+    
+    # Reconstruct the AES256GCMResult for decryption
+    encrypted_result = AES256GCMResult(encrypted_data, nonce, tag)
+    
+    # Decrypt using AES-256-GCM (verifies authentication tag)
+    return decrypt_aes256_gcm(encrypted_result, key[1:32])
 end
 
 function rotate_key(backend::AzureKeyVaultBackend, key_id::String)::Bool
@@ -891,27 +899,30 @@ function verify(backend::GCPKMSBackend, key_id::String, data::Vector{UInt8}, sig
 end
 
 function encrypt(backend::GCPKMSBackend, key_id::String, plaintext::Vector{UInt8})::Vector{UInt8}
-    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
+    # SECURITY FIX: Use AES-256-GCM for authenticated encryption (replaces XOR cipher)
     key = try
         get_env_secret(key_id)
     catch
         sha256(Vector{UInt8}(key_id))
     end
     
-    # Generate random IV
-    iv = rand(UInt8, 16)
+    # Ensure key is 32 bytes for AES-256
+    if length(key) < 32
+        key = sha256(key)
+    end
     
-    # Use HMAC-SHA256 for authenticated encryption
-    hmac_input = vcat(iv, plaintext)
-    authentication_tag = hmac_sha256(key, hmac_input)
+    # Use AES-256-GCM for authenticated encryption
+    result = encrypt_aes256_gcm(plaintext, key[1:32])
     
-    return vcat(iv, authentication_tag, plaintext)
+    # Return format: nonce (12) || tag (16) || ciphertext
+    return vcat(result.nonce, result.tag, result.ciphertext)
 end
 
 function decrypt(backend::GCPKMSBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
     # Verify authentication before decryption
-    if length(ciphertext) < 33
-        error("Ciphertext too short - invalid format")
+    # Format: nonce (12) || tag (16) || ciphertext (AES-256-GCM)
+    if length(ciphertext) < 28
+        error("Ciphertext too short - invalid AES-256-GCM format")
     end
     
     key = try
@@ -920,18 +931,21 @@ function decrypt(backend::GCPKMSBackend, key_id::String, ciphertext::Vector{UInt
         sha256(Vector{UInt8}(key_id))
     end
     
-    iv = ciphertext[1:16]
-    stored_tag = ciphertext[17:48]
-    encrypted_data = ciphertext[49:end]
-    
-    hmac_input = vcat(iv, encrypted_data)
-    computed_tag = hmac_sha256(key, hmac_input)
-    
-    if !constant_time_compare(stored_tag, computed_tag)
-        error("Authentication failed - data may have been tampered")
+    # Ensure key is 32 bytes for AES-256
+    if length(key) < 32
+        key = sha256(key)
     end
     
-    return encrypted_data
+    # Extract nonce, tag, and ciphertext
+    nonce = ciphertext[1:12]
+    tag = ciphertext[13:28]
+    encrypted_data = ciphertext[29:end]
+    
+    # Reconstruct the AES256GCMResult for decryption
+    encrypted_result = AES256GCMResult(encrypted_data, nonce, tag)
+    
+    # Decrypt using AES-256-GCM (verifies authentication tag)
+    return decrypt_aes256_gcm(encrypted_result, key[1:32])
 end
 
 function rotate_key(backend::GCPKMSBackend, key_id::String)::Bool
@@ -1176,15 +1190,17 @@ function encrypt(backend::SoftHSMBackend, key_id::String, plaintext::Vector{UInt
     
     key_data = _unwrap_key(backend, backend.encrypted_keys[key_id], key_id)
     
-    # SECURITY FIX: Use HMAC-SHA256 instead of XOR cipher
-    # Generate random IV
-    iv = rand(UInt8, 16)
+    # SECURITY FIX: Use AES-256-GCM for authenticated encryption (replaces XOR cipher)
+    # Ensure key is 32 bytes for AES-256
+    if length(key_data) < 32
+        key_data = sha256(key_data)
+    end
     
-    # Use HMAC-SHA256 for authenticated encryption
-    hmac_input = vcat(iv, plaintext)
-    authentication_tag = hmac_sha256(key_data, hmac_input)
+    # Use AES-256-GCM for authenticated encryption
+    result = encrypt_aes256_gcm(plaintext, key_data[1:32])
     
-    return vcat(iv, authentication_tag, plaintext)
+    # Return format: nonce (12) || tag (16) || ciphertext
+    return vcat(result.nonce, result.tag, result.ciphertext)
 end
 
 function decrypt(backend::SoftHSMBackend, key_id::String, ciphertext::Vector{UInt8})::Vector{UInt8}
@@ -1193,26 +1209,28 @@ function decrypt(backend::SoftHSMBackend, key_id::String, ciphertext::Vector{UIn
     end
     
     # Verify authentication before decryption
-    if length(ciphertext) < 33
-        error("Ciphertext too short - invalid format")
+    # Format: nonce (12) || tag (16) || ciphertext (AES-256-GCM)
+    if length(ciphertext) < 28
+        error("Ciphertext too short - invalid AES-256-GCM format")
     end
     
     key_data = _unwrap_key(backend, backend.encrypted_keys[key_id], key_id)
     
-    # Extract IV, tag, and plaintext
-    iv = ciphertext[1:16]
-    stored_tag = ciphertext[17:48]
-    encrypted_data = ciphertext[49:end]
-    
-    # Verify authentication tag
-    hmac_input = vcat(iv, encrypted_data)
-    computed_tag = hmac_sha256(key_data, hmac_input)
-    
-    if !constant_time_compare(stored_tag, computed_tag)
-        error("Authentication failed - data may have been tampered")
+    # Ensure key is 32 bytes for AES-256
+    if length(key_data) < 32
+        key_data = sha256(key_data)
     end
     
-    return encrypted_data
+    # Extract nonce, tag, and ciphertext
+    nonce = ciphertext[1:12]
+    tag = ciphertext[13:28]
+    encrypted_data = ciphertext[29:end]
+    
+    # Reconstruct the AES256GCMResult for decryption
+    encrypted_result = AES256GCMResult(encrypted_data, nonce, tag)
+    
+    # Decrypt using AES-256-GCM (verifies authentication tag)
+    return decrypt_aes256_gcm(encrypted_result, key_data[1:32])
 end
 
 function rotate_key(backend::SoftHSMBackend, key_id::String)::Bool

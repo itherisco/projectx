@@ -586,7 +586,7 @@ function _itheris_thought_to_brain_output(thought::Thought, input::BrainInput)::
     # Build action probabilities dict (for logging/debugging)
     action_probs = Dict{String, Float32}(
         action_names[i] => (i <= length(thought.probs) ? Float32(thought.probs[i]) : 0f0) 
-        for i in 1:length(action_names)
+        for i in eachindex(action_names)
     )
     
     BrainOutput(

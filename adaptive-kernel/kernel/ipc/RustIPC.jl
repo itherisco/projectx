@@ -411,11 +411,11 @@ function get_shm_info_ffi()::Dict{Symbol, Any}
     
     try
         path_buf = Vector{UInt8}(undef, 256)
-        size_out = Ref{Usize}(0)
-        entries_out = Ref{Usize}(0)
+        size_out = Ref{Csize_t}(0)
+        entries_out = Ref{Csize_t}(0)
         
         result = ccall((:get_shm_info, LIBITHERIS), Int32,
-                       (Ptr{UInt8}, Ref{Usize}, Ref{Usize}),
+                       (Ptr{UInt8}, Ref{Csize_t}, Ref{Csize_t}),
                        path_buf, size_out, entries_out)
         
         if result == 0

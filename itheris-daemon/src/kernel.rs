@@ -48,7 +48,7 @@ pub enum ActionType {
 }
 
 impl ActionType {
-    pub_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             ActionType::Execute => "EXECUTE",
             ActionType::WriteFile => "WRITE_FILE",

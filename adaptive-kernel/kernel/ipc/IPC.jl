@@ -153,7 +153,7 @@ function connect(channel::IPCChannel; host::String=DEFAULT_IPC_HOST, port::Int=D
         
         try
             # Try to connect to Rust brain
-            sock = connect(Sockets.IPAddr(host), port)
+            sock = Sockets.connect(host, port)
             channel.socket = sock
             channel.state = CONNECTED
             channel.reconnect_attempts = 0
@@ -248,7 +248,7 @@ function reconnect(channel::IPCChannel; max_attempts::Int=channel.max_reconnect_
                 end
             end
             
-            sock = connect(Sockets.IPAddr(DEFAULT_IPC_HOST), DEFAULT_IPC_PORT)
+            sock = Sockets.connect(DEFAULT_IPC_HOST, DEFAULT_IPC_PORT)
             channel.socket = sock
             channel.state = CONNECTED
             channel.reconnect_attempts = 0

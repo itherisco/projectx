@@ -437,37 +437,6 @@ pub extern "C" fn kernel_shutdown() -> i32 {
 // Additional FFI functions for better Julia integration
 // ============================================================================
 
-/// Get shared memory info (C ABI)
-///
-/// Returns information about the shared memory region
-///
-/// Arguments:
-/// - path: Output buffer for path (must be at least 256 bytes)
-/// - size: Output for size
-/// - entries: Output for number of entries
-#[no_mangle]
-pub extern "C" fn get_shm_info(
-    path: *mut u8,
-    size: *mut usize,
-    entries: *mut usize,
-) -> i32 {
-    if path.is_null() || size.is_null() || entries.is_null() {
-        return -1;
-    }
-    
-    let shm_path = crate::shared_memory::SHM_PATH.as_bytes();
-    
-    unsafe {
-        let path_slice = std::slice::from_raw_parts_mut(path, 256.min(shm_path.len()));
-        path_slice.copy_from_slice(&shm_path[..path_slice.len()]);
-        
-        *size = crate::shared_memory::SHM_SIZE;
-        *entries = crate::shared_memory::RING_BUFFER_ENTRIES;
-    }
-    
-    0
-}
-
 /// Check if kernel is ready for messages (C ABI)
 ///
 /// Returns:

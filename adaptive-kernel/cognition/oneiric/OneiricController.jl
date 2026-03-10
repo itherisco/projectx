@@ -389,7 +389,7 @@ function process_dream_cycle!(state::OneiricState)::Dict{String, Any}
         
         if embeddings !== nothing
             # Use embeddings as training data
-            real_features = [embeddings[:, i] for i in 1:size(embeddings, 2)]
+            real_features = [embeddings[:, i] for i in axes(embeddings, 2)]
             synthetic = generate_synthetic_examples(state.hallucination_state, real_features)
             
             if !isempty(real_features) && !isempty(synthetic)

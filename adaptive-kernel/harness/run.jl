@@ -203,5 +203,5 @@ if abspath(PROGRAM_FILE) == @__FILE__
         i += 1
     end
     
-    run_harness(cycles; unsafe=unsafe, registry_path=registry_path)
+    run_harness(cycles; registry_path=registry_path)
 end

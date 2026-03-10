@@ -1,17 +1,18 @@
 [deps]
-JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 MbedTLS = "739be429-bea8-5141-9913-cc70e7f3736d"
 Nettle = "49dea1ee-f6fa-5aa6-9a11-8816cee7d4b9"
-Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
-JSON = "0.21"
+Base64 = "1.1"
 HTTP = "1.10"
+JSON = "0.21"
 MbedTLS = "1.0"
 Nettle = "1.0"
-Base64 = "1.1"
 YAML = "0.4"
 julia = "1.10"
 

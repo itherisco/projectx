@@ -119,6 +119,16 @@ using .CognitionTypes
 include("spine/DecisionSpine.jl")
 using .DecisionSpine
 
+# Include spine submodules after DecisionSpine to avoid circular deps
+include("spine/ProposalAggregation.jl")
+using .ProposalAggregation
+
+include("spine/ConflictResolution.jl")
+using .ConflictResolution
+
+include("spine/Commitment.jl")
+using .Commitment
+
 include("agents/Agents.jl")
 using .Agents
 
@@ -132,7 +142,7 @@ include("goals/GoalSystem.jl")
 using .GoalSystem
 
 include("worldmodel/WorldModel.jl")
-using .WorldModel
+using .WorldModels
 
 # ReAct (Reason + Act) Framework
 include("ReAct.jl")
@@ -577,12 +587,12 @@ function run_sovereign_cycle(
         )
         
         # Run ReAct cycle to generate enhanced proposals
-        react_result = run_react_cycle(react_context, augmented_perception)
+        react_result = run_react_cycle(react_context)
         
         # Convert ReAct results to proposals if available
-        if react_result !== nothing && react_result.final_proposal !== nothing
-            push!(react_proposals, react_result.final_proposal)
-            @info "ReAct cycle completed" proposal=react_result.final_proposal.decision
+        if react_result !== nothing
+            push!(react_proposals, react_result)
+            @info "ReAct cycle completed" proposal=react_result.decision
         end
     end
     

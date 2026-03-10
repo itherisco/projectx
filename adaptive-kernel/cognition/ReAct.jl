@@ -337,7 +337,8 @@ function advance_state!(ctx::ReActContext)::Nothing
         ctx.current_step = ReActStep(ctx.iteration)
     elseif next_state == :completed
         ctx.is_complete = true
-        ctx.termination_reason = get(ctx.termination_reason, "confidence_threshold")
+        # Set termination reason - use existing reason if set, otherwise default to "completed"
+        ctx.termination_reason = ctx.termination_reason !== nothing ? ctx.termination_reason : "completed"
     end
     
     ctx.last_updated = now()

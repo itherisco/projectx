@@ -16,6 +16,7 @@ export
     # Core types
     GroundingContext,
     SymbolBinding,
+    VectorMemory,
     
     # Symbol grounding
     ground_symbols,
@@ -37,11 +38,31 @@ export
     
     # VectorMemory integration
     store_semantic_embedding,
-    retrieve_by_perception
+    retrieve_by_perception,
+    
+    # Helper functions
+    generate_simple_embedding,
+    cosine_similarity,
+    summarize_perception
 
 # ============================================================================
 # GROUNDING CONTEXT
 # ============================================================================
+
+"""
+    SymbolBinding - Tracks the perceptual grounding of a symbol
+    
+Maps textual symbols to their corresponding perceptual features,
+enabling embodiment-aware language understanding.
+"""
+struct SymbolBinding
+    symbol::String
+    perception_features::Vector{Float32}
+    confidence::Float32
+    created_at::Float64
+    access_count::Int
+    last_accessed::Float64
+end
 
 """
     GroundingContext - Context for symbol grounding operations
@@ -78,21 +99,6 @@ end
 # ============================================================================
 # SYMBOL-PERCEPTION BINDING
 # ============================================================================
-
-"""
-    SymbolBinding - Tracks the perceptual grounding of a symbol
-    
-Maps textual symbols to their corresponding perceptual features,
-enabling embodiment-aware language understanding.
-"""
-struct SymbolBinding
-    symbol::String
-    perception_features::Vector{Float32}
-    confidence::Float32
-    created_at::Float64
-    access_count::Int
-    last_accessed::Float64
-end
 
 """
     bind_symbol_to_perception!(symbol, perception, bindings)
@@ -525,106 +531,31 @@ end
 Create a human-readable summary of perception state.
 """
 function summarize_perception(perception::Vector{Float32})::String
-    if length(perception) < 12
-        perception = resize_perception(perception, 12)
-    end
-    
-    # Extract key features
-    file_activity = perception[1]
-    process_activity = perception[2]
-    network_activity = perception[3]
-    
-    summaries = String[]
-    
-    if file_activity > 0.5
-        push!(summaries, "file activity")
-    end
-    if process_activity > 0.5
-        push!(summaries, "process activity")
-    end
-    if network_activity > 0.5
-        push!(summaries, "network activity")
-    end
-    
-    if isempty(summaries)
-        return "general monitoring"
-    else
-        return join(summaries, ", ")
-    end
-end
-
-# ============================================================================
-# VECTOR MEMORY INTEGRATION
-# ============================================================================
-
-"""
-    store_semantic_embedding(text, perception, memory)
-
-Store text with grounded perception in memory.
-Enables retrieval by perception similarity.
-
-memory should implement:
-- store!(entry)
-- search(query_vector, k)
-"""
-function store_semantic_embedding(
-    text::String,
-    perception::Vector{Float32},
-    memory::Any  # VectorMemory.VectorStore
-)
-    # Ensure perception is proper dimension
     if length(perception) != 12
-        perception = resize_perception(perception, 12)
+        return "Unknown state"
     end
     
-    # Generate semantic embedding (combines text hash with perception)
-    embedding = generate_grounded_embedding(text, perception)
+    # Extract key components
+    file_score = perception[1]
+    process_score = perception[2]
+    network_score = perception[3]
+    cpu_load = perception[4]
+    memory_load = perception[5]
     
-    # Create memory entry
-    entry = Dict{Any, Any}(
-        :text => text,
-        :embedding => embedding,
-        :perception => perception,
-        :timestamp => time()
-    )
+    # Determine dominant category
+    categories = [
+        ("File", file_score),
+        ("Process", process_score),
+        ("Network", network_score)
+    ]
+    dominant = argmax(x -> x[2], categories)
     
-    # Store in memory if the interface supports it
-    if applicable(store!, memory, entry)
-        store!(memory, entry)
-    end
+    # Build summary string
+    summary = "State: $(dominant[1]) (confidence: $(round(dominant[2], digits=2)))"
+    summary *= ", CPU: $(round(cpu_load * 100, digits=1))%"
+    summary *= ", Memory: $(round(memory_load * 100, digits=1))%"
     
-    return entry
-end
-
-"""
-    retrieve_by_perception(perception, memory; top_k=5) -> Vector{Dict}
-
-Retrieve semantically similar memories by perception similarity.
-Returns top_k most similar entries.
-"""
-function retrieve_by_perception(
-    perception::Vector{Float32},
-    memory::Any;
-    top_k::Int=5
-)::Vector{Dict}
-    
-    # Ensure perception is proper dimension
-    if length(perception) != 12
-        perception = resize_perception(perception, 12)
-    end
-    
-    # Use perception as query vector
-    results = []
-    
-    # If memory supports search, use it
-    if applicable(search, memory, perception, top_k)
-        results = search(memory, perception, top_k)
-    else
-        # Fallback: return empty results
-        results = Dict[]
-    end
-    
-    return results
+    return summary
 end
 
 # ============================================================================
@@ -634,52 +565,26 @@ end
 """
     generate_simple_embedding(text) -> Vector{Float32}
 
-Generate a simple deterministic embedding for text.
-In production, this would use a proper embedding model.
+Generate a deterministic embedding from text using SHA hash.
+This is a simplified embedding suitable for similarity comparisons.
 """
 function generate_simple_embedding(text::String)::Vector{Float32}
-    # Use SHA hash for deterministic embedding
+    # Create deterministic hash from text
     hash_bytes = sha256(text)
     
-    # Convert to Float32 vector
-    embedding = Float32[]
-    for i in 1:min(12, length(hash_bytes))
-        push!(embedding, Float32(hash_bytes[i]) / 255.0f0)
+    # Convert hash bytes to Float32 vector (32 bytes -> 8 Float32s)
+    embedding = Vector{Float32}(undef, 8)
+    for i in 1:8
+        # Convert 4 bytes to a Float32 in range [0, 1]
+        bytes = hash_bytes[(i-1)*4+1:i*4]
+        int_val = reinterpret(UInt32, bytes)[1]
+        embedding[i] = (int_val % UInt32(1000000)) / 1000000.0f0
     end
     
-    # Pad to 12 dimensions
-    while length(embedding) < 12
-        push!(embedding, 0.0f0)
-    end
+    # Normalize to unit vector
+    embedding ./= norm(embedding)
     
-    return embedding[1:12]
-end
-
-"""
-    generate_grounded_embedding(text, perception) -> Vector{Float32}
-
-Generate embedding that combines text semantics with perception grounding.
-"""
-function generate_grounded_embedding(
-    text::String,
-    perception::Vector{Float32}
-)::Vector{Float32}
-    
-    # Get text embedding
-    text_embedding = generate_simple_embedding(text)
-    
-    # Combine with perception (weighted average)
-    alpha = 0.6f0  # Weight for text vs perception
-    
-    combined = alpha .* text_embedding .+ (1f0 - alpha) .* perception
-    
-    # Normalize
-    norm = sqrt(sum(combined .^ 2))
-    if norm > 0
-        combined = combined ./ norm
-    end
-    
-    return combined
+    return embedding
 end
 
 """
@@ -689,15 +594,12 @@ Compute cosine similarity between two vectors.
 """
 function cosine_similarity(a::Vector{Float32}, b::Vector{Float32})::Float32
     if length(a) != length(b)
-        # Resize to match
-        min_len = min(length(a), length(b))
-        a = a[1:min_len]
-        b = b[1:min_len]
+        throw(DimensionMismatch("Vectors must have same length"))
     end
     
-    dot_product = sum(a .* b)
-    norm_a = sqrt(sum(a .^ 2))
-    norm_b = sqrt(sum(b .^ 2))
+    dot_product = dot(a, b)
+    norm_a = norm(a)
+    norm_b = norm(b)
     
     if norm_a == 0 || norm_b == 0
         return 0.0f0
@@ -707,68 +609,111 @@ function cosine_similarity(a::Vector{Float32}, b::Vector{Float32})::Float32
 end
 
 # ============================================================================
-# INTEGRATION HELPERS
+# VECTORMEMORY - Symbol-Perception Storage
 # ============================================================================
 
 """
-    create_grounding_context(
-        perception::Vector{Float32},
-        world_model::Vector{Float32},
-        goals::Vector{UUID},
-        emotions::Dict{Symbol, Any}
-    ) -> GroundingContext
+    VectorMemory - In-memory vector store for symbol-perception pairs
 
-Create a GroundingContext from individual components.
+Stores semantic embeddings with their associated perception vectors,
+enabling persistent grounding of symbols across sessions.
 """
-function create_grounding_context(
-    perception::Vector{Float32},
-    world_model::Vector{Float32},
-    goals::Vector{UUID},
-    emotions::Dict{Symbol, Any}
-)::GroundingContext
+mutable struct VectorMemory
+    embeddings::Dict{String, Vector{Float32}}  # symbol -> embedding
+    perceptions::Dict{String, Vector{Float32}}  # symbol -> perception
+    metadata::Dict{String, Dict}  # symbol -> metadata
     
-    context = GroundingContext()
-    context.perception_state = perception
-    context.world_model_state = world_model
-    context.active_goals = goals
-    context.emotional_state = emotions
-    
-    return context
+    VectorMemory() = new(
+        Dict{String, Vector{Float32}}(),
+        Dict{String, Vector{Float32}}(),
+        Dict{String, Dict}()
+    )
 end
 
 """
-    extract_perception_features(context) -> Vector{Float32}
+    store_semantic_embedding(memory, symbol, embedding, perception)
 
-Extract the current perception state from grounding context.
+Store a symbol with its semantic embedding and perception vector.
 """
-function extract_perception_features(context::GroundingContext)::Vector{Float32}
-    return context.perception_state
+function store_semantic_embedding(
+    memory::VectorMemory,
+    symbol::String,
+    embedding::Vector{Float32},
+    perception::Vector{Float32}
+)::Bool
+    try
+        memory.embeddings[symbol] = embedding
+        memory.perceptions[symbol] = perception
+        
+        # Store metadata
+        memory.metadata[symbol] = Dict(
+            :created_at => time(),
+            :last_accessed => time(),
+            :access_count => 1
+        )
+        
+        return true
+    catch e
+        @warn "Failed to store embedding: $e"
+        return false
+    end
 end
 
 """
-    get_conversation_summary(context; recent_count=5) -> String
+    retrieve_by_perception(memory, query_perception; top_k=5) -> Vector{Tuple{String, Float32}}
 
-Get a summary of recent conversation for debugging/logging.
+Retrieve symbols most similar to the given perception vector.
+Returns vector of (symbol, similarity_score) tuples.
 """
-function get_conversation_summary(
-    context::GroundingContext;
-    recent_count::Int=5
-)::String
+function retrieve_by_perception(
+    memory::VectorMemory,
+    query_perception::Vector{Float32};
+    top_k::Int=5
+)::Vector{Tuple{String, Float32}}
     
-    if isempty(context.conversation_history)
-        return "No conversation history"
+    if isempty(memory.perceptions)
+        return []
     end
     
-    recent = context.conversation_history[max(1, end-recent_count+1):end]
+    similarities = Vector{Tuple{String, Float32}}()
     
-    lines = String[]
-    for utterance in recent
-        speaker = utterance[:is_user] ? "User" : "JARVIS"
-        text = utterance[:text]
-        push!(lines, "$speaker: $(text[1:min(50, length(text))])")
+    for (symbol, stored_perception) in memory.perceptions
+        if length(stored_perception) == length(query_perception)
+            sim = cosine_similarity(query_perception, stored_perception)
+            push!(similarities, (symbol, sim))
+        end
     end
     
-    return join(lines, "\n")
+    # Sort by similarity (descending) and take top_k
+    sort!(similarities, by=x -> x[2], rev=true)
+    
+    return similarities[1:min(top_k, length(similarities))]
 end
 
-end # module LanguageUnderstanding
+# ============================================================================
+# INTEGRATION WITH GROUNDING CONTEXT
+# ============================================================================
+
+"""
+    bind_with_vector_memory!(context, symbol, perception)
+
+Bind a symbol to perception and store in VectorMemory.
+"""
+function bind_with_vector_memory!(
+    context::GroundingContext,
+    symbol::String,
+    perception::Vector{Float32}
+)::SymbolBinding
+    # First bind in the context
+    binding = bind_symbol_to_perception!(symbol, perception, context.symbol_bindings)
+    
+    # Then store in vector memory if available
+    if hasproperty(context, :vector_memory)
+        embedding = generate_simple_embedding(symbol)
+        store_semantic_embedding(context.vector_memory, symbol, embedding, perception)
+    end
+    
+    return binding
+end
+
+end  # End module

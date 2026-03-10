@@ -416,7 +416,7 @@ end
         energy_level::Float32,
         is_idle::Bool,
         time_since_replay::Float64;
-        energy_threshold::Float32=0.30,
+        energy_threshold::Float32=0.30f0,
         idle_minimum::Float64=60.0
     )::Bool
 
@@ -443,7 +443,7 @@ function should_trigger_replay(
     energy_level::Float32,
     is_idle::Bool,
     time_since_replay::Float64;
-    energy_threshold::Float32=0.30,
+    energy_threshold::Float32=0.30f0,
     idle_minimum::Float64=60.0
 )::Bool
     # Must be low energy or idle

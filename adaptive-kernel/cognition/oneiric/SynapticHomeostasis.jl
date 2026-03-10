@@ -545,7 +545,7 @@ Initialize random neural connections.
 - `num_neurons::Int`: Number of neurons
 - `connectivity::Float32`: Connection probability (default: 0.1)
 """
-function initialize_connections!(state::HomeostasisState, num_neurons::Int; connectivity::Float32=0.1)
+function initialize_connections!(state::HomeostasisState, num_neurons::Int; connectivity::Float32=0.1f0)
     rng = MersenneTwister(42)
     
     for source in 1:num_neurons

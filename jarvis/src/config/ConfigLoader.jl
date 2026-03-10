@@ -61,6 +61,7 @@ end
 
 """
     _load_config_files - Load base and environment-specific configs
+    SECURITY: Validates critical security settings cannot be disabled
 """
 function _load_config_files(loader::ConfigLoader)::Dict{String, Any}
     # Start with defaults
@@ -75,7 +76,10 @@ function _load_config_files(loader::ConfigLoader)::Dict{String, Any}
         "tts_provider" => "elevenlabs",
         "vlm_provider" => "gpt4v",
         "require_confirmation" => true,
-        "max_execution_time" => 30
+        "max_execution_time" => 30,
+        # SECURITY: Kernel approval is always required - cannot be disabled
+        "require_kernel_approval" => true,
+        "kernel_approval_bypass" => false
     )
     
     # Try to load from config.toml if exists
@@ -102,7 +106,40 @@ function _load_config_files(loader::ConfigLoader)::Dict{String, Any}
         end
     end
     
+    # SECURITY: Enforce kernel_approval_required cannot be disabled
+    _validate_security_config(config)
+    
     return config
+end
+
+"""
+    _validate_security_config - Validate critical security settings
+    SECURITY CRITICAL: Ensures kernel approval cannot be bypassed
+"""
+function _validate_security_config(config::Dict{String, Any})::Nothing
+    # Check kernel_approval_required setting
+    kernel_approval = get(config, "require_kernel_approval", true)
+    
+    if kernel_approval === false || kernel_approval == "false"
+        error("SECURITY VIOLATION: kernel_approval_required cannot be disabled. " *
+              "This is a critical security setting that must always be enabled.")
+    end
+    
+    # Check for bypass attempts
+    bypass_enabled = get(config, "kernel_approval_bypass", false)
+    if bypass_enabled === true || bypass_enabled == "true"
+        error("SECURITY VIOLATION: kernel_approval_bypass is not allowed. " *
+              "Kernel approval cannot be bypassed.")
+    end
+    
+    # Check for bypass override attempts
+    bypass_override = get(config, "kernel_approval_bypass_override", false)
+    if bypass_override === true || bypass_override == "true"
+        error("SECURITY VIOLATION: kernel_approval_bypass_override is not allowed.")
+    end
+    
+    @info "Security configuration validated: kernel_approval_required=true"
+    nothing
 end
 
 """

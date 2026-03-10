@@ -55,6 +55,71 @@ The ITHERIS + JARVIS system represents a hybrid Julia-Rust neuro-symbolic autono
 
 ---
 
+## 1.5 Hypervisor Classification: Type-1 vs Type-2
+
+> **⚠️ IMPORTANT CLARIFICATION (2026-03-10)**
+>
+> Historical documentation referenced a **Type-1 Hypervisor** using Extended Page Tables (EPT) for bare-metal isolation. This section clarifies the distinction between the **intended architecture** and the **current implementation**.
+
+#### Current Implementation: Type-2 (Managed Sandbox)
+
+The system currently implements **process-level isolation** rather than hardware virtualization:
+
+| Component | Intended (Type-1) | Actual (Type-2) |
+|-----------|-----------------|-----------------|
+| **Julia Runtime** | Guest VM | Managed process |
+| **Rust Warden** | Hypervisor (Ring 0) | Supervisor process (Ring 3) |
+| **Memory Protection** | EPT/NPT hardware virtualization | Standard x86-64 paging |
+| **Isolation Boundary** | Hardware-enforced | OS process isolation |
+| **IPC Mechanism** | EPT-mapped shared memory | `/dev/shm` ring buffer |
+
+#### Security Boundary Map
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     RUST WARDEN (Security Supervisor)                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Law Enforcement Point (LEP)                                        │   │
+│  │  - Kernel Approval Gate                                            │   │
+│  │  - Trust Scoring Engine                                            │   │
+│  │  - Capability Registry                                             │   │
+│  │  - Event Audit Logger                                              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                     │                                       │
+│                           FFI Boundary (IPC)                                 │
+│                           Shared Memory Ring Buffer                         │
+│                                     │                                       │
+└─────────────────────────────────────┼───────────────────────────────────────┘
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     JULIA BRAIN (Cognitive Processing)                       │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  jlrs-embedded runtime                                             │   │
+│  │  - Cognition Module                                               │   │
+│  │  - Neural Network (Flux.jl)                                        │   │
+│  │  - World Model & Goals                                             │   │
+│  │  - ReAct Agents                                                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  Where Julia "thinks" - Runs under Warden supervision                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Security Implications
+
+1. **Software-Based Isolation**: Without EPT traps, the Julia runtime has direct syscall access
+2. **Process-Level Protection**: Relies on Linux kernel's standard process isolation
+3. **Compensating Controls**: seccomp-bpf, namespaces, cgroups provide additional isolation
+4. **FFI Boundary**: The Julia↔Rust FFI is the primary security checkpoint
+
+#### Ring Buffer IPC
+
+- **Location**: Shared memory at `/dev/shm/itheris_ipc`
+- **Protocol**: Lock-free ring buffer (SPSC)
+- **Fallback**: TCP socket when shared memory unavailable
+
+---
+
 ## 2. Architecture Diagram
 
 ```mermaid

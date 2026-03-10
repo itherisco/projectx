@@ -8,24 +8,12 @@ using Dates
 using UUIDs
 using JSON
 using Statistics
+using Parameters  # For @with_kw macro
 
-# Import shared types
-include("../types.jl")
-using ..SharedTypes
+# Types are defined in this module - no parent module dependency needed
 
-# Import agent types (forward declaration)
-include("../types.jl")
-using ..CognitionTypes
-
-# Import submodules (Phase 3 decomposition)
-include("ProposalAggregation.jl")
-using .ProposalAggregation
-
-include("ConflictResolution.jl")
-using .ConflictResolution
-
-include("Commitment.jl")
-using .Commitment
+# NOTE: Submodules (ProposalAggregation, ConflictResolution, Commitment) 
+# are included by the parent Cognition module to avoid circular dependencies
 
 export 
     DecisionCycle,
@@ -35,13 +23,6 @@ export
     run_cognitive_cycle,
     DecisionOutcome,
     SpineConfig,
-    # Re-export from submodules
-    aggregate_proposals,
-    resolve_conflict,
-    commit_to_decision,
-    ProposalAggregator,
-    ConflictResolver,
-    DecisionCommitment,
     # GUARD: Sovereignty enforcement
     verify_kernel_sovereignty
 
@@ -213,6 +194,21 @@ end
 # COMMITTED DECISION
 # ============================================================================
 
+# Forward declarations
+@enum DecisionOutcomeStatus begin
+    OUTCOME_EXECUTED
+    OUTCOME_REJECTED
+    OUTCOME_FAILED
+    OUTCOME_PENDING
+end
+
+struct DecisionOutcome
+    status::DecisionOutcomeStatus
+    result::Dict{String, Any}
+    actual_vs_expected::Dict{String, Float64}  # metric => error
+    timestamp::DateTime
+end
+
 """
     CommittedDecision - Single committed decision after conflict resolution
 """
@@ -239,22 +235,6 @@ function CommittedDecision(
     )
 end
 
-"""
-    DecisionOutcome - Result of decision execution
-"""
-@enum DecisionOutcomeStatus begin
-    OUTCOME_EXECUTED
-    OUTCOME_REJECTED
-    OUTCOME_FAILED
-    OUTCOME_PENDING
-end
-
-struct DecisionOutcome
-    status::DecisionOutcomeStatus
-    result::Dict{String, Any}
-    actual_vs_expected::Dict{String, Float64}  # metric => error
-    timestamp::DateTime
-end
 
 # ============================================================================
 # DECISION CYCLE

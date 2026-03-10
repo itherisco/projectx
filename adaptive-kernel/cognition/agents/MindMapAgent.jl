@@ -40,13 +40,13 @@ export
     RelationType - Types of logical relationships in the knowledge graph
 """
 @enum RelationType begin
-    :causal        # A causes B
-    :sequential    # A precedes B in reasoning
-    :contradictory # A contradicts B
-    :supportive    # A supports B
-    :equivalent    # A is equivalent to B
-    :refines       # A refines B
-    :supersedes    # A supersedes B
+    causal        # A causes B
+    sequential    # A precedes B in reasoning
+    contradictory # A contradicts B
+    supportive    # A supports B
+    equivalent    # A is equivalent to B
+    refines       # A refines B
+    supersedes    # A supersedes B
 end
 
 """

@@ -21,7 +21,7 @@ using .SensoryProcessing
 
 # Import world model
 include(joinpath(@__DIR__, "worldmodel", "WorldModel.jl"))
-using .WorldModel
+using .WorldModels
 
 # Import decision spine
 include(joinpath(@__DIR__, "spine", "DecisionSpine.jl"))

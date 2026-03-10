@@ -18,12 +18,12 @@ use serde::{Serialize, Deserialize};
 
 /// Shared memory path
 pub const SHM_PATH: &str = "/dev/shm/itheris_ipc";
-/// Shared memory size: 16MB
-pub const SHM_SIZE: usize = 0x0010_0000;
+/// Shared memory size: 64MB (lock-free ring buffer for high-performance IPC)
+pub const SHM_SIZE: usize = 0x0400_0000;
 /// Number of ring buffer entries
-pub const RING_BUFFER_ENTRIES: usize = 256;
+pub const RING_BUFFER_ENTRIES: usize = 1024;
 /// Maximum payload size per entry
-pub const MAX_PAYLOAD_SIZE: usize = 4096;
+pub const MAX_PAYLOAD_SIZE: usize = 16384;
 /// Response region offset
 pub const RESPONSE_OFFSET: usize = 4096;
 
@@ -124,11 +124,17 @@ impl IPCMessage {
         use std::hash::{Hash, Hasher};
         
         let mut hasher = DefaultHasher::new();
-        header.magic.hash(&mut hasher);
-        header.version.hash(&mut hasher);
-        header.entry_type.hash(&mut hasher);
-        header.sequence.hash(&mut hasher);
-        header.timestamp.hash(&mut hasher);
+        // Copy fields to avoid alignment issues with packed struct
+        let magic = header.magic;
+        let version = header.version;
+        let entry_type = header.entry_type;
+        let sequence = header.sequence;
+        let timestamp = header.timestamp;
+        magic.hash(&mut hasher);
+        version.hash(&mut hasher);
+        entry_type.hash(&mut hasher);
+        sequence.hash(&mut hasher);
+        timestamp.hash(&mut hasher);
         payload.hash(&mut hasher);
         
         (hasher.finish() & 0xFFFFFFFF) as u32
@@ -136,10 +142,19 @@ impl IPCMessage {
     
     /// Validate message checksum
     pub fn validate(&self) -> bool {
-        let mut header = self.header;
-        let checksum = header.checksum;
-        header.checksum = 0;
-        Self::calculate_checksum(&header, &self.payload) == checksum
+        // Create a copy of header with zeroed checksum for validation
+        let checksum = self.header.checksum;
+        let header_for_check = IPCMessageHeader {
+            magic: self.header.magic,
+            version: self.header.version,
+            entry_type: self.header.entry_type,
+            flags: self.header.flags,
+            sequence: self.header.sequence,
+            timestamp: self.header.timestamp,
+            payload_size: self.header.payload_size,
+            checksum: 0,
+        };
+        Self::calculate_checksum(&header_for_check, &self.payload) == checksum
     }
 }
 
@@ -147,7 +162,7 @@ impl IPCMessage {
 static SEQUENCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Ring buffer entry
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RingBufferEntry {
     pub occupied: AtomicBool,
     pub message: RwLock<Option<IPCMessage>>,

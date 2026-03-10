@@ -89,6 +89,35 @@ The system employs a dual-language architecture that leverages the strengths of 
 
 ---
 
+### 1.4 Hypervisor Classification: Intended vs. Actual
+
+> **⚠️ ARCHITECTURE CLARIFICATION (2026-03-10)**
+>
+> The documentation historically referenced a **Type-1 Hypervisor** design with Extended Page Tables (EPT) for bare-metal isolation. This document clarifies the distinction between the **intended architecture** and the **current implementation**.
+
+| Aspect | Intended Design (Type-1) | Current Implementation (Type-2) |
+|--------|--------------------------|--------------------------------|
+| **Isolation Level** | Bare-metal (Ring 0) | Process-level (Ring 3) |
+| **Memory Protection** | EPT/NPT hardware virtualization | Standard x86-64 paging |
+| **Julia Runtime** | Guest VM | Managed process |
+| **Warden Role** | Hypervisor (VMM) | Supervisor process |
+| **IPC Mechanism** | EPT-mapped shared memory | Shared memory ring buffer (`/dev/shm`) |
+| **Security Boundary** | Hardware-enforced | Software-enforced (seccomp, namespaces, cgroups) |
+
+**Current Implementation Details:**
+- The Julia cognitive brain runs as a **child process** under the Rust Warden's supervision
+- IPC occurs through **shared memory ring buffer** at addresses defined in [`IPC_SPEC.md`](IPC_SPEC.md)
+- Security relies on **software isolation layers**: seccomp-bpf, Linux namespaces, cgroups
+- The system functions as a **managed sandbox** rather than bare-metal virtualization
+
+**Security Implications:**
+- Without EPT traps, the Julia runtime has direct access to standard syscalls
+- Memory isolation is provided by the OS kernel's standard process isolation
+- A compromised Julia process could potentially escape to other processes on the same system
+- The FFI boundary (Julia↔Rust) is the primary security checkpoint
+
+---
+
 ## 2. Architecture Principles
 
 ### 2.1 Fundamental Principle: "Brain is advisory. Kernel is sovereign."
@@ -568,6 +597,8 @@ The IPC layer uses a layered communication approach:
 1. **Primary**: Shared Memory Ring Buffer (64MB total)
 2. **Fallback**: TCP Socket Connection
 
+> **⚠️ SECURITY NOTE:** This IPC mechanism operates at software level, not hardware level. Unlike EPT-mapped shared memory in a Type-1 hypervisor, the ring buffer relies on OS-provided shared memory protections.
+
 ### 7.2 Shared Memory Regions
 
 | Region | Address | Size | Purpose |
@@ -577,7 +608,49 @@ The IPC layer uses a layered communication approach:
 | Response Queue | 0x1_0001_0000 | 16MB | Rust → Julia responses |
 | Shared Data | 0x1_0002_0000 | 32MB | Large data exchange |
 
-### 7.3 Message Protocol
+### 7.3 Security Boundary: Julia Brain ↔ Rust Warden
+
+The IPC layer represents the primary security boundary between the Julia Cognitive Brain and the Rust Security Kernel:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     SECURITY BOUNDARY MAPPING                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    JULIA BRAIN (jlrs-embedded)                      │   │
+│  │   - Cognitive processing (Cognition, Agents, Learning)           │   │
+│  │   - Neural network inference (Flux.jl)                             │   │
+│  │   - World Model & Goal Management                                   │   │
+│  │                                                                      │   │
+│  │   Where Julia "thinks" - Managed process under Warden              │   │
+│  └──────────────────────────────────┬────────────────────────────────────┘   │
+│                                     │                                         │
+│                           FFI Boundary (Shared Memory)                      │
+│                           Ring Buffer IPC                                    │
+│                                     │                                         │
+│                                     ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    RUST WARDEN (itheris-daemon)                     │   │
+│  │   - Kernel Approval Gate (LEP - Law Enforcement Point)           │   │
+│  │   - Trust Scoring Engine                                           │   │
+│  │   - Capability Registry                                             │   │
+│  │   - Event Audit Logger                                              │   │
+│  │   - Key Management                                                  │   │
+│  │                                                                      │   │
+│  │   Where Rust enforces the Law Enforcement Point (LEP)             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Security Considerations:**
+- **FFI Boundary**: All communication crosses the Julia↔Rust FFI boundary
+- **Ring Buffer**: Located at OS-managed shared memory (`/dev/shm`)
+- **No Hardware Isolation**: Unlike EPT, memory protection relies on standard OS process isolation
+- **Software Compensations**: seccomp, namespaces, and cgroups provide additional isolation layers
+
+### 7.4 Message Protocol
 
 ```julia
 # Julia side: Sending a proposal

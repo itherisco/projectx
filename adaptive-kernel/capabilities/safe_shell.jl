@@ -262,7 +262,7 @@ function validate_command(command::String)::Tuple{Bool, String}
     # Check 7: Argument sanitization with path traversal detection
     # PATH TRAVERSAL FIX: Now handles tuple return and canonicalizes paths
     if length(parts) > 1
-        for i in 2:length(parts)
+        for i in 2:lastindex(parts)
             # Use new tuple return from sanitize_argument
             success, sanitized, error_msg = sanitize_argument(parts[i])
             
@@ -315,7 +315,7 @@ function execute(params::Dict)::Dict{String, Any}
         args = String[]
         
         if length(parts) > 1
-            for i in 2:length(parts)
+            for i in 2:lastindex(parts)
                 # PATH TRAVERSAL FIX: Handle tuple return from sanitize_argument
                 success, sanitized, error_msg = sanitize_argument(parts[i])
                 if success && !isempty(sanitized)

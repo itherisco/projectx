@@ -250,10 +250,10 @@ end
 """
     Main service manager loop
 """
-function service_loop(services::Dict{String, Service})
+function service_loop(services::Dict{String, Service}, shutdown_flag::Ref{Bool}=Ref(false))
     println("[SERVICE] Entering service manager loop...")
     
-    while true
+    while !shutdown_flag[]
         # Check service health
         for (name, service) in services
             if service.status == STATUS_RUNNING
@@ -267,6 +267,8 @@ function service_loop(services::Dict{String, Service})
         
         sleep(5)
     end
+    
+    println("[SERVICE] Service manager loop exiting...")
 end
 
 # ============================================================================
@@ -294,7 +296,7 @@ function start_service_manager()
     # Get startup order
     startup_order = topological_sort(graph)
     
-    println("[KERNEL] Service startup order: $(join(startup_order, \" -> \"))")
+    println("[KERNEL] Service startup order: ", join(startup_order, " -> "))
     
     # Start services in dependency order
     for name in startup_order
@@ -310,8 +312,14 @@ function start_service_manager()
         start_service!(service)
     end
     
+    # Create shutdown flag for graceful shutdown
+    shutdown_flag = Ref(false)
+    
+    # Set up signal handler for graceful shutdown
+    # Note: In production, would use Julia's signal handling
+    
     # Enter main loop
-    service_loop(services)
+    service_loop(services, shutdown_flag)
 end
 
 """

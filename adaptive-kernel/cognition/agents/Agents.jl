@@ -6,6 +6,20 @@ module Agents
 using Dates
 using UUIDs
 
+# Import types first - required by all agents
+include("../types.jl")
+using ..CognitionTypes
+
+# Import spine - defines AgentProposal used by agents
+include("../spine/DecisionSpine.jl")
+using ..DecisionSpine
+
+# Import capabilities required by agents
+include("../../capabilities/safe_http_request.jl")
+include("../../registry/ToolRegistry.jl")
+include("../../sandbox/ExecutionSandbox.jl")
+using .ExecutionSandbox
+
 # Export all agent types and functions
 export 
     # Executor
@@ -56,8 +70,8 @@ export
 include("Executor.jl")
 include("Strategist.jl")
 include("Auditor.jl")
+include("PolicyValidator.jl")  # Must be before EvolutionEngine
 include("EvolutionEngine.jl")
-include("PolicyValidator.jl")
 include("WebSearchAgent.jl")
 include("CodeAgent.jl")
 include("MindMapAgent.jl")

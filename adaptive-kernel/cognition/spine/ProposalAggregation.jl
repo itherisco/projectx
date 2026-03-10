@@ -7,14 +7,15 @@ using Dates
 using UUIDs
 using Statistics
 
-# Import types
+# Import types from DecisionSpine (where AgentProposal is defined)
+# Note: DecisionSpine is included by Cognition.jl before this module
+using ..DecisionSpine
+
+# Import cognition types
 include("../types.jl")
 using ..CognitionTypes
 
-# Import spine types
-include("DecisionSpine.jl")
-using ..DecisionSpine
-
+# Types will be available via parent module
 export 
     AggregatedProposals,
     aggregate_proposals,

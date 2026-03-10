@@ -1,6 +1,6 @@
 //! # ITHERIS Daemon - Persistent Runtime
 //!
-//! Manages the Julia brain subprocess with lifecycle management,
+//! Manages the Julia brain with embedded jlrs runtime,
 //! crash recovery with watchdog timers, and systemd service support.
 
 mod kernel;
@@ -8,18 +8,18 @@ mod secure_boot;
 mod shared_memory;
 mod ffi;
 mod julia_runtime;
+mod types;
+mod isolation;
+mod warden;
 
 use chrono::Utc;
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
+use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
 use secure_boot::{BootStageResult, SecureBootManager};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use uuid::Uuid;
@@ -49,7 +49,7 @@ impl Default for DaemonConfig {
 }
 
 /// Daemon state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DaemonState {
     Starting,
     SecureBoot,
@@ -77,7 +77,6 @@ pub struct ItherisDaemon {
     state: Arc<RwLock<DaemonState>>,
     kernel: Arc<ItherisDaemonKernel>,
     secure_boot: Arc<RwLock<SecureBootManager>>,
-    julia_process: Arc<RwLock<Option<Child>>>,
     start_time: Arc<RwLock<Option<chrono::DateTime<Utc>>>>,
     health_check_failures: Arc<RwLock<u32>>,
 }
@@ -90,7 +89,6 @@ impl ItherisDaemon {
             state: Arc::new(RwLock::new(DaemonState::Starting)),
             kernel: Arc::new(ItherisDaemonKernel::new()),
             secure_boot: Arc::new(RwLock::new(SecureBootManager::new("./itheris-daemon"))),
-            julia_process: Arc::new(RwLock::new(None)),
             start_time: Arc::new(RwLock::new(None)),
             health_check_failures: Arc::new(RwLock::new(0)),
         }
@@ -126,11 +124,36 @@ impl ItherisDaemon {
         // Set warden as healthy after successful boot
         self.kernel.set_warden_status(true).await;
         
-        // Start Julia brain subprocess
+        // Initialize embedded Julia runtime (replaces subprocess spawning)
         self.set_state(DaemonState::Running).await;
-        self.spawn_julia_brain().await?;
+        self.init_julia_embedded().await?;
         
-        log::info!("✅ ITHERIS Daemon started successfully");
+        log::info!("✅ ITHERIS Daemon started successfully with embedded Julia");
+        Ok(())
+    }
+    
+    /// Initialize embedded Julia runtime using jlrs
+    async fn init_julia_embedded(&self) -> Result<(), String> {
+        log::info!("🧠 Initializing embedded Julia runtime via jlrs...");
+        
+        // Configure Julia runtime with 512MB memory limit (metabolic gating)
+        let config = JuliaConfig {
+            num_threads: Some(4),
+            memory_limit_mb: 512,
+            debug: false,
+            project_path: Some(self.config.adaptive_kernel_path.clone()),
+            sysimage_path: None,
+            julia_dir: None,
+            async_runtime: true,
+        };
+        
+        init_julia_runtime(config)
+            .map_err(|e| format!("Failed to initialize Julia: {}", e))?;
+        
+        log::info!("   ✓ Julia runtime initialized (embedded mode)");
+        log::info!("   ✓ JIT compiler pre-warmed");
+        log::info!("   ✓ Memory limit: 512MB (metabolic cap)");
+        
         Ok(())
     }
     
@@ -170,11 +193,12 @@ impl ItherisDaemon {
         
         self.set_state(DaemonState::Stopped).await;
         
-        // Kill Julia process
-        let mut proc = self.julia_process.write().await;
-        if let Some(mut child) = proc.take() {
-            let _ = child.kill().await;
-            log::info!("   ✓ Julia brain stopped");
+        // Stop embedded Julia runtime
+        if let Ok(runtime) = get_julia_runtime() {
+            if let Ok(mut r) = runtime.write() {
+                let _ = r.stop();
+                log::info!("   ✓ Julia runtime stopped");
+            }
         }
         
         // Set warden unhealthy
@@ -183,9 +207,9 @@ impl ItherisDaemon {
         log::info!("✅ Daemon stopped");
     }
     
-    /// Watchdog - monitor Julia brain health
+    /// Watchdog - monitor embedded Julia runtime health
     pub async fn watchdog(&self) {
-        log::info!("🐕 Starting watchdog...");
+        log::info!("🐕 Starting watchdog for embedded Julia...");
         
         let mut ticker = interval(Duration::from_secs(self.config.health_check_interval_secs));
         
@@ -197,39 +221,30 @@ impl ItherisDaemon {
                 continue;
             }
             
-            // Check Julia process
-            let mut proc = self.julia_process.write().await;
-            let is_healthy = if let Some(ref mut child) = *proc {
-                match child.try_wait() {
-                    Ok(Some(_)) => {
-                        log::warn!("⚠️ Julia brain exited unexpectedly");
-                        false
-                    },
-                    Ok(None) => true,
-                    Err(e) => {
-                        log::error!("Error checking Julia: {}", e);
-                        false
+            // Check embedded Julia runtime health
+            let is_healthy = match get_julia_runtime() {
+                Ok(runtime) => {
+                    match runtime.read() {
+                        Ok(r) => r.is_running(),
+                        Err(_) => false,
                     }
                 }
-            } else {
-                false
+                Err(_) => false,
             };
-            
-            drop(proc);
             
             if !is_healthy {
                 let mut failures = self.health_check_failures.write().await;
                 *failures += 1;
                 
-                log::warn!("⚠️ Brain health check failed (count: {})", *failures);
+                log::warn!("⚠️ Julia runtime health check failed (count: {})", *failures);
                 
                 if *failures >= 3 {
-                    log::error!("🛑 Brain unresponsive - initiating recovery");
+                    log::error!("🛑 Julia runtime unresponsive - initiating recovery");
                     self.set_state(DaemonState::Recovering).await;
                     self.kernel.set_warden_status(false).await;
                     
-                    // Attempt recovery
-                    if let Err(e) = self.spawn_julia_brain().await {
+                    // Attempt recovery by reinitializing
+                    if let Err(e) = self.init_julia_embedded().await {
                         log::error!("Recovery failed: {}", e);
                     } else {
                         self.kernel.set_warden_status(true).await;
@@ -254,15 +269,15 @@ impl ItherisDaemon {
     pub async fn health_check(&self) -> HealthResponse {
         let state = *self.state.read().await;
         
-        // Get Julia process status
-        let (pid, healthy) = {
-            let proc = self.julia_process.read().await;
-            if let Some(ref child) = *proc {
-                let status = child.try_wait().map(|s| s.is_some()).unwrap_or(false);
-                (child.id(), !status)
-            } else {
-                (None, false)
+        // Get embedded Julia runtime status
+        let healthy = match get_julia_runtime() {
+            Ok(runtime) => {
+                match runtime.read() {
+                    Ok(r) => r.is_running(),
+                    Err(_) => false,
+                }
             }
+            Err(_) => false,
         };
         
         // Get kernel stats
@@ -282,7 +297,7 @@ impl ItherisDaemon {
             status: if state == DaemonState::Running && healthy { "healthy".to_string() } else { "degraded".to_string() },
             state,
             uptime_secs: uptime,
-            brain_pid: pid,
+            brain_pid: None, // Embedded runtime doesn't have a separate PID
             brain_healthy: healthy,
             kernel_stats,
             boot_stages,

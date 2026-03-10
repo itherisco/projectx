@@ -2,7 +2,7 @@
 # Predictive World Model - Component 4 of JARVIS Neuro-Symbolic Architecture
 # Internal forward model for state prediction and counterfactual simulation
 
-module WorldModel
+module WorldModels
 
 using Statistics
 using LinearAlgebra
@@ -229,7 +229,7 @@ mutable struct WorldModel
     
     function WorldModel(; 
         horizon::Int=5, 
-        uncertainty_threshold::Float32=0.7,
+        uncertainty_threshold::Float32=0.7f0,
         state_dim::Int=12,
         action_dim::Int=8
     )
@@ -1066,7 +1066,7 @@ end
         start_state::Vector{Float32},
         goal_state::Vector{Float32};
         max_steps::Int=10,
-        exploration::Float32=0.1
+        exploration::Float32=Float32(0.1)
     )::Vector{Int}
 
 Plan a sequence of actions to reach a goal state.
@@ -1088,7 +1088,7 @@ function plan_to_goal(
     start_state::Vector{Float32},
     goal_state::Vector{Float32};
     max_steps::Int=10,
-    exploration::Float32=0.1
+    exploration::Float32=Float32(0.1)
 )::Vector{Int}
     action_sequence = Int[]
     current_state = copy(start_state)
