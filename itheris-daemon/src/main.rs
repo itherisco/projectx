@@ -11,8 +11,10 @@ mod julia_runtime;
 mod types;
 mod isolation;
 mod warden;
+mod hardware;
 
 use chrono::Utc;
+use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
 use secure_boot::{BootStageResult, SecureBootManager};
@@ -33,6 +35,8 @@ pub struct DaemonConfig {
     pub watchdog_timeout_secs: u64,
     pub http_port: u16,
     pub log_level: String,
+    pub heartbeat_pin: u32,
+    pub heartbeat_frequency_hz: f64,
 }
 
 impl Default for DaemonConfig {
@@ -44,6 +48,8 @@ impl Default for DaemonConfig {
             watchdog_timeout_secs: 120,
             http_port: 8080,
             log_level: "info".to_string(),
+            heartbeat_pin: 6,  // GPIO6 (Pin 31) - HEARTBEAT_OUT
+            heartbeat_frequency_hz: 100.0,  // 100Hz = 10ms period
         }
     }
 }
@@ -69,6 +75,7 @@ pub struct HealthResponse {
     pub brain_healthy: bool,
     pub kernel_stats: KernelStats,
     pub boot_stages: Vec<BootStageResult>,
+    pub hardware_status: Option<hardware::HardwareStatus>,
 }
 
 /// ITHERIS Daemon
@@ -79,6 +86,7 @@ pub struct ItherisDaemon {
     secure_boot: Arc<RwLock<SecureBootManager>>,
     start_time: Arc<RwLock<Option<chrono::DateTime<Utc>>>>,
     health_check_failures: Arc<RwLock<u32>>,
+    hardware_guard: Arc<RwLock<Option<HardwareGuard>>>,
 }
 
 impl ItherisDaemon {
@@ -91,6 +99,7 @@ impl ItherisDaemon {
             secure_boot: Arc::new(RwLock::new(SecureBootManager::new("./itheris-daemon"))),
             start_time: Arc::new(RwLock::new(None)),
             health_check_failures: Arc::new(RwLock::new(0)),
+            hardware_guard: Arc::new(RwLock::new(None)),
         }
     }
     
@@ -116,6 +125,17 @@ impl ItherisDaemon {
             }
         }
         drop(boot_manager);
+        
+        // Initialize hardware watchdog and heartbeat (after secure boot)
+        match init_hardware_guard() {
+            Ok(guard) => {
+                *self.hardware_guard.write().await = Some(guard);
+                log::info!("✅ Hardware layer initialized");
+            },
+            Err(e) => {
+                log::warn!("⚠️ Hardware layer initialization warning: {}", e);
+            }
+        }
         
         // Initialize kernel
         self.kernel.initialize().await
@@ -193,6 +213,10 @@ impl ItherisDaemon {
         
         self.set_state(DaemonState::Stopped).await;
         
+        // Release hardware guard (stops heartbeat gracefully)
+        *self.hardware_guard.write().await = None;
+        log::info!("   ✓ Hardware resources released");
+        
         // Stop embedded Julia runtime
         if let Ok(runtime) = get_julia_runtime() {
             if let Ok(mut r) = runtime.write() {
@@ -213,47 +237,60 @@ impl ItherisDaemon {
         
         let mut ticker = interval(Duration::from_secs(self.config.health_check_interval_secs));
         
+        // Hardware watchdog kick ticker (every 500ms)
+        let mut hw_kick_ticker = interval(Duration::from_millis(500));
+        
         loop {
-            ticker.tick().await;
-            
-            let state = *self.state.read().await;
-            if state != DaemonState::Running {
-                continue;
-            }
-            
-            // Check embedded Julia runtime health
-            let is_healthy = match get_julia_runtime() {
-                Ok(runtime) => {
-                    match runtime.read() {
-                        Ok(r) => r.is_running(),
-                        Err(_) => false,
+            // Handle hardware watchdog kick every 500ms
+            tokio::select! {
+                _ = hw_kick_ticker.tick() => {
+                    // Kick the hardware watchdog
+                    if let Some(ref guard) = *self.hardware_guard.read().await {
+                        guard.kick_watchdog();
                     }
                 }
-                Err(_) => false,
-            };
-            
-            if !is_healthy {
-                let mut failures = self.health_check_failures.write().await;
-                *failures += 1;
-                
-                log::warn!("⚠️ Julia runtime health check failed (count: {})", *failures);
-                
-                if *failures >= 3 {
-                    log::error!("🛑 Julia runtime unresponsive - initiating recovery");
-                    self.set_state(DaemonState::Recovering).await;
-                    self.kernel.set_warden_status(false).await;
+                _ = ticker.tick() => {
+                    // Existing health check logic
+                    let state = *self.state.read().await;
+                    if state != DaemonState::Running {
+                        continue;
+                    }
                     
-                    // Attempt recovery by reinitializing
-                    if let Err(e) = self.init_julia_embedded().await {
-                        log::error!("Recovery failed: {}", e);
+                    // Check embedded Julia runtime health
+                    let is_healthy = match get_julia_runtime() {
+                        Ok(runtime) => {
+                            match runtime.read() {
+                                Ok(r) => r.is_running(),
+                                Err(_) => false,
+                            }
+                        }
+                        Err(_) => false,
+                    };
+                    
+                    if !is_healthy {
+                        let mut failures = self.health_check_failures.write().await;
+                        *failures += 1;
+                        
+                        log::warn!("⚠️ Julia runtime health check failed (count: {})", *failures);
+                        
+                        if *failures >= 3 {
+                            log::error!("🛑 Julia runtime unresponsive - initiating recovery");
+                            self.set_state(DaemonState::Recovering).await;
+                            self.kernel.set_warden_status(false).await;
+                            
+                            // Attempt recovery by reinitializing
+                            if let Err(e) = self.init_julia_embedded().await {
+                                log::error!("Recovery failed: {}", e);
+                            } else {
+                                self.kernel.set_warden_status(true).await;
+                                *self.health_check_failures.write().await = 0;
+                                self.set_state(DaemonState::Running).await;
+                            }
+                        }
                     } else {
-                        self.kernel.set_warden_status(true).await;
                         *self.health_check_failures.write().await = 0;
-                        self.set_state(DaemonState::Running).await;
                     }
                 }
-            } else {
-                *self.health_check_failures.write().await = 0;
             }
         }
     }
@@ -293,6 +330,13 @@ impl ItherisDaemon {
             0
         };
         
+        // Get hardware status
+        let hardware_status = if self.hardware_guard.read().await.is_some() {
+            Some(get_hardware_status())
+        } else {
+            None
+        };
+        
         HealthResponse {
             status: if state == DaemonState::Running && healthy { "healthy".to_string() } else { "degraded".to_string() },
             state,
@@ -301,6 +345,7 @@ impl ItherisDaemon {
             brain_healthy: healthy,
             kernel_stats,
             boot_stages,
+            hardware_status,
         }
     }
     

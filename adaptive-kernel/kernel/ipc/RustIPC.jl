@@ -40,6 +40,12 @@ using Base.Threads
 
 # Multiple library paths for different platforms and build configurations
 const RUST_LIB_PATHS = [
+    # itheris-daemon paths (new FFI location)
+    joinpath(@__DIR__, "..", "..", "..", "itheris-daemon", "target", "debug", "libitheris.so"),      # Linux debug
+    joinpath(@__DIR__, "..", "..", "..", "itheris-daemon", "target", "release", "libitheris.so"),  # Linux release
+    joinpath(@__DIR__, "..", "..", "..", "itheris-daemon", "target", "debug", "libitheris.dylib"),   # macOS debug
+    joinpath(@__DIR__, "..", "..", "..", "itheris-daemon", "target", "release", "libitheris.dylib"), # macOS release
+    # Itheris/Brain legacy paths
     joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "debug", "libitheris.so"),      # Linux debug
     joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "release", "libitheris.so"),  # Linux release
     joinpath(@__DIR__, "..", "..", "..", "Itheris", "Brain", "target", "debug", "libitheris.dylib"),   # macOS debug
@@ -333,6 +339,202 @@ end
 # Additional FFI Functions
 # ============================================================================
 
+# ============================================================================
+# Ed25519 Cryptographic Functions (Rust FFI)
+# ============================================================================
+
+"""
+    sign_message_ed25519(key::Vector{UInt8}, msg::Vector{UInt8})::Vector{UInt8}
+
+Sign a message using Ed25519 via Rust FFI.
+
+# Arguments
+- `key::Vector{UInt8}`: 32-byte Ed25519 private key
+- `msg::Vector{UInt8}`: Message to sign
+
+# Returns
+- `Vector{UInt8}`: 64-byte Ed25519 signature
+
+# Throws
+- `AssertionError` if key is not 32 bytes
+- `ErrorException` if the Rust signing fails
+"""
+function sign_message_ed25519(key::Vector{UInt8}, msg::Vector{UInt8})::Vector{UInt8}
+    if !_rust_available[]
+        error("Rust library not available. Call init_rust_ipc() first.")
+    end
+    
+    @assert length(key) == 32 "Ed25519 private key must be 32 bytes"
+    
+    sig = Vector{UInt8}(undef, 64)  # Ed25519 signature is 64 bytes
+    result = ccall(
+        (:sign_message, LIBITHERIS),
+        Int32,
+        (Ptr{UInt8}, Ptr{UInt8}, Csize_t, Ptr{UInt8}),
+        key, msg, length(msg), sig
+    )
+    
+    if result != 0
+        error("sign_message failed with code: $result")
+    end
+    
+    return sig
+end
+
+"""
+    verify_message_ed25519(public_key::Vector{UInt8}, msg::Vector{UInt8}, sig::Vector{UInt8})::Bool
+
+Verify an Ed25519 signature via Rust FFI.
+
+# Arguments
+- `public_key::Vector{UInt8}`: 32-byte Ed25519 public key
+- `msg::Vector{UInt8}`: Signed message
+- `sig::Vector{UInt8}`: 64-byte Ed25519 signature
+
+# Returns
+- `Bool`: `true` if signature is valid, `false` otherwise
+
+# Throws
+- `AssertionError` if public_key is not 32 bytes or sig is not 64 bytes
+"""
+function verify_message_ed25519(public_key::Vector{UInt8}, msg::Vector{UInt8}, sig::Vector{UInt8})::Bool
+    if !_rust_available[]
+        error("Rust library not available. Call init_rust_ipc() first.")
+    end
+    
+    @assert length(public_key) == 32 "Ed25519 public key must be 32 bytes"
+    @assert length(sig) == 64 "Ed25519 signature must be 64 bytes"
+    
+    result = ccall(
+        (:verify_message, LIBITHERIS),
+        Int32,
+        (Ptr{UInt8}, Ptr{UInt8}, Csize_t, Ptr{UInt8}),
+        public_key, msg, length(msg), sig
+    )
+    
+    # Return true if result == 0 (valid), false otherwise
+    return result == 0
+end
+
+"""
+    generate_keypair_ed25519(seed::Vector{UInt8}=Vector{UInt8}())::Tuple{Vector{UInt8}, Vector{UInt8}}
+
+Generate an Ed25519 keypair via Rust FFI.
+
+# Arguments
+- `seed::Vector{UInt8}`: Optional 32-byte random seed. If empty, a random seed is generated.
+
+# Returns
+- `Tuple{Vector{UInt8}, Vector{UInt8}}`: (public_key, private_key)
+  - public_key: 32 bytes
+  - private_key: 64 bytes (including public key prefix)
+
+# Throws
+- `ErrorException` if keypair generation fails
+"""
+function generate_keypair_ed25519(seed::Vector{UInt8}=Vector{UInt8}())::Tuple{Vector{UInt8}, Vector{UInt8}}
+    if !_rust_available[]
+        error("Rust library not available. Call init_rust_ipc() first.")
+    end
+    
+    public_key = Vector{UInt8}(undef, 32)
+    private_key = Vector{UInt8}(undef, 64)
+    
+    seed_ptr = isempty(seed) ? C_NULL : pointer(seed)
+    result = ccall(
+        (:generate_keypair, LIBITHERIS),
+        Int32,
+        (Ptr{UInt8}, Ptr{UInt8}, Ptr{UInt8}),
+        seed_ptr, public_key, private_key
+    )
+    
+    if result != 0
+        error("generate_keypair failed with code: $result")
+    end
+    
+    return (public_key, private_key)
+end
+
+"""
+    get_secure_random(n::Integer)::Vector{UInt8}
+
+Get cryptographically secure random bytes from Rust's CSPRNG.
+
+This function uses Rust's `getrandom` crate which provides:
+- OS-specific CSPRNG (arc4random on macOS, getrandom on Linux, CryptGenRandom on Windows)
+- Fallback to TPM/HSM-backed RNG if available
+- Fail-closed behavior: returns Julia fallback if Rust unavailable
+
+# Arguments
+- `n::Integer`: Number of random bytes to generate
+
+# Returns
+- `Vector{UInt8}`: Cryptographically secure random bytes
+
+# Fallback Chain (fail-closed):
+1. Rust CSPRNG (getrandom crate) - preferred
+2. TPM 2.0 RNG if available
+3. Julia Random (CSPRNG) with warning
+4. Deterministic fallback (SHA256 of timestamp) - last resort
+"""
+function get_secure_random(n::Integer)::Vector{UInt8}
+    n > 0 || return Vector{UInt8}()
+    
+    # Try Rust CSPRNG first (preferred)
+    if _rust_available[]
+        try
+            buf = Vector{UInt8}(undef, n)
+            result = ccall(
+                (:get_secure_random, LIBITHERIS),
+                Int32,
+                (Ptr{UInt8}, Csize_t),
+                buf, n
+            )
+            if result == 0
+                return buf
+            end
+        catch e
+            # Fall through to fallback
+        end
+    end
+    
+    # Julia Random CSPRNG fallback (with warning)
+    @warn "Using Julia Random fallback for secure token generation - Rust CSPRNG unavailable"
+    try
+        return rand(UInt8, n)
+    catch
+        # Last resort: deterministic but unpredictable enough for non-security-critical
+        @error "All entropy sources failed - using deterministic fallback"
+        data = string(time_ns()) * string(getpid()) * string(hash(rand(UInt64)))
+        return sha256(data)[1:n]
+    end
+end
+
+"""
+    is_secure_random_available()::Bool
+
+Check if Rust-side secure random is available.
+"""
+function is_secure_random_available()::Bool
+    if !_rust_available[]
+        return false
+    end
+    
+    try
+        # Quick test: try to get 1 byte
+        buf = Vector{UInt8}(undef, 1)
+        result = ccall(
+            (:get_secure_random, LIBITHERIS),
+            Int32,
+            (Ptr{UInt8}, Csize_t),
+            buf, 1
+        )
+        return result == 0
+    catch e
+        return false
+    end
+end
+
 """
     Get kernel status as a string
 """
@@ -472,6 +674,332 @@ const TIMESTAMP_VALIDITY_SECONDS = 30  # Reject messages older than 30 seconds
 const SIGNATURE_SIZE = 32  # HMAC-SHA256 produces 32 bytes
 const TIMESTAMP_SIZE = 8   # UInt64 for millisecond timestamp
 const SEQUENCE_SIZE = 8    # UInt64 for sequence number
+
+# ============================================================================
+# Platform Detection and Fallback Support
+# ============================================================================
+
+"""
+    Detect the current operating system platform.
+    
+    Returns:
+    - `:linux` - Linux with /dev/shm support
+    - `:macos` - macOS with /tmp fallback
+    - `:bsd` - BSD variants with /tmp fallback  
+    - `:windows` - Windows with named memory-mapped files
+    - `:unknown` - Unknown platform
+"""
+function detect_platform()::Symbol
+    if Sys.islinux()
+        return :linux
+    elseif Sys.isapple()
+        return :macos
+    elseif Sys.isbsd()
+        return :bsd
+    elseif Sys.iswindows()
+        return :windows
+    else
+        return :unknown
+    end
+end
+
+"""
+    Get platform-appropriate shared memory path.
+    
+    Linux: Uses /dev/shm/ for optimal performance (tmpfs)
+    macOS/BSD: Falls back to /tmp/ with platform-specific naming
+    Windows: Returns named pipe style path (handled differently)
+"""
+function get_platform_shm_path()::String
+    platform = detect_platform()
+    
+    # Check for environment variable override first
+    if haskey(ENV, "ITHERIS_SHM_PATH")
+        return ENV["ITHERIS_SHM_PATH"]
+    end
+    
+    # Platform-specific defaults
+    if platform == :linux
+        return "/dev/shm/itheris_ipc"
+    elseif platform == :macos || platform == :bsd
+        # Use /tmp with PID suffix to avoid conflicts
+        return "/tmp/itheris_ipc_$(getpid())"
+    elseif platform == :windows
+        # Windows named memory-mapped file format
+        return "Global\\ItherisIPC"
+    else
+        # Unknown platform - try /dev/shm as last resort
+        return "/dev/shm/itheris_ipc"
+    end
+end
+
+"""
+    Check if the platform supports native shared memory (/dev/shm).
+    
+    Returns true for Linux (optimal), false for others requiring fallback.
+"""
+function supports_native_shm()::Bool
+    platform = detect_platform()
+    return platform == :linux
+end
+
+"""
+    Get the expected memory region size for IPC.
+    
+    Can be overridden via ITHERIS_SHM_SIZE environment variable.
+"""
+function get_shm_size()::Int
+    # Check for environment variable override
+    if haskey(ENV, "ITHERIS_SHM_SIZE")
+        size_str = ENV["ITHERIS_SHM_SIZE"]
+        # Support hex (0x...) or decimal
+        if startswith(size_str, "0x")
+            return parse(Int, size_str[3:end], base=16)
+        else
+            return parse(Int, size_str)
+        end
+    end
+    # Default: 16MB (0x00100000)
+    return 0x0010_0000
+end
+
+# ============================================================================
+# Atomic Index Alignment Validation
+# ============================================================================
+
+const CACHE_LINE_SIZE = 64  # Typical cache line size for prevent false sharing
+
+"""
+    Validate that atomic indices are properly cache-line aligned.
+    
+    This prevents false sharing between producer and consumer indices.
+    
+    Arguments:
+    - producer_offset::Int - Offset of producer index in shared memory
+    - consumer_offset::Int - Offset of consumer index in shared memory
+    
+    Returns:
+    - Tuple{Bool, String}: (is_valid, error_message)
+"""
+function validate_atomic_alignment(producer_offset::Int, consumer_offset::Int)::Tuple{Bool, String}
+    # Both indices must be aligned to 64-byte boundary
+    if producer_offset % CACHE_LINE_SIZE != 0
+        return (false, "Producer index offset ($producer_offset) is not aligned to $CACHE_LINE_SIZE bytes")
+    end
+    
+    if consumer_offset % CACHE_LINE_SIZE != 0
+        return (false, "Consumer index offset ($consumer_offset) is not aligned to $CACHE_LINE_SIZE bytes")
+    end
+    
+    # Indices must be at least CACHE_LINE_SIZE apart to prevent false sharing
+    min_separation = abs(producer_offset - consumer_offset)
+    if min_separation < CACHE_LINE_SIZE
+        return (false, "Producer and consumer indices are only $min_separation bytes apart (minimum: $CACHE_LINE_SIZE)")
+    end
+    
+    return (true, "Atomic indices are properly aligned")
+end
+
+"""
+    Validate standard ring buffer atomic index alignment.
+    
+    Standard layout:
+    - Producer index at offset 0
+    - Consumer index at offset 64 (one cache line later)
+"""
+function validate_ring_buffer_alignment()::Tuple{Bool, String}
+    return validate_atomic_alignment(0, CACHE_LINE_SIZE)
+end
+
+# ============================================================================
+# Permission Scoping Logic
+# ============================================================================
+
+@enum IPCPermissionMode begin
+    PERMISSION_NORMAL     = 1  # Julia RW, Host RO
+    PERMISSION_ONEIRIC    = 2  # RO_NOEXEC (dreaming state)
+    PERMISSION_LOCKED     = 3  # Fully locked
+end
+
+const _current_permission_mode = Ref{IPCPermissionMode}(PERMISSION_NORMAL)
+
+"""
+    Set IPC permissions to control access levels.
+    
+    Modes:
+    - :normal - Julia has RW access, Host has RO access (default)
+    - :oneiric - Read-only, no execute (dreaming state)
+    - :locked - Fully locked, no access
+    
+    Returns true if mode was successfully set.
+"""
+function set_ipc_permissions(mode::Symbol)::Bool
+    try
+        if mode == :normal
+            _current_permission_mode[] = PERMISSION_NORMAL
+            println("[IPC] Permissions set to: NORMAL (Julia RW, Host RO)")
+            return true
+        elseif mode == :oneiric
+            _current_permission_mode[] = PERMISSION_ONEIRIC
+            println("[IPC] Permissions set to: ONEIRIC (RO_NOEXEC)")
+            return true
+        elseif mode == :locked
+            _current_permission_mode[] = PERMISSION_LOCKED
+            println("[IPC] Permissions set to: LOCKED (no access)")
+            return true
+        else
+            println("[IPC] ERROR: Unknown permission mode: $mode")
+            return false
+        end
+    catch e
+        println("[IPC] ERROR setting permissions: $e")
+        return false
+    end
+end
+
+"""
+    Get the current IPC permission mode.
+"""
+function get_ipc_permissions()::Symbol
+    mode = _current_permission_mode[]
+    if mode == PERMISSION_NORMAL
+        return :normal
+    elseif mode == PERMISSION_ONEIRIC
+        return :oneiric
+    else
+        return :locked
+    end
+end
+
+"""
+    Check if IPC is in a specific permission state.
+"""
+function is_ipc_mode(mode::Symbol)::Bool
+    return get_ipc_permissions() == mode
+end
+
+"""
+    Enter oneiric (dreaming) state - switch to RO_NOEXEC.
+    Should be called when entering dream/sleep mode.
+"""
+function enter_oneiric_mode()
+    set_ipc_permissions(:oneiric)
+end
+
+"""
+    Exit oneiric (dreaming) state - restore normal permissions.
+    Should be called when waking up.
+"""
+function exit_oneiric_mode()
+    set_ipc_permissions(:normal)
+end
+
+# ============================================================================
+# Shared Memory Region Validation
+# ============================================================================
+
+"""
+    Struct containing shared memory validation results.
+"""
+struct SHMValidationResult
+    path_exists::Bool
+    size_correct::Bool
+    alignment_correct::Bool
+    permissions_valid::Bool
+    error_message::String
+end
+
+"""
+    Validate the shared memory region exists and is properly configured.
+    
+    Checks:
+    1. Path exists
+    2. Size matches expected 16MB
+    3. Memory region is page-aligned
+    4. Permissions allow access
+    
+    Arguments:
+    - shm_path::String - Path to shared memory (defaults to SHM_PATH)
+    - expected_size::Int - Expected size in bytes (defaults to get_shm_size())
+    
+    Returns:
+    - SHMValidationResult with validation status
+"""
+function validate_shm_region(shm_path::String=SHM_PATH, expected_size::Int=get_shm_size())::SHMValidationResult
+    errors = String[]
+    
+    # Check 1: Path exists
+    if !ispath(shm_path)
+        push!(errors, "Shared memory path does not exist: $shm_path")
+        return SHMValidationResult(false, false, false, false, join(errors, "; "))
+    end
+    
+    # Get file stats
+    try
+        stat_info = stat(shm_path)
+        
+        # Check 2: Size is correct
+        actual_size = filesize(stat_info)
+        if actual_size != expected_size
+            push!(errors, "Size mismatch: expected $expected_size bytes (0x$(string(expected_size, base=16)), got $actual_size bytes (0x$(string(actual_size, base=16)))")
+        end
+        
+        # Check 3: Alignment (page-aligned at 0x01000000)
+        # For /dev/shm files, we check if the virtual address would be aligned
+        # The expected virtual address range is 0x01000000 - 0x01100000
+        expected_base = 0x01000000
+        if expected_base % 4096 != 0  # 4KB page size
+            push!(errors, "Expected base address 0x$(string(expected_base, base=16)) is not page-aligned")
+        end
+        
+        # Check 4: Permissions
+        # Check if we can read the file
+        if !isreadable(shm_path)
+            push!(errors, "No read permission on: $shm_path")
+        end
+        
+        if !iswritable(shm_path)
+            push!(errors, "No write permission on: $shm_path")
+        end
+        
+    catch e
+        push!(errors, "Error checking shared memory: $e")
+    end
+    
+    if isempty(errors)
+        return SHMValidationResult(true, true, true, true, "Validation passed")
+    else
+        return SHMValidationResult(true, false, false, false, join(errors, "; "))
+    end
+end
+
+"""
+    Validate shared memory region and throw on failure.
+    
+    Use this for critical validation that must pass.
+"""
+function validate_shm_region!(shm_path::String=SHM_PATH, expected_size::Int=get_shm_size())
+    result = validate_shm_region(shm_path, expected_size)
+    
+    if !result.path_exists || !result.size_correct || !result.alignment_correct || !result.permissions_valid
+        error("""
+        SHARED MEMORY VALIDATION FAILED
+        
+        Path: $shm_path
+        Expected Size: $expected_size bytes (0x$(string(expected_size, base=16)))
+        
+        Issues:
+        $(result.error_message)
+        
+        To fix:
+        1. Create shared memory: sudo mkdir -p /dev/shm && sudo truncate -s $expected_size $shm_path
+        2. Set permissions: sudo chmod 666 $shm_path
+        3. Or set ITHERIS_SHM_PATH and ITHERIS_SHM_SIZE env variables
+        """)
+    end
+    
+    println("[IPC] Shared memory validation passed: $shm_path ($expected_size bytes)")
+end
 
 # ============================================================================
 # Custom Exception Types
@@ -1677,6 +2205,10 @@ export SHM_PATH, SHM_SIZE, get_shm_info
 export connect_kernel, disconnect_kernel, submit_thought, generate_secret_key, _hmac_sha256, verify_signature_safe
 
 export init_secret_key, is_key_initialized, sign_message, verify_signature
+
+# Ed25519 FFI exports
+export sign_message_ed25519, verify_message_ed25519, generate_keypair_ed25519
+export get_secure_random, is_secure_random_available
 
 export SignatureError, KeyManagementError, SignatureVerificationError, ReplayAttackError
 

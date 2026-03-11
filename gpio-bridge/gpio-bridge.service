@@ -1,0 +1,34 @@
+[Unit]
+Description=ITHERIS GPIO Bridge for Raspberry Pi CM4
+Documentation=https://github.com/itheris/gpio-bridge
+After=multi-user.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/itheris/gpio-bridge
+ExecStart=/usr/bin/python3 /optpio-bridge/main/itheris/g.py
+Restart=on-failure
+RestartSec=5
+
+# Environment variables
+Environment=PYTHONUNBUFFERED=1
+
+# Resource limits (if needed)
+# LimitNOFILE=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gpio-bridge
+
+# Graceful shutdown timeout
+TimeoutStopSec=10
+
+# Allow core dumps for debugging
+LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target

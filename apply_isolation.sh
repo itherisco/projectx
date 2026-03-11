@@ -10,7 +10,9 @@
 # Usage: ./apply_isolation.sh [julia_pid]
 # =============================================================================
 
-set -e
+# Don't exit on error - we want to continue as far as possible
+# But we track errors for the exit code
+ERRORS=0
 
 # Configuration
 CGROUP_NAME="julia_brain_vm"
@@ -35,6 +37,7 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+    ERRORS=$((ERRORS + 1))
 }
 
 # Check if running as root
@@ -45,16 +48,47 @@ check_root() {
     fi
 }
 
+# Check if we can create cgroups (requires root or delegatable cgroup)
+check_cgroup_writable() {
+    local test_path="/sys/fs/cgroup/cgroup.test.$$"
+    if mkdir "${test_path}" 2>/dev/null; then
+        rmdir "${test_path}" 2>/dev/null
+        return 0
+    fi
+    return 1
+}
+
 # =============================================================================
 # LAYER 1: CGROUP RESOURCE LIMITS
 # =============================================================================
 setup_cgroup() {
     log_info "Setting up cgroup for metabolic budget enforcement..."
     
+    # Check if we can create cgroups
+    if ! check_cgroup_writable; then
+        log_warn "Cannot create cgroups - not running as root or cgroup not writable"
+        log_warn "In container environments, ensure cgroups are delegated: --cgroupns=host"
+        log_warn "Falling back to using user.slice as base path"
+        
+        # Try to use user.slice as an alternative base
+        if [[ -w "/sys/fs/cgroup/user.slice" ]]; then
+            CGROUP_PATH="/sys/fs/cgroup/user.slice/${CGROUP_NAME}"
+            log_info "Attempting to use ${CGROUP_PATH}"
+        else
+            log_error "Cannot write to any cgroup location. Skipping cgroup setup."
+            return 1
+        fi
+    fi
+    
     # Create cgroup directory
     if [[ ! -d "${CGROUP_PATH}" ]]; then
-        mkdir -p "${CGROUP_PATH}"
-        log_info "Created cgroup at ${CGROUP_PATH}"
+        if mkdir -p "${CGROUP_PATH}" 2>/dev/null; then
+            log_info "Created cgroup at ${CGROUP_PATH}"
+        else
+            log_error "Failed to create cgroup at ${CGROUP_PATH}"
+            log_error "Check permissions or run as root"
+            return 1
+        fi
     else
         log_info "Cgroup already exists at ${CGROUP_PATH}"
     fi
@@ -63,25 +97,38 @@ setup_cgroup() {
     if [[ -f "${CGROUP_PATH}/cpu.max" ]]; then
         # Format: "value period" where value is in microseconds
         CPU_VALUE=$(echo "${CPU_LIMIT} * 10000" | bc | cut -d. -f1)
-        echo "${CPU_VALUE} 100000" > "${CGROUP_PATH}/cpu.max"
-        log_info "CPU limit set to ${CPU_LIMIT}%"
+        if echo "${CPU_VALUE} 100000" > "${CGROUP_PATH}/cpu.max" 2>/dev/null; then
+            log_info "CPU limit set to ${CPU_LIMIT}%"
+        else
+            log_warn "Could not set CPU limit (may require root)"
+        fi
     fi
     
     # Set memory limits
     if [[ -f "${CGROUP_PATH}/memory.max" ]]; then
-        echo "${MEMORY_LIMIT}" > "${CGROUP_PATH}/memory.max"
-        log_info "Memory limit set to ${MEMORY_LIMIT}"
+        if echo "${MEMORY_LIMIT}" > "${CGROUP_PATH}/memory.max" 2>/dev/null; then
+            log_info "Memory limit set to ${MEMORY_LIMIT}"
+        else
+            log_warn "Could not set memory limit (may require root)"
+        fi
     fi
     
     # Set pids limit
     if [[ -f "${CGROUP_PATH}/pids.max" ]]; then
-        echo "${PIDS_LIMIT}" > "${CGROUP_PATH}/pids.max"
-        log_info "PIDs limit set to ${PIDS_LIMIT}"
+        if echo "${PIDS_LIMIT}" > "${CGROUP_PATH}/pids.max" 2>/dev/null; then
+            log_info "PIDs limit set to ${PIDS_LIMIT}"
+        else
+            log_warn "Could not set PIDs limit (may require root)"
+        fi
     fi
     
     # Enable OOM kill for the entire group
     if [[ -f "${CGROUP_PATH}/memory.oom.group" ]]; then
-        echo "1" > "${CGROUP_PATH}/memory.oom.group"
+        if echo "1" > "${CGROUP_PATH}/memory.oom.group" 2>/dev/null; then
+            log_info "OOM group enabled"
+        else
+            log_warn "Could not enable OOM group (may require root)"
+        fi
     fi
     
     log_info "Cgroup setup complete"
@@ -203,13 +250,13 @@ main() {
     check_root
     
     # Setup all layers
-    setup_cgroup
+    setup_cgroup || true
     setup_seccomp
     setup_memory_guards
     
     # If PID provided, add to cgroup
     if [[ $# -gt 0 ]]; then
-        add_to_cgroup "$1"
+        add_to_cgroup "$1" || true
     fi
     
     echo ""

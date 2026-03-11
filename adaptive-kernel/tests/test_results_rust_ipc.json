@@ -5,12 +5,12 @@
         "broken": 0,
         "failed": 0
     },
-    "timestamp": "2026-03-06T01:33:40.423",
+    "timestamp": "2026-03-10T20:50:56.210",
     "tests": [
         {
             "name": "Library path type",
             "passed": true,
-            "details": "path = /home/user/projectx/adaptive-kernel/kernel/ipc/../../../Itheris/Brain/target/debug/libitheris.so",
+            "details": "path = /home/user/projectx/adaptive-kernel/kernel/ipc/../../../itheris-daemon/target/debug/libitheris.so",
             "broken": false
         },
         {

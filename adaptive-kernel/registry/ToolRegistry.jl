@@ -6,7 +6,7 @@ struct ToolMetadata
     name::String
     source::Symbol  # :native or :openclaw
     risk_level::Symbol  # :read_only, :low, :medium, :high, :critical
-    execution_mode::Symbol  # :julia or :docker
+    execution_mode::Symbol  # :julia, :docker, or :sandboxed
     endpoint::Union{String, Nothing}
     description::String
     parameters::Vector{String}  # parameter names
@@ -70,4 +70,39 @@ Check if a tool is registered and available
 """
 function is_tool_available(registry::ToolRegistry, tool_id::String)::Bool
     return haskey(registry.tool_metadata, tool_id)
+end
+
+# ============================================================================
+# CODE INTERPRETER CAPABILITY REGISTRATION
+# ============================================================================
+
+"""
+    register_code_interpreter!(registry::ToolRegistry)
+    
+Register the code interpreter capability with sandbox execution mode.
+This is the primary capability for safe code execution in the adaptive kernel.
+"""
+function register_code_interpreter!(registry::ToolRegistry)
+    metadata = ToolMetadata(
+        "capability_code_interpreter",
+        "Code Interpreter",
+        :native,
+        :critical,
+        :sandboxed,
+        nothing,
+        "Isolated code execution via ExecutionSandbox with WDT protection",
+        ["code", "language", "timeout", "memory_limit"]
+    )
+    
+    register_native_tool!(registry, metadata, :code_interpreter)
+    @info "Registered code interpreter capability with sandbox execution"
+end
+
+"""
+    initialize_default_capabilities!(registry::ToolRegistry)
+    
+Initialize all default capabilities for the adaptive kernel.
+"""
+function initialize_default_capabilities!(registry::ToolRegistry)
+    register_code_interpreter!(registry)
 end
