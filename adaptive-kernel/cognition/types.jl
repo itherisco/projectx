@@ -1,4 +1,4 @@
-# cognition/types.jl - Type definitions for Sovereign Cognition system
+# cognition/types.jl - Type definitions for Operational Cognition system
 
 module CognitionTypes
 
@@ -16,6 +16,7 @@ export
     
     # Agent state
     AgentState,
+    AgentStatus,
     AgentMetrics,
     
     # Memory types
@@ -45,90 +46,6 @@ export
 # AGENT TYPES
 # ============================================================================
 
-"""
-    CognitiveAgent - Base type for all cognitive agents
-"""
-abstract type CognitiveAgent end
-
-"""
-    ExecutorAgent - Converts approved decisions into Kernel-compliant actions
-"""
-struct ExecutorAgent <: CognitiveAgent
-    id::String
-    name::String
-    capabilities::Vector{String}
-    state::AgentState
-    historical_accuracy::Float64
-    
-    ExecutorAgent(id::String = "executor_001") = new(
-        id, "Executor", 
-        ["execute_action", "validate_action", "monitor_execution"],
-        AgentState(:idle), 0.75
-    )
-end
-
-"""
-    StrategistAgent - Long-horizon planning, identifies leverage and asymmetries
-"""
-struct StrategistAgent <: CognitiveAgent
-    id::String
-    name::String
-    planning_horizon::Int
-    state::AgentState
-    historical_accuracy::Float64
-    identified_leverage::Vector{String}
-    
-    StrategistAgent(id::String = "strategist_001") = new(
-        id, "Strategist",
-        10,  # 10-step planning horizon
-        AgentState(:idle), 0.65,
-        String[]
-    )
-end
-
-"""
-    AuditorAgent - Adversarial thinker, detects risks and blind spots
-"""
-struct AuditorAgent <: CognitiveAgent
-    id::String
-    name::String
-    risk_threshold::Float64
-    state::AgentState
-    historical_accuracy::Float64
-    detected_risks::Vector{String}
-    veto_count::Int
-    
-    AuditorAgent(id::String = "auditor_001") = new(
-        id, "Auditor",
-        0.5,  # 50% risk threshold triggers veto
-        AgentState(:idle), 0.70,
-        String[], 0
-    )
-end
-
-"""
-    EvolutionEngineAgent - Mutates prompts, heuristics, scoring functions
-"""
-struct EvolutionEngineAgent <: CognitiveAgent
-    id::String
-    name::String
-    mutation_rate::Float64
-    state::AgentState
-    proposed_changes::Vector{Dict{String, Any}}
-    accepted_changes::Int
-    
-    EvolutionEngineAgent(id::String = "evolution_001") = new(
-        id, "EvolutionEngine",
-        0.1,  # 10% mutation rate
-        AgentState(:idle),
-        Dict{String, Any}[], 0
-    )
-end
-
-# ============================================================================
-# AGENT STATE & METRICS
-# ============================================================================
-
 @enum AgentStatus begin
     AGENT_IDLE
     AGENT_THINKING
@@ -148,6 +65,90 @@ mutable struct AgentState
     
     AgentState(status::AgentStatus = AGENT_IDLE) = new(status, nothing, nothing, nothing)
 end
+
+"""
+    CognitiveAgent - Base type for all cognitive agents
+"""
+abstract type CognitiveAgent end
+
+"""
+    ExecutorAgent - Converts approved decisions into Kernel-compliant actions
+"""
+struct ExecutorAgent <: CognitiveAgent
+    id::String
+    name::String
+    capabilities::Vector{String}
+    state::AgentState
+    historical_accuracy::Float64
+    
+    ExecutorAgent(id::String = "executor_001") = new(
+        id, "Executor", 
+        ["execute_action", "validate_action", "monitor_execution"],
+        AgentState(AGENT_IDLE), 0.75
+    )
+end
+
+"""
+    StrategistAgent - Long-horizon planning, identifies leverage and asymmetries
+"""
+struct StrategistAgent <: CognitiveAgent
+    id::String
+    name::String
+    planning_horizon::Int
+    state::AgentState
+    historical_accuracy::Float64
+    identified_leverage::Vector{String}
+    
+    StrategistAgent(id::String = "strategist_001") = new(
+        id, "Strategist",
+        10,  # 10-step planning horizon
+        AgentState(AGENT_IDLE), 0.65,
+        String[]
+    )
+end
+
+"""
+    AuditorAgent - Adversarial thinker, detects risks and blind spots
+"""
+struct AuditorAgent <: CognitiveAgent
+    id::String
+    name::String
+    risk_threshold::Float64
+    state::AgentState
+    historical_accuracy::Float64
+    detected_risks::Vector{String}
+    veto_count::Int
+    
+    AuditorAgent(id::String = "auditor_001") = new(
+        id, "Auditor",
+        0.5,  # 50% risk threshold triggers veto
+        AgentState(AGENT_IDLE), 0.70,
+        String[], 0
+    )
+end
+
+"""
+    EvolutionEngineAgent - Mutates prompts, heuristics, scoring functions
+"""
+struct EvolutionEngineAgent <: CognitiveAgent
+    id::String
+    name::String
+    mutation_rate::Float64
+    state::AgentState
+    proposed_changes::Vector{Dict{String, Any}}
+    accepted_changes::Int
+    
+    EvolutionEngineAgent(id::String = "evolution_001") = new(
+        id, "EvolutionEngine",
+        0.1,  # 10% mutation rate
+        AgentState(AGENT_IDLE),
+        Dict{String, Any}[], 0
+    )
+end
+
+# ============================================================================
+# AGENT STATE & METRICS
+# ============================================================================
 
 """
     AgentMetrics - Performance metrics for an agent

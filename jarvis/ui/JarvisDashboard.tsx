@@ -19,6 +19,38 @@ import {
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ============================================================================
+// TYPES - Dual-Process Cognitive Architecture
+// ============================================================================
+
+/** System 1 (Reflex) Status */
+interface System1Status {
+  isActive: boolean;
+  state: 'idle' | 'classifying' | 'executing' | 'waiting';
+  lastConfidence: number;
+  lastClassification: string | null;
+  reflexCount: number;
+  wakeupCount: number;
+  avgClassifyLatencyMs: number;
+  mlAvailable: boolean;
+}
+
+/** Emotional Context from voice analysis */
+interface EmotionalContext {
+  sentiment: number;    // -1 to 1
+  arousal: number;      // 0 to 1
+  dominance: number;    // 0 to 1
+  source: 'voice_mfcc' | 'text' | 'default';
+}
+
+/** System 2 (Reasoning) Status */
+interface System2Status {
+  isReasoning: boolean;
+  currentThought: string | null;
+  confidence: number;
+  emotionalAlignment: number;
+}
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -65,6 +97,10 @@ interface JarvisState {
   executions: KernelExecution[];
   messages: ChatMessage[];
   currentInput: string;
+  // Dual-Process Cognitive Status
+  system1Status: System1Status;
+  system2Status: System2Status;
+  emotionalContext: EmotionalContext | null;
 }
 
 // ============================================================================
@@ -135,6 +171,24 @@ export const useJarvis = () => {
     executions: mockExecutions,
     messages: mockMessages,
     currentInput: '',
+    // Dual-Process Cognitive Status - initialized with default values
+    system1Status: {
+      isActive: false,
+      state: 'idle' as const,
+      lastConfidence: 0,
+      lastClassification: null,
+      reflexCount: 0,
+      wakeupCount: 0,
+      avgClassifyLatencyMs: 0,
+      mlAvailable: false,
+    },
+    system2Status: {
+      isReasoning: false,
+      currentThought: null,
+      confidence: 0,
+      emotionalAlignment: 0,
+    },
+    emotionalContext: null,
   });
 
   // Simulate WebSocket updates
@@ -198,8 +252,12 @@ export const useJarvis = () => {
         case '/status':
           return { type: 'info', message: `Connected: ${state.isConnected}, Trust: ${state.trustLevel}%` };
         case '/dream':
-          setState(prev => ({ ...prev, isDreaming: !prev.isDreaming }));
-          return { type: 'success', message: `Dream cycle ${state.isDreaming ? 'stopped' : 'started'}` };
+          setState(prev => { 
+            const newDreaming = !prev.isDreaming;
+            return { ...prev, isDreaming: newDreaming }; 
+          });
+          // Note: Message reflects that toggle will happen, not current state
+          return { type: 'success', message: 'Dream cycle toggled' };
         case '/clean-memory':
           setState(prev => ({ ...prev, executions: [] }));
           return { type: 'success', message: 'Memory cleaned' };
@@ -210,7 +268,7 @@ export const useJarvis = () => {
     
     sendMessage(command);
     return null;
-  }, [state.isConnected, state.trustLevel, state.isDreaming, sendMessage]);
+  }, [state.isConnected, state.trustLevel, sendMessage]);
 
   return {
     state,

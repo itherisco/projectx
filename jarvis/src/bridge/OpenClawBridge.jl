@@ -8,6 +8,7 @@ using JSON
 using Dates
 using UUIDs
 using Logging
+using Base.Threads
 
 export 
     OpenClawConfig,
@@ -21,7 +22,9 @@ export
     test_connection,
     # Safety
     is_tool_allowed,
-    validate_tool_call
+    validate_tool_call,
+    set_kernel_ref!,
+    get_kernel_ref
 
 # Import Jarvis types from parent module
 using ..JarvisTypes
@@ -324,14 +327,32 @@ const CLAW_TOOLS = Dict{String, ClawTool}(
 # KERNEL SAFETY CHECK INTERFACE
 # ============================================================================
 
-# This will be set by the main Brian module
-const KERNEL_REF = Ref{Any}(nothing)
+# Thread-safe kernel reference using ReentrantLock
+const _KERNEL_LOCK = ReentrantLock()
+const _KERNEL_REF = Ref{Any}(nothing)
 
 """
-    set_kernel_ref! - Set reference to the Adaptive Kernel for safety checks
+    set_kernel_ref! - Thread-safe setting of kernel reference
+    
+    # Arguments
+    - kernel::Any: Reference to the Adaptive Kernel
 """
 function set_kernel_ref!(kernel::Any)
-    KERNEL_REF[] = kernel
+    lock(_KERNEL_LOCK) do
+        _KERNEL_REF[] = kernel
+    end
+end
+
+"""
+    get_kernel_ref - Thread-safe getting of kernel reference
+    
+    # Returns
+    - Any: The kernel reference or nothing if not set
+"""
+function get_kernel_ref()
+    lock(_KERNEL_LOCK) do
+        return _KERNEL_REF[]
+    end
 end
 
 """

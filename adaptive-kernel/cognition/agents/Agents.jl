@@ -21,6 +21,11 @@ export
     AuditorAgent,
     create_auditor,
     detect_risks,
+    apply_power_modifier,
+    detect_narrowing_decisions,
+    calculate_power_confidence,
+    update_optionality!,
+    recover_optionality!
     
     # Evolution Engine
     EvolutionEngineAgent,

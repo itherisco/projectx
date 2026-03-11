@@ -1,0 +1,405 @@
+{
+  "$schema": "https://schema.projectx/authorization-pipeline/v1",
+  "version": "1.0.0",
+  "name": "ProjectX (Itherisco) Neuro-Symbolic Cognitive System Authorization Doctrine",
+  "description": "Comprehensive 8-stage authorization pipeline for secure command execution in the ProjectX cognitive system",
+
+  "pipeline": {
+    "stage_1_identity_verification": {
+      "enabled": true,
+      "description": "Verify sender identity through Ed25519 signature validation against whitelist",
+      "timeout_ms": 500,
+      "config": {
+        "algorithm": "Ed25519",
+        "public_key_whitelist": [
+          "7jkZJmPfl80czlZcBSIqNJQaxwmygDY0/zIgplMXWjE="
+        ],
+        "require_signature": true,
+        "reject_unknown_signers": true,
+        "key_rotation_policy": "manual"
+      },
+      "rules": {
+        "min_key_length": 32,
+        "allow_revoked_keys": false,
+        "log_key_fingerprint": true
+      },
+      "error_action": "deny"
+    },
+
+    "stage_2_capability_authorization": {
+      "enabled": true,
+      "description": "Map request to capability registry and verify permission mappings",
+      "timeout_ms": 1000,
+      "config": {
+        "capability_registry_path": "adaptive-kernel/registry/capability_registry.json",
+        "require_explicit_capability": true,
+        "deny_by_default": true,
+        "capability_inheritance": false
+      },
+      "rules": {
+        "allowed_capabilities": [
+          "safe_shell",
+          "safe_http_request",
+          "file_read",
+          "file_write",
+          "file_delete",
+          "observe_filesystem",
+          "observe_processes",
+          "observe_network",
+          "observe_cpu",
+          "git_readonly",
+          "github_operations",
+          "market_data",
+          "write_file",
+          "file_diff",
+          "analyze_logs",
+          "compare_strategies",
+          "estimate_risk",
+          "simulate_outcomes",
+          "task_scheduler",
+          "summarize_state"
+        ],
+        "identity_capability_map": {
+          "system": ["safe_shell", "safe_http_request", "file_read", "file_write", "file_delete", "observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "git_readonly", "github_operations", "market_data", "write_file", "file_diff", "analyze_logs", "compare_strategies", "estimate_risk", "simulate_outcomes", "task_scheduler", "summarize_state"],
+          "operator": ["safe_shell", "safe_http_request", "file_read", "observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "git_readonly", "market_data", "summarize_state"],
+          "readonly": ["file_read", "observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "git_readonly", "market_data", "summarize_state"]
+        }
+      },
+      "capability_overrides": {
+        "safe_shell": {
+          "require_additional_verification": true,
+          "max_execution_time_ms": 30000
+        },
+        "safe_http_request": {
+          "allowed_domains": ["api.example.com", "data.provider.com"],
+          "require_tls": true
+        },
+        "file_write": {
+          "require_path_validation": true,
+          "allow_overwrite": false
+        }
+      },
+      "error_action": "deny"
+    },
+
+    "stage_3_temporal_validation": {
+      "enabled": true,
+      "description": "Validate timestamp freshness, nonce uniqueness, and enforce rate limits",
+      "timeout_ms": 200,
+      "config": {
+        "timestamp_freshness_window_ms": 5000,
+        "require_nonce": true,
+        "nonce_cache_size": 10000,
+        "nonce_ttl_seconds": 300,
+        "enable_rate_limiting": true
+      },
+      "rules": {
+        "max_timestamp_drift_ms": 100,
+        "allow_clock_skew_compensation": false,
+        "rate_limit_window_seconds": 60,
+        "max_requests_per_window": 100,
+        "burst_allowance": 10
+      },
+      "rate_limit_profiles": {
+        "default": {
+          "requests_per_minute": 100,
+          "burst": 10
+        },
+        "safe_shell": {
+          "requests_per_minute": 20,
+          "burst": 3
+        },
+        "safe_http_request": {
+          "requests_per_minute": 50,
+          "burst": 5
+        }
+      },
+      "error_action": "deny"
+    },
+
+    "stage_4_content_sanitization": {
+      "enabled": true,
+      "description": "Validate JSON structure, sanitize command parameters, escape shell metacharacters",
+      "timeout_ms": 500,
+      "config": {
+        "validate_json_structure": true,
+        "require_schema_validation": false,
+        "sanitize_parameters": true,
+        "escape_shell_metacharacters": true,
+        "strip_null_bytes": true,
+        "max_payload_size_bytes": 1048576
+      },
+      "rules": {
+        "allowed_json_types": ["object", "array", "string", "number", "boolean", "null"],
+        "max_nesting_depth": 20,
+        "max_array_length": 1000,
+        "max_string_length": 100000,
+        "forbidden_shell_chars": [";", "|", "&", "$", "`", "(", ")", "{", "}", "[", "]", "<", ">", "\\", "\n", "\r", "\t"],
+        "escape_shell_commands": true,
+        "sanitize_file_paths": true,
+        "validate_utf8": true
+      },
+      "shell_escape_map": {
+        ";": "\\;",
+        "|": "\\|",
+        "&": "\\&",
+        "$": "\\$",
+        "`": "\\`",
+        "(": "\\(",
+        ")": "\\)",
+        "{": "\\{",
+        "}": "\\}",
+        "[": "\\[",
+        "]": "\\]",
+        "<": "\\<",
+        ">": "\\>",
+        "\\": "\\\\"
+      },
+      "error_action": "sanitize"
+    },
+
+    "stage_5_resource_bounds": {
+      "enabled": true,
+      "description": "Check file paths against whitelist, validate resource constraints",
+      "timeout_ms": 300,
+      "config": {
+        "enable_path_whitelist": true,
+        "enable_resource_limits": true,
+        "check_disk_space": true,
+        "enforce_memory_limits": true,
+        "enforce_cpu_limits": true
+      },
+      "rules": {
+        "allowed_directories": [
+          "/workspaces/projectx",
+          "/tmp/projectx",
+          "/var/log/projectx"
+        ],
+        "denied_directories": [
+          "/etc",
+          "/root",
+          "/home/codespace/.ssh",
+          "/home/codespace/.aws",
+          "/home/codespace/.gnupg"
+        ],
+        "max_file_size_mb": 100,
+        "max_memory_mb": 2048,
+        "max_cpu_percent": 80,
+        "max_execution_time_seconds": 300,
+        "min_free_disk_space_mb": 500,
+        "allow_symlinks": false,
+        "allow_absolute_paths": true,
+        "path_traversal_prevention": true
+      },
+      "resource_limits_by_capability": {
+        "safe_shell": {
+          "max_execution_time_seconds": 60,
+          "max_memory_mb": 512,
+          "max_cpu_percent": 50
+        },
+        "file_write": {
+          "max_file_size_mb": 50,
+          "max_files_per_operation": 1
+        },
+        "safe_http_request": {
+          "max_response_size_mb": 10,
+          "timeout_seconds": 30
+        }
+      },
+      "error_action": "deny"
+    },
+
+    "stage_6_autonomy_level_gate": {
+      "enabled": true,
+      "description": "Enforce autonomy level restrictions and human-in-loop requirements",
+      "timeout_ms": 200,
+      "config": {
+        "require_autonomy_level": true,
+        "allow_operator_override": true,
+        "require_human_in_loop": false,
+        "autonomy_levels": {
+          "full_auto": 4,
+          "assisted": 3,
+          "supervised": 2,
+          "manual": 1
+        }
+      },
+      "rules": {
+        "default_autonomy_level": 2,
+        "max_autonomy_without_approval": 2,
+        "critical_operation_requires_human": true,
+        "irreversible_action_requires_human": true,
+        "financial_transaction_requires_human": true,
+        "system_modification_requires_human": true
+      },
+      "autonomy_restrictions": {
+        "level_4_full_auto": {
+          "allowed_capabilities": ["observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "summarize_state", "market_data"],
+          "max_file_size_mb": 1,
+          "max_execution_time_seconds": 10
+        },
+        "level_3_assisted": {
+          "allowed_capabilities": ["safe_shell", "safe_http_request", "file_read", "observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "git_readonly", "market_data", "summarize_state", "analyze_logs"],
+          "max_file_size_mb": 10,
+          "max_execution_time_seconds": 60
+        },
+        "level_2_supervised": {
+          "allowed_capabilities": ["safe_shell", "safe_http_request", "file_read", "file_write", "observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "git_readonly", "github_operations", "market_data", "write_file", "file_diff", "analyze_logs", "compare_strategies", "estimate_risk", "simulate_outcomes", "task_scheduler", "summarize_state"],
+          "max_file_size_mb": 50,
+          "max_execution_time_seconds": 180
+        },
+        "level_1_manual": {
+          "allowed_capabilities": ["safe_shell", "safe_http_request", "file_read", "file_write", "file_delete", "observe_filesystem", "observe_processes", "observe_network", "observe_cpu", "git_readonly", "github_operations", "market_data", "write_file", "file_diff", "analyze_logs", "compare_strategies", "estimate_risk", "simulate_outcomes", "task_scheduler", "summarize_state"],
+          "max_file_size_mb": 100,
+          "max_execution_time_seconds": 300
+        }
+      },
+      "human_in_loop_triggers": [
+        "file_delete",
+        "system_configuration_change",
+        "network_request_to_external_api",
+        "execution_of_user_provided_code",
+        "modification_of_security_settings"
+      ],
+      "error_action": "escalate"
+    },
+
+    "stage_7_audit_trail": {
+      "enabled": true,
+      "description": "Log all authorization decisions, record command intent, store signature and timestamp",
+      "timeout_ms": 100,
+      "config": {
+        "log_all_decisions": true,
+        "log_command_intent": true,
+        "store_signature": true,
+        "store_timestamp": true,
+        "log_level": "info",
+        "audit_log_path": "/var/log/projectx/audit.log"
+      },
+      "rules": {
+        "include_request_payload": true,
+        "include_response": true,
+        "include_execution_time": true,
+        "include_resource_usage": true,
+        "hash_log_entries": true,
+        "log_retention_days": 90,
+        "redact_sensitive_data": true,
+        "log_format": "json"
+      },
+      "audit_fields": [
+        "timestamp",
+        "request_id",
+        "identity",
+        "capability_requested",
+        "capability_granted",
+        "autonomy_level",
+        "decision",
+        "reason",
+        "signature_valid",
+        "execution_time_ms",
+        "resource_usage",
+        "ip_address",
+        "user_agent"
+      ],
+      "sensitive_fields_to_redact": [
+        "password",
+        "secret",
+        "api_key",
+        "token",
+        "private_key",
+        "credential"
+      ],
+      "error_action": "log_only"
+    },
+
+    "stage_8_execution_gate": {
+      "enabled": true,
+      "description": "Final go/no-go decision, capability-specific final checks, pre-execution safety validation",
+      "timeout_ms": 500,
+      "config": {
+        "require_all_stages_passed": true,
+        "allow_partial_failure_recovery": false,
+        "final_safety_check": true,
+        "pre_execution_validation": true,
+        "capability_final_checks": true
+      },
+      "rules": {
+        "all_stages_must_pass": true,
+        "block_on_any_deny": true,
+        "allow_explicit_approval_bypass": false,
+        "require_safety_confirmation": true,
+        "enable_sandbox_mode": true,
+        "sandbox_timeout_seconds": 30
+      },
+      "final_checks": {
+        "verify_no_destructive_operations": true,
+        "verify_resource_availability": true,
+        "verify_capability_availability": true,
+        "verify_operator_availability": true,
+        "verify_system_health": true
+      },
+      "capability_final_validations": {
+        "safe_shell": {
+          "command_whitelist_enabled": true,
+          "allowed_commands": ["ls", "cat", "grep", "find", "echo", "pwd", "date", "whoami", "ps", "df", "du", "head", "tail", "wc", "sort", "uniq", "cut", "awk", "sed"],
+          "require_command_approval": false,
+          "block_dangerous_flags": true
+        },
+        "safe_http_request": {
+          "verify_ssl_certificates": true,
+          "block_mixed_content": true,
+          "max_redirects": 3
+        },
+        "file_write": {
+          "verify_disk_space": true,
+          "create_backup": false,
+          "require_confirmation": false
+        },
+        "github_operations": {
+          "readonly_by_default": true,
+          "require_org_approval": true,
+          "block_destructive": true
+        }
+      },
+      "error_action": "deny"
+    }
+  },
+
+  "global_settings": {
+    "pipeline_timeout_ms": 3500,
+    "fail_fast": false,
+    "continue_on_warning": true,
+    "default_error_action": "deny",
+    "enable_pipeline_metrics": true,
+    "enable_stage_timing": true,
+    "log_pipeline_stages": true,
+    "notify_on_block": true,
+    "emergency_stop_enabled": true,
+    "emergency_stop_key": "CTRL_C_EMERGENCY"
+  },
+
+  "emergency_overrides": {
+    "kill_switch": {
+      "enabled": true,
+      "requires_physical_access": false,
+      "bypass_all_stages": false,
+      "log_override": true
+    },
+    "operator_override": {
+      "enabled": true,
+      "requires_explicit_consent": true,
+      "allow_temporary_escalation": true,
+      "max_override_duration_seconds": 300,
+      "log_override": true
+    }
+  },
+
+  "metadata": {
+    "doctrine_version": "1.0.0",
+    "created_date": "2026-02-20T00:00:00Z",
+    "last_updated": "2026-02-20T02:52:48Z",
+    "author": "ProjectX Security Team",
+    "classification": "CONFIDENTIAL",
+    "requires_review_after_days": 90
+  }
+}

@@ -1,6 +1,28 @@
-# cognition/Cognition.jl - Main Sovereign Cognition Module
-# Phase 2: Self-directing, multi-agent intelligence engine
-
+"""
+    Cognition - Main Operational Cognition Module
+    
+    Phase 2: Self-directing, multi-agent intelligence engine
+    
+    # Submodules
+    - `Attention`: Posner's Model of attention control
+    - `GlobalWorkspace`: Global Workspace Theory (GWT) for consciousness
+    - `CognitiveArchitecture`: Complete cognitive architecture integrating all components
+    - `DecisionSpine`: Decision-making spine with conflict resolution
+    - `Agents`: Multi-agent system (Executor, Strategist, Auditor, Evolution)
+    - `PainFeedback`: Performance feedback and error processing
+    - `RealityIngestion`: External reality signal processing
+    - `Vision`: Visual context processing (Upgrade 4)
+    
+    # Key Types
+    - `CognitiveEngine`: Main orchestration engine
+    - `CognitiveArchitecture`: Full OODA-loop cognitive architecture
+    - `CognitiveCycleState`: State tracking for cognitive cycles
+    
+    # Key Functions
+    - `run_sovereign_cycle`: Execute complete sovereign cognition cycle
+    - `full_cognitive_cycle`: Execute full OODA cognitive loop
+    - `create_cognitive_architecture`: Initialize cognitive architecture
+    """
 module Cognition
 
 using Dates
@@ -11,6 +33,39 @@ using Statistics
 export
     # Types
     CognitionTypes,
+    
+    # Attention (Posner's Model)
+    Attention,
+    AttentionalPriority,
+    AttentionSource,
+    AttentionItem,
+    AttentionSystem,
+    AttentionalControl,
+    create_attention_system,
+    allocate_attention!,
+    shift_attention!,
+    divide_attention,
+    suppress_distraction!,
+    get_current_focus,
+    calculate_attentional_demand,
+    release_attention!,
+    get_attention_status,
+    update_alertness!,
+    
+    # Global Workspace (GWT - Consciousness)
+    GlobalWorkspace,
+    WorkspaceContent,
+    Subscriber,
+    SubscriberPriority,
+    subscribe!,
+    unsubscribe!,
+    broadcast_content,
+    compete_for_consciousness,
+    get_conscious_content,
+    clear_workspace,
+    get_broadcast_history,
+    create_workspace,
+    get_workspace_status,
     
     # Spine
     DecisionSpine,
@@ -39,6 +94,16 @@ export
     RealityIngestion,
     RealitySignal,
     
+    # Vision (Upgrade 4)
+    Vision,
+    VisionProcessor,
+    ScreenContext,
+    init_vision_processor,
+    start_vision_loop,
+    stop_vision_loop,
+    is_user_stuck,
+    should_offer_help,
+    
     # Power
     PowerMetric,
     OptionalityTracker,
@@ -46,11 +111,42 @@ export
     
     # Main orchestration
     CognitiveEngine,
-    run_sovereign_cycle
+    run_sovereign_cycle,
+    
+    # Cognitive Architecture
+    CognitiveArchitecture,
+    CognitiveCycleState,
+    CyclePhase,
+    PHASE_OBSERVE,
+    PHASE_ORIENT,
+    PHASE_DECIDE,
+    PHASE_ACT,
+    PHASE_REST,
+    create_cognitive_architecture,
+    reset_architecture!,
+    get_architecture_status,
+    perceive,
+    attend,
+    broadcast_to_workspace,
+    consolidate_to_memory,
+    learn_procedure,
+    retrieve_procedures,
+    full_cognitive_cycle,
+    recall_semantic,
+    has_experience,
+    get_working_memory_contents,
+    get_attended_items,
+    get_procedures_for_capability
 
 # Submodules
 include("types.jl")
 using .CognitionTypes
+
+include("GlobalWorkspace.jl")
+using .GlobalWorkspace
+
+include("Attention.jl")
+using .Attention
 
 include("spine/DecisionSpine.jl")
 using .DecisionSpine
@@ -63,6 +159,12 @@ using .PainFeedback
 
 include("reality/RealityIngestion.jl")
 using .RealityIngestion
+
+include("Vision.jl")
+using .Vision
+
+include("CognitiveArchitecture.jl")
+using .CognitiveArchitecture
 
 # ============================================================================
 # MAIN COGNITIVE ENGINE
@@ -182,7 +284,9 @@ function run_sovereign_cycle(
         augmented_perception,
         proposals,  # Check other proposals for overconfidence
         engine.doctrine,
-        engine.tactical
+        engine.tactical;
+        power_level = measure_power(engine),
+        optionality = engine.optionality
     )
     auditor_prop = AgentProposal(
         auditor_prop.agent_id,
@@ -252,6 +356,17 @@ function run_sovereign_cycle(
     # =========================================================================
     # Update optionality based on decision
     push!(engine.optionality.viable_actions, decision.decision)
+    
+    # Update power metric after the cycle
+    current_power = measure_power(engine)
+    
+    # Update power metric components
+    engine.power_metric.optionality_end = length(engine.optionality.viable_actions)
+    engine.power_metric.optionality_gained = engine.power_metric.optionality_end - engine.power_metric.optionality_start
+    engine.power_metric.viable_actions_end = length(engine.optionality.viable_actions)
+    engine.power_metric.pivot_speed_end = engine.optionality.pivot_speed
+    engine.power_metric.reversibility_end = engine.optionality.reversibility
+    engine.power_metric.leverage_points_discovered = length(engine.optionality.leverage_points)
     
     # Create cycle result for feedback
     cycle_result = Dict(

@@ -39,7 +39,10 @@ end
 export BrainCore,  Experience,  Thought,  NeuralLayer,  Goal,  ActionProposal,
        initialize_brain,  infer,  learn!,  dream!,  encode_perception,  
        get_stats,  forward_pass,  plan,  evaluate_plan,  adapt_strategy,
-       run_dream_cycle,  train_brain!
+       run_dream_cycle,  train_brain!,
+       # Homeostatic features
+       get_thermal_state, get_energy_source, get_user_presence, get_enhanced_network_latency,
+       HomeostaticState, get_homeostatic_state, should_lazy_load
 
 # ============================================================================
 # CORE STRUCTURES - Flux-compatible
@@ -137,6 +140,224 @@ mutable struct Plan
     estimated_completion::DateTime
 end
 
+# ============================================================================
+# HOMEOSTATIC FEATURE VECTOR - Compute-Metabolism System
+# ============================================================================
+
+"""
+    HomeostaticState - Tracks the agent's internal metabolic state
+    These 4 dimensions represent the agent's physiological needs:
+    - thermal_state: CPU/GPU temperature normalized [0,1]
+    - energy_source: Battery(0) vs WallPower(1)
+    - user_presence: User activity level [0,1]
+    - network_health: Enhanced network metrics [0,1]
+"""
+mutable struct HomeostaticState
+    thermal_state::Float32        # CPU/GPU temperature [0=cool, 1=overheat]
+    energy_source::Float32         # 0=battery, 1=wall_power
+    user_presence::Float32         # User activity [0=absent, 1=active]
+    network_health::Float32        # Enhanced network [0=offline, 1=optimal]
+    last_updated::DateTime
+    
+    HomeostaticState() = new(
+        0.3f0,   # Default: moderate temperature
+        1.0f0,   # Default: wall power
+        0.0f0,   # Default: no user
+        0.8f0,   # Default: good network
+        now()
+    )
+end
+
+"""
+    Get CPU/GPU thermal state (simulated)
+    In production, would read from actual hardware sensors
+"""
+function get_thermal_state()::Float32
+    # Simulated thermal reading - in production would query actual sensors
+    # Returns normalized temperature [0, 1]
+    try
+        # Try to read from /sys/class/thermal on Linux
+        if ispath("/sys/class/thermal/thermal_zone0/temp")
+            temp_str = read("/sys/class/thermal/thermal_zone0/temp", String)
+            temp_c = parse(Float32, strip(temp_str)) / 1000.0f0  # Convert to Celsius
+            # Normalize: 0°C = 0, 100°C = 1
+            return clamp(temp_c / 100.0f0, 0.0f0, 1.0f0)
+        end
+    catch e
+        # Log error without exposing system details
+        @debug "Thermal read failed, using simulated value"
+    end
+    
+    # Simulated thermal based on random variation + time of day
+    base_temp = 0.3f0 + 0.1f0 * sin(Float32(Dates.now().instant.periods.value / 3600000.0))
+    return clamp(base_temp + rand(Float32) * 0.1f0, 0.0f0, 1.0f0)
+end
+
+"""
+    Get energy source detection (Battery vs Wall power)
+"""
+function get_energy_source()::Float32
+    # Returns: 0 = on battery, 1 = on wall power
+    try
+        # Check /sys/class/power_supply on Linux
+        if isdir("/sys/class/power_supply")
+            caps = readdir("/sys/class/power_supply")
+            for cap in caps
+                status_path = "/sys/class/power_supply/$cap/status"
+                if ispath(status_path)
+                    status = strip(read(status_path, String))
+                    if occursin("Discharging", status)
+                        return 0.0f0  # On battery
+                    elseif occursin("Charging", status) || occursin("Full", status)
+                        return 1.0f0  # On wall power
+                    end
+                end
+            end
+        end
+    catch e
+        @debug "Power supply read failed, using default"
+    end
+    
+    # Default: assume wall power
+    return 1.0f0
+end
+
+"""
+    Get enhanced network latency monitoring
+    Returns composite network health score [0,1]
+"""
+function get_enhanced_network_latency()::Float32
+    # Composite network health metric - use safer detection methods
+    
+    # First try: check if we can reach any local network resources
+    # This avoids external network calls that might timeout
+    try
+        # Check for network interface existence
+        if isdir("/sys/class/net")
+            interfaces = readdir("/sys/class/net")
+            # Check if loopback is up (always available if network stack works)
+            if "lo" in interfaces
+                loopback_path = "/sys/class/net/lo/operstate"
+                if ispath(loopback_path)
+                    state = strip(read(loopback_path, String))
+                    if state == "up"
+                        return 0.85f0  # Network stack is functional
+                    end
+                end
+            end
+            # Check for other active interfaces
+            for iface in interfaces
+                if iface != "lo"
+                    state_path = "/sys/class/net/$iface/operstate"
+                    if ispath(state_path)
+                        state = strip(read(state_path, String))
+                        if state == "up"
+                            return 0.75f0  # At least one interface is up
+                        end
+                    end
+                end
+            end
+        end
+    catch e
+        @debug "Network interface check failed"
+    end
+    
+    # Second try: quick connectivity check (limited timeout)
+    try
+        # Use a more reliable method - check if DNS resolver works
+        # by reading /etc/resolv.conf
+        if isfile("/etc/resolv.conf")
+            return 0.7f0  # DNS config exists, assume network available
+        end
+    catch e
+        @debug "DNS check failed"
+    end
+    
+    # Default: moderate network health
+    return 0.5f0
+end
+
+"""
+    Get user presence detection
+    Returns user activity level [0,1]
+"""
+function get_user_presence()::Float32
+    # User presence detection - combines multiple signals
+    # Note: Uses safe methods that don't expose system information
+    presence_score = 0.0f0
+    
+    try
+        # Check for active input devices on Linux (read-only directory access)
+        if isdir("/dev/input")
+            # Check for recent mouse/keyboard activity
+            input_dir = "/dev/input"
+            if isdir(input_dir)
+                # Simple heuristic: if input devices exist, user may be present
+                devices = readdir(input_dir)
+                # Count event devices (usually mouse/keyboard)
+                event_count = count(x -> startswith(x, "event"), devices)
+                presence_score += min(event_count / 5.0f0, 0.5f0)
+            end
+        end
+    catch e
+        @debug "Input device check failed"
+    end
+    
+    try
+        # Check for logged in users via /var/run/utmp (safer than running 'who')
+        if isfile("/var/run/utmp")
+            # Just check if file exists and has content (indicates users)
+            stat_result = stat("/var/run/utmp")
+            if stat_result.size > 0
+                presence_score += 0.3f0
+            end
+        end
+    catch e
+        @debug "User check failed"
+    end
+    
+    try
+        # Check for recent shell activity via /proc (read-only)
+        if isdir("/proc") && isreadable("/proc")
+            presence_score += 0.2f0
+        end
+    catch e
+        @debug "Process check failed"
+    end
+    
+    return clamp(presence_score, 0.0f0, 1.0f0)
+end
+
+"""
+    Get current homeostatic state (lazy evaluation)
+"""
+function get_homeostatic_state()::HomeostaticState
+    state = HomeostaticState()
+    state.thermal_state = get_thermal_state()
+    state.energy_source = get_energy_source()
+    state.user_presence = get_user_presence()
+    state.network_health = get_enhanced_network_latency()
+    state.last_updated = now()
+    return state
+end
+
+"""
+    Should we enable lazy loading based on system state?
+    Returns true if system is resource-constrained
+"""
+function should_lazy_load()::Bool
+    # Enable lazy loading if:
+    # - On battery power OR
+    # - High CPU temperature OR  
+    # - Low user presence (idle)
+    
+    thermal = get_thermal_state()
+    energy = get_energy_source()
+    user = get_user_presence()
+    
+    return (energy < 0.5f0) || (thermal > 0.8f0) || (user < 0.1f0)
+end
+
 mutable struct BrainCore
     # Network layers
     layers::Vector{NeuralLayer}
@@ -156,6 +377,9 @@ mutable struct BrainCore
     episodic::Vector{Experience}
     reward_trace::Vector{Float32}
     plan_memory::Vector{Plan}  # New:   Plan memory
+    
+    # Homeostatic state (16D feature vector)
+    homeostatic::HomeostaticState
     
     # Hyperparameters
     learning_rate::Float32
@@ -178,6 +402,9 @@ mutable struct BrainCore
     
     # Flux optimizers - using Any for flexibility with modern Flux/Optimisers.jl
     optimizers::Dict{String, Any}
+    
+    # Lazy loading flag
+    lazy_mode::Bool
 end
 
 # ============================================================================
@@ -185,7 +412,7 @@ end
 # ============================================================================
 
 function initialize_brain(;
-        input_size::Int=12,     # Increased for more features
+        input_size::Int=16,     # 16D: 12D base + 4D homeostatic
         hidden_size::Int=128,     # Increased capacity
         learning_rate::Float32=0.01f0,   
         gamma::Float32=0.95f0,   
@@ -267,6 +494,7 @@ function initialize_brain(;
         Experience[],   
         Float32[],   
         Plan[],   
+        HomeostaticState(),  # Initialize homeostatic state
         learning_rate,   
         gamma,   
         0.97f0,   
@@ -280,7 +508,8 @@ function initialize_brain(;
         input_size,   
         hidden_size,   
         0,  
-        optimizers
+        optimizers,
+        should_lazy_load()  # Initialize lazy mode based on system state
     )
 end
 
@@ -289,8 +518,10 @@ end
 # ============================================================================
 
 function encode_perception(perception::Dict{String,  Any})::Vector{Float32}
-    # Enhanced encoding function with more sophisticated features
-    features = Float32[
+    # Enhanced encoding function with 16D feature vector (12D base + 4D homeostatic)
+    
+    # === BASE 12D FEATURES ===
+    base_features = Float32[
         clamp(get(perception,  "cpu_load",  0.5),  0.0,  1.0),   
         clamp(get(perception,  "memory_usage",  0.5),  0.0,  1.0),   
         clamp(get(perception,  "disk_io",  0.3),  0.0,  1.0),   
@@ -305,11 +536,28 @@ function encode_perception(perception::Dict{String,  Any})::Vector{Float32}
         get(perception,  "user_activity_level",  0.3)  # User interaction level
     ]
     
+    # === HOMEOSTATIC 4D FEATURES (Compute-Metabolism) ===
+    # Get real-time system state for homeostatic features
+    thermal = get(perception,  "thermal_state", get_thermal_state())
+    energy = get(perception,  "energy_source", get_energy_source())
+    user_presence = get(perception,  "user_presence", get_user_presence())
+    network_health = get(perception,  "network_health", get_enhanced_network_latency())
+    
+    homeostatic_features = Float32[
+        clamp(thermal,  0.0f0,  1.0f0),      # Thermal state [0=cool, 1=overheat]
+        clamp(energy,  0.0f0,  1.0f0),       # Energy source [0=battery, 1=wall]
+        clamp(user_presence,  0.0f0, 1.0f0), # User presence [0=absent, 1=active]
+        clamp(network_health,  0.0f0, 1.0f0) # Network health [0=offline, 1=optimal]
+    ]
+    
+    # Combine base and homeostatic features
+    features = vcat(base_features, homeostatic_features)
+    
     # Normalize features
     features = (features .- mean(features)) ./ (std(features) + 1f-8)
     features = clamp.(features,  -3f0,  3f0)  # Clip outliers
     
-    return features[1:12]  # Ensure exactly 12 dimensions
+    return features[1:16]  # Ensure exactly 16 dimensions
 end
 
 # ============================================================================

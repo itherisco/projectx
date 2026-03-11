@@ -1,0 +1,64 @@
+[package]
+name = "jarvis_nerves"
+version = "0.2.0"
+edition = "2021"
+description = "JARVIS Nerves - Rust Driver with jlrs Integration for ITHERISCore - Dual-Process Cognitive Architecture"
+
+[dependencies]
+# Julia embedding via jlrs
+jlrs = { version = "0.20", features = ["async-rt", "tokio-rt"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Serialization for communication
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# System info
+sysinfo = "0.30"
+
+# HTTP client for actions
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+
+# Random for simulated inputs
+rand = "0.8"
+
+# Ctrl-C handling
+ctrlc = "3"
+
+# ============================================================================
+# System-1: Local SLM for reflex commands (Optional - falls back to rule-based)
+# ============================================================================
+# mistral.rs - Local SLM inference (optional, enables ML-based classification)
+mistral-rs = { version = "0.1", optional = true }
+
+# Tokenization for SLM input
+tokenizers = { version = "0.15", optional = true }
+
+# Candle (required by mistral-rs)
+candle-core = { version = "0.5", optional = true }
+candle-nn = { version = "0.5", optional = true }
+
+[dependencies.priority-queue]
+version = "1.4"
+
+[build-dependencies]
+cc = "1"
+
+[features]
+default = []
+# Enable local SLM support (requires more dependencies)
+slm = ["dep:mistral-rs", "dep:tokenizers", "dep:candle-core", "dep:candle-nn"]
+debug = []

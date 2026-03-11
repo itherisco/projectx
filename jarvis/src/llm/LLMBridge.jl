@@ -212,7 +212,8 @@ end
 function parse_user_intent(
     user_input::String,
     config::LLMConfig;
-    conversation_history::Vector{ConversationEntry} = ConversationEntry[]
+    conversation_history::Vector{ConversationEntry} = ConversationEntry[],
+    system_prompt_context::String = ""
 )::LLMResponse
     # Build context from history
     history_text = ""
@@ -226,6 +227,12 @@ function parse_user_intent(
     
     # Build prompt with context
     prompt = replace(INTENT_PARSING_PROMPT, "{user_input}" => user_input)
+    
+    # Add system prompt context if provided
+    if !isempty(system_prompt_context)
+        prompt = "$system_prompt_context\n\n$prompt"
+    end
+    
     if !isempty(history_text)
         prompt = "Recent conversation:\n$history_text\n\n$prompt"
     end

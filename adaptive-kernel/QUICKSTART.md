@@ -1,5 +1,31 @@
 # Adaptive Kernel - Quick Start & Verification Guide
 
+## Table of Contents
+
+1. [Directory Structure](#directory-structure)
+2. [Files & Line Counts (Verification)](#files--line-counts-verification)
+3. [Safety & Architecture Guarantees](#safety--architecture-guarantees)
+4. [How to Verify Locally](#how-to-verify-locally)
+   - [1. Install Julia 1.8+ and navigate to the project](#1-install-julia-18-and-navigate-to-the-project)
+   - [2. Install dependencies](#2-install-dependencies)
+   - [3. Run unit tests](#3-run-unit-tests)
+   - [4. Run integration test (20-cycle simulation)](#4-run-integration-test-20-cycle-simulation)
+   - [5. Run the harness (event loop)](#5-run-the-harness-event-loop)
+   - [6. Inspect the event log](#6-inspect-the-event-log)
+5. [Expected Test Results](#expected-test-results)
+6. [Key Functions & API](#key-functions--api)
+   - [Kernel Module](#kernel-module-kernelkerneljl)
+   - [Capability Interface](#capability-interface-each-capability-module)
+   - [Persistence Module](#persistence-module-persistencepersistencejl)
+7. [Adding a New Capability](#adding-a-new-capability)
+8. [Next Steps](#next-steps)
+9. [Troubleshooting](#troubleshooting)
+10. [Performance Notes](#performance-notes)
+11. [Safety Checklist](#safety-checklist)
+12. [Support & Contributing](#support--contributing)
+
+---
+
 ## Directory Structure
 
 ```

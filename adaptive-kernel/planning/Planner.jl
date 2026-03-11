@@ -1,6 +1,16 @@
 module Planner
 
-export PlanProposal, propose_plans, score_plan
+# Import HierarchicalPlanner for manager layer capabilities
+include("HierarchicalPlanner.jl")
+using .HierarchicalPlanner
+
+export PlanProposal, propose_plans, score_plan,
+       # Hierarchical planning types
+       HierarchicalPlanner, Option, Mission, MissionExecution,
+       # Hierarchical planning functions
+       create_option, create_mission, promote_to_mission!, step_option!,
+       select_mission, select_option, register_option!, has_active_mission,
+       get_planner_stats, get_option_progress
 
 using Dates
 using Statistics

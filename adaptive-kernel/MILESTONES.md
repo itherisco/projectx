@@ -1,5 +1,23 @@
 # 8-Step Milestone Plan: From Simulation to Production Jarvis
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Milestone 1: Foundation & Verification (Days 1–3)](#milestone-1-foundation--verification-days-13)
+3. [Milestone 2: Real OS Perception (Days 4–6)](#milestone-2-real-os-perception-days-46)
+4. [Milestone 3: Safe Shell & OS Integration (Days 7–9)](#milestone-3-safe-shell--os-integration-days-79)
+5. [Milestone 4: Threat Modeling & High-Risk Actions (Days 10–12)](#milestone-4-threat-modeling--high-risk-actions-days-1012)
+6. [Milestone 5: Procedural Memory & Learning (Days 13–15)](#milestone-5-procedural-memory--learning-days-1315)
+7. [Milestone 6: Distributed & Multi-Agent (Days 16–18)](#milestone-6-distributed--multi-agent-days-1618)
+8. [Milestone 7: Production Hardening & Ops (Days 19–21)](#milestone-7-production-hardening--ops-days-1921)
+9. [Milestone 8: Field Deployment & Certification (Days 22–24)](#milestone-8-field-deployment--certification-days-2224)
+10. [Success Metrics](#success-metrics)
+11. [Risk Mitigations](#risk-mitigations)
+12. [Dependencies & Assumptions](#dependencies--assumptions)
+13. [Handoff & Continuity](#handoff--continuity)
+
+---
+
 ## Overview
 
 This plan outlines 8 incremental milestones (each ~3–5 days of focused work) to evolve the adaptive kernel from a safe simulation into a field-deployable intelligent agent capable of real-world system management.

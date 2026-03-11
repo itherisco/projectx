@@ -80,6 +80,12 @@ sanitize_argument(arg::SubString{String}) = sanitize_argument(String(arg))
     SECURITY: Multiple layers of validation
 """
 function validate_command(command::String)::Tuple{Bool, String}
+    # Check 0: Trim whitespace and check for empty after trim
+    command = strip(command)
+    if isempty(command)
+        return (false, "Empty command after trimming whitespace")
+    end
+    
     # Check 1: Length limit
     if length(command) > MAX_COMMAND_LENGTH
         return (false, "Command exceeds maximum length of $MAX_COMMAND_LENGTH")
@@ -107,6 +113,11 @@ function validate_command(command::String)::Tuple{Bool, String}
     end
     cmd_base = parts[1]
     
+    # Check 5b: Empty command base after stripping
+    if isempty(strip(cmd_base))
+        return (false, "Empty command base after stripping")
+    end
+    
     # Check 6: Whitelist
     if cmd_base ∉ WHITELIST
         return (false, "Command '$cmd_base' not in whitelist")
@@ -115,13 +126,36 @@ function validate_command(command::String)::Tuple{Bool, String}
     # Check 7: Argument sanitization
     if length(parts) > 1
         for i in 2:length(parts)
-            sanitized = sanitize_argument(parts[i])
-            if isempty(sanitized) && !isempty(parts[i])
-                return (false, "Dangerous argument detected: $(parts[i])")
+            arg = parts[i]
+            
+            # Check for empty arguments
+            if isempty(strip(arg))
+                return (false, "Empty argument detected at position $i")
             end
-            # Also check for path traversal attempts
-            if occursin(r"\.\.", parts[i])
+            
+            sanitized = sanitize_argument(arg)
+            if isempty(sanitized) && !isempty(arg)
+                return (false, "Dangerous argument detected: $(arg)")
+            end
+            # Also check for path traversal attempts in sanitized output
+            if occursin(r"\.\.", sanitized)
                 return (false, "Path traversal attempt detected")
+            end
+            # Check for absolute paths (security concern)
+            if startswith(sanitized, "/")
+                return (false, "Absolute path not allowed: $(sanitized)")
+            end
+            # Check for tilde expansion (could bypass restrictions)
+            if startswith(sanitized, "~")
+                return (false, "Tilde expansion not allowed: $(sanitized)")
+            end
+            # Check for environment variable expansion
+            if occursin(r"\$\{|\$\w+", sanitized)
+                return (false, "Environment variable expansion not allowed: $(sanitized)")
+            end
+            # Check for command substitution (backticks or $() )
+            if occursin("`", sanitized) || occursin(r"\$\([^)]+\)", sanitized)
+                return (false, "Command substitution not allowed: $(sanitized)")
             end
         end
     end

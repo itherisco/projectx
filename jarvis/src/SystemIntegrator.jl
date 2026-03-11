@@ -9,9 +9,11 @@ using UUIDs
 using JSON
 using Logging
 using Pkg
+using Printf
 
 # Import all submodules
 include("types.jl")
+include("nlp/NLPGateway.jl")
 include("llm/LLMBridge.jl")
 include("memory/VectorMemory.jl")
 include("memory/SemanticMemory.jl")
@@ -60,6 +62,7 @@ if KERNEL_AVAILABLE
 end
 
 using .JarvisTypes
+using .NLPGateway
 using .LLMBridge
 using .VectorMemory
 using .SemanticMemory
@@ -739,27 +742,102 @@ end
 
 """
     process_user_request - Process a natural language user request
+    
+    RAG-augmented orchestration:
+    1. Generate 12D feature vector using NLPGateway
+    2. Retrieve Top-3 similar memories from VectorStore
+    3. Inject memories into System Prompt as "User History and Constraints"
+    4. Parse intent with LLM
+    5. Execute action and generate response
 """
 function process_user_request(
     system::JarvisSystem,
     user_input::String
 )::Dict{String, Any}
     
-    # 1. Parse intent with LLM
+    # === STEP 1: Generate 12D Feature Vector using NLPGateway ===
+    feature_vector = NLPGateway.generate_feature_vector(user_input)
+    feature_vec_12d = Vector(feature_vector)
+    
+    # === STEP 2: Retrieve Top-3 similar memories from VectorStore (Qdrant) ===
+    # Get memories for "user_preferences" and "conversations" collections
+    top_memories = Vector{Tuple{String, Float32}}()
+    
+    # Try to get from user preferences collection
+    try
+        pref_results = VectorMemory.search(
+            system.vector_store,
+            VectorMemory.generate_embedding(user_input);
+            k = 2,
+            collection = :user_preferences
+        )
+        for (entry, score) in pref_results
+            push!(top_memories, (entry.content, score))
+        end
+    catch e
+        @warn "Failed to search preferences: $(e)"
+    end
+    
+    # Try to get from conversations collection
+    try
+        conv_results = VectorMemory.search(
+            system.vector_store,
+            VectorMemory.generate_embedding(user_input);
+            k = 2,
+            collection = :conversations
+        )
+        for (entry, score) in conv_results
+            push!(top_memories, (entry.content, score))
+        end
+    catch e
+        @warn "Failed to search conversations: $(e)"
+    end
+    
+    # Sort by similarity and take top 3
+    sort!(top_memories, by = x -> x[2], rev = true)
+    top_memories = top_memories[1:min(3, length(top_memories))]
+    
+    # === STEP 3: Construct Goal with NLPGateway using retrieved memories ===
+    # This creates a goal with success condition and doctrine constraints
+    goal_data = NLPGateway.construct_goal(user_input, top_memories)
+    
+    # === STEP 4: Build augmented system prompt with RAG context ===
+    system_prompt_context = ""
+    if !isempty(top_memories)
+        system_prompt_context = """
+        ## User History and Constraints
+        
+        The following relevant context was retrieved from your memory:
+        
+        """
+        for (i, (content, similarity)) in enumerate(top_memories)
+            system_prompt_context *= "$i. [$(@sprintf("%.0f", similarity*100))% match] $content\n"
+        end
+        
+        system_prompt_context *= """
+        
+        Please consider this context when responding to the user's request.
+        Your goal is: $(goal_data["description"])
+        Priority: $(goal_data["priority_symbol"]) | Required Trust: $(goal_data["trust_symbol"])
+        """
+    end
+    
+    # === STEP 5: Parse intent with LLM (using augmented context) ===
     llm_response = parse_user_intent(
         user_input,
         system.llm_bridge;
-        conversation_history = system.conversation_history
+        conversation_history = system.conversation_history,
+        system_prompt_context = system_prompt_context
     )
     
-    # 2. Retrieve relevant context (RAG)
+    # === STEP 6: Retrieve relevant context (legacy RAG - kept for compatibility)
     context = rag_retrieve(
         system.vector_store,
         user_input;
         n_results = 5
     )
     
-    # 3. Check if confirmation needed
+    # === STEP 7: Check if confirmation needed ===
     if llm_response.parsed_goal !== nothing
         goal = llm_response.parsed_goal
         
@@ -774,16 +852,16 @@ function process_user_request(
         end
     end
     
-    # 4. Execute the requested action
-    # (Simplified - would create actual action proposal)
+    # === STEP 8: Execute the requested action ===
     result = Dict(
         "type" => "response",
         "intent" => llm_response.intent,
         "entities" => llm_response.entities,
+        "feature_vector" => feature_vec_12d,
         "message" => "Processing: $(user_input)"
     )
     
-    # 5. Generate response
+    # === STEP 9: Generate response ===
     response_text = generate_response(
         user_input,
         llm_response.intent,
@@ -792,7 +870,7 @@ function process_user_request(
         conversation_history = system.conversation_history
     )
     
-    # 6. Store conversation
+    # === STEP 10: Store conversation ===
     entry = store_conversation!(
         system.vector_store,
         user_input,
@@ -816,7 +894,9 @@ function process_user_request(
         "type" => "success",
         "response" => response_text,
         "intent" => llm_response.intent,
-        "context_used" => !isempty(context)
+        "feature_vector" => feature_vec_12d,
+        "memories_retrieved" => length(top_memories),
+        "context_used" => !isempty(top_memories)
     )
 end
 

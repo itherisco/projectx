@@ -3,6 +3,28 @@
 
 You now have a production-ready cognitive kernel for building safe, auditable, and adaptive systems.
 
+---
+
+## Table of Contents
+
+1. [What You Received](#what-you-received)
+2. [Key Metrics](#key-metrics)
+3. [Architecture Principles](#architecture-principles)
+4. [Quick Start (5 minutes)](#quick-start-5-minutes)
+5. [Documentation Structure](#documentation-structure)
+6. [Test Results](#test-results)
+7. [Built-in Safety Features](#built-in-safety-features)
+8. [How to Add a New Capability](#how-to-add-a-new-capability)
+9. [Design Doc Highlights](#design-doc-highlights)
+10. [8-Step Milestone Plan](#8-step-milestone-plan)
+11. [Success Criteria (Finish Line)](#success-criteria-finish-line)
+12. [What's Next for You](#whats-next-for-you)
+13. [Why This Approach Wins](#why-this-approach-wins)
+14. [Support & Next Steps](#support--next-steps)
+15. [Final Checklist](#final-checklist)
+
+---
+
 📦 WHAT YOU RECEIVED
 ====================
 

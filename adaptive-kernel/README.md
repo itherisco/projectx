@@ -2,6 +2,33 @@
 
 A minimal, auditable adaptive operating system kernel for building safe, intelligent agents. The kernel is ≤400 lines of readable Julia code that maintains world state, evaluates priorities, selects actions deterministically, and reflects on outcomes—all without embedding task logic, OS capabilities, or personality.
 
+## Table of Contents
+
+1. [Architecture](#architecture)
+2. [Running the System](#running-the-system)
+   - [Prerequisites](#prerequisites)
+   - [Quick Start](#quick-start)
+   - [With Unsafe Mode](#with-unsafe-mode-for-testing)
+   - [Test Suite](#test-suite)
+   - [Inspect Event Log](#inspect-event-log)
+3. [Core Abstractions](#core-abstractions)
+   - [KernelState](#kernelstate)
+   - [Goal](#goal)
+   - [Event Loop](#event-loop-observe--evaluate--decide--reflect)
+4. [Capability Registry](#capability-registry)
+5. [Adding a New Capability](#adding-a-new-capability)
+6. [Permission Model](#permission-model)
+7. [Persistence](#persistence)
+8. [Safety Checklist](#safety-checklist)
+9. [Performance](#performance)
+10. [Integration Examples](#integration-examples)
+    - [Continuous Monitoring Loop](#continuous-monitoring-loop)
+    - [Manual Approval Loop](#manual-approval-loop)
+11. [Next Steps: Roadmap to Production](#next-steps-roadmap-to-production)
+12. [Testing & Debugging](#testing--debugging)
+13. [License](#license)
+14. [References](#references)
+
 ## Architecture
 
 ```

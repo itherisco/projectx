@@ -11,9 +11,9 @@ using Statistics
 include("../types.jl")
 using ..CognitionTypes
 
-# Import spine types
-include("DecisionSpine.jl")
-using ..DecisionSpine
+# Import spine types (available from parent DecisionSpine module when included)
+# DecisionSpine.jl includes this module AFTER defining AgentProposal, SpineConfig, etc.
+# Types are available in the enclosing scope
 
 export 
     ConflictResolution,
@@ -65,7 +65,7 @@ function resolve_conflict(
     proposals::Vector{AgentProposal},
     config::SpineConfig
 )::ConflictResolution
-    resolver = ConflictResolver(config.require_unanimity ? CONFLICT_ENSEMBLE : CONFLICT_WEIGHTED_VOTE)
+    resolver = ConflictResolver(config.require_unanimity ? CONFLICT_CONSENSUS : CONFLICT_WEIGHTED_VOTE)
     return resolve_conflict(proposals, resolver)
 end
 

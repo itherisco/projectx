@@ -15,6 +15,9 @@ using ..CognitionTypes
 include("DecisionSpine.jl")
 using ..DecisionSpine
 
+# Explicitly import ConflictResolution from DecisionSpine for type declarations
+import ..DecisionSpine: ConflictResolution
+
 export 
     CommittedDecision,
     DecisionCommitment,

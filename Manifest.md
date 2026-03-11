@@ -1,5 +1,5 @@
 # ProjectX Jarvis Architecture Manifest
-# ================================
+# =================================
 # Cerebral Cortex (NLP) + Semantic Memory Layer
 # Evolution from ITHERIS Brain to Jarvis-Level Personal Assistant
 # 
@@ -7,11 +7,40 @@
 # Julia Version: 1.10+
 # Created: 2026-02-16
 
+---
+
+## Table of Contents
+
+1. [Architectural Overview](#architectural-overview)
+   - [System Layers Diagram](#system-layers-diagram)
+   - [Data Flow](#data-flow-jarvis-optimize-my-system-performance)
+2. [Core Type Definitions](#core-type-definitions)
+   - [NLP Input Types](#nlp-input-types)
+   - [Semantic Memory Types](#semantic-memory-types)
+   - [Safety Valve Types](#safety-valve-types)
+3. [Intent Recognition Engine](#intent-recognition-engine)
+   - [NLPGateway Structure](#nlpgateway-structure)
+   - [Intent Patterns](#intent-patterns-initial-set)
+4. [Feature Vector Encoder](#feature-vector-encoder-12-dimensional)
+   - [Encoding Pipeline](#encoding-pipeline)
+   - [Julia Implementation](#julia-implementation)
+5. [Goal Construction](#goal-construction-from-nlp)
+6. [Safety Valve Integration](#safety-valve-integration)
+   - [Scoring Formula](#scoring-formula)
+   - [Validation Logic](#validation-logic)
+   - [Risk Thresholds](#risk-thresholds)
+7. [Main Orchestrator](#main-orchestrator)
+   - [Processing Pipeline](#processing-pipeline)
+
+---
+
 # ============================================================================
 # SECTION 1: ARCHITECTURAL OVERVIEW
 # ============================================================================
 
-## System Layers Diagram
+## Architectural Overview
+
+### System Layers Diagram
 
 ```mermaid
 graph TB

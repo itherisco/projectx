@@ -7,6 +7,10 @@ using Dates
 using UUIDs
 using Statistics
 
+# Import ProjectXConfig for seeded RNG
+include("../../kernel/ProjectXConfig.jl")
+using ..ProjectXConfig
+
 # Import types
 include("../types.jl")
 using ..CognitionTypes
@@ -62,7 +66,7 @@ function simulate_hostile_environment(
     market_signal = Dict{String, Any}(
         "type" => "market_adversarial",
         "signal" => "competitor_price_war",
-        "magnitude" => rand() * 0.5 + 0.3,
+        "magnitude" => rand_xoshiro() * 0.5 + 0.3,
         "unexpected" => true
     )
     push!(signals, ingest_signal(
@@ -88,7 +92,7 @@ function simulate_hostile_environment(
     system_signal = Dict{String, Any}(
         "type" => "system_failure",
         "signal" => "cascade_failure",
-        "component" => rand(["api", "database", "cache"]),
+        "component" => rand_xoshiro(["api", "database", "cache"]),
         "unexpected" => true
     )
     push!(signals, ingest_signal(
@@ -103,7 +107,7 @@ function simulate_hostile_environment(
         if !isempty(known_attacks)
             attack_signal = Dict{String, Any}(
                 "type" => "adversarial_attack",
-                "attack_type" => rand(known_attacks),
+                "attack_type" => rand_xoshiro(known_attacks),
                 "target" => get(model_data, "weakness", "unknown"),
                 "unexpected" => true
             )

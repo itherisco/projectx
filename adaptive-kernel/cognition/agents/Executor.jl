@@ -1,6 +1,6 @@
 # cognition/agents/Executor.jl - Executor Agent
 # Converts approved decisions into Kernel-compliant actions
-# Zero planning, zero philosophy
+# Zero planning, just executes actions from the HierarchicalPlanner
 
 module Executor
 
@@ -15,7 +15,11 @@ using ..CognitionTypes
 include("../spine/DecisionSpine.jl")
 using ..DecisionSpine
 
-export ExecutorAgent, generate_proposal, evaluate_decision
+# Import Planning for hierarchical execution
+include("../../planning/HierarchicalPlanner.jl")
+using .HierarchicalPlanner: HierarchicalPlanner, has_active_mission, step_option!, start_mission!, get_option_progress, Mission
+
+export ExecutorAgent, generate_proposal, evaluate_decision, execute_option_step
 
 # ============================================================================
 # EXECUTOR AGENT IMPLEMENTATION
@@ -168,6 +172,53 @@ end
 # JSON helper (simplified)
 function json(d::Dict)::String
     return string(d)
+end
+
+"""
+    execute_option_step - Execute one step of an option from the hierarchical planner
+    Returns the next primitive action to execute, or nothing if option is complete
+"""
+function execute_option_step(
+    agent::ExecutorAgent,
+    planner::HierarchicalPlanner,
+    state::Dict{Symbol, Any}
+)::Union{String, Nothing}
+    
+    # Check if there's an active mission
+    if !has_active_mission(planner)
+        return nothing
+    end
+    
+    # Step through the current option
+    action = step_option!(planner, state)
+    
+    if action !== nothing
+        @info "Executor proceeding with action: $action"
+    end
+    
+    return action
+end
+
+"""
+    start_mission_execution - Start executing a mission
+"""
+function start_mission_execution(
+    agent::ExecutorAgent,
+    planner::HierarchicalPlanner,
+    mission::Mission
+)
+    start_mission!(planner, mission)
+    @info "Executor starting mission: $(mission.description)"
+end
+
+"""
+    get_execution_status - Get the current execution status from planner
+"""
+function get_execution_status(
+    planner::HierarchicalPlanner
+)::Dict{Symbol, Any}
+    
+    return get_option_progress(planner)
 end
 
 end # module Executor

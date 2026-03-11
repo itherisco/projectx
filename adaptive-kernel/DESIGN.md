@@ -1,5 +1,20 @@
 # Design Rationale: Adaptive Cognitive Kernel
 
+## Table of Contents
+
+1. [Why Keep the Kernel Minimal?](#why-keep-the-kernel-minimal)
+   - [1. Auditability & Governance](#1-auditability--governance)
+   - [2. Composability](#2-composability)
+   - [3. Determinism & Reproducibility](#3-determinism--reproducibility)
+   - [4. Performance & Scaling](#4-performance--scaling)
+   - [5. Domain-Agnostic Core](#5-domain-agnostic-core)
+2. [How the Capability Registry Enables "Anything Adaptive"](#how-the-capability-registry-enables-anything-adaptive)
+3. [Safety-by-Default Architecture](#safety-by-default-architecture)
+4. [Integration with Real Perceptions](#integration-with-real-perceptions)
+5. [Path to Production](#path-to-production)
+
+---
+
 ## Why Keep the Kernel Minimal?
 
 The adaptive kernel is intentionally limited to ≤400 lines: maintain world state, self metrics (confidence, energy, focus), priority-weighted goal scoring, and deterministic action selection via a simple heuristic (priority - cost * risk_penalty). This minimalism is not weakness—it is architectural strength.

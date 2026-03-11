@@ -4,6 +4,29 @@
 ![Julia](https://img.shields.io/badge/Julia-1.10+-9558B2)
 ![Status](https://img.shields.io/badge/status-Active-green)
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Core Components](#core-components)
+   - [1. Cerebral Cortex (LLM Layer)](#1-cerebral-cortex-llm-layer)
+   - [2. ITHERIS Reinforcement Brain](#2-itheris-reinforcement-brain)
+   - [3. Adaptive Kernel (Safety Valve)](#3-adaptive-kernel-safety-valve)
+   - [4. Semantic Memory](#4-semantic-memory)
+   - [5. Multimodal Interfaces](#5-multimodal-interfaces)
+   - [6. Proactive Planning](#6-proactive-planning)
+   - [7. System Integrator](#7-system-integrator)
+4. [File Structure](#file-structure)
+5. [Usage](#usage)
+   - [Quick Start](#quick-start)
+   - [Configuration](#configuration)
+6. [Trust Levels](#trust-levels)
+7. [Safety Features](#safety-features)
+8. [Integration with ProjectX](#integration-with-projectx)
+9. [Development Status](#development-status)
+10. [Requirements](#requirements)
+11. [License](#license)
+
 ## Overview
 
 **Project Jarvis** is a cutting-edge Neuro-Symbolic Autonomous System that merges high-level LLM reasoning with low-level deterministic safety. It evolves the existing ProjectX codebase into a fully integrated, proactive personal assistant.

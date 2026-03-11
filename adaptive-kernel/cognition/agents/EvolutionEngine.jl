@@ -8,9 +8,14 @@ using Dates
 using UUIDs
 using Statistics
 
+# Import ProjectXConfig for seeded RNG
+include("../../kernel/ProjectXConfig.jl")
+using ..ProjectXConfig
+
 # Import types
 include("../types.jl")
 using ..CognitionTypes
+using ..ProjectXConfig
 
 # Import spine
 include("../spine/DecisionSpine.jl")
@@ -170,7 +175,7 @@ function propose_mutation(
     end
     
     # Always propose some exploration
-    if rand() < mutation_rate
+    if rand_xoshiro() < mutation_rate
         push!(mutations, Dict(
             "type" => "exploration",
             "target" => "new_strategy",

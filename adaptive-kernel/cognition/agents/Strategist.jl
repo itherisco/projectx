@@ -5,6 +5,7 @@ module Strategist
 
 using Dates
 using UUIDs
+using Logging
 
 # Import types
 include("../types.jl")
@@ -14,7 +15,15 @@ using ..CognitionTypes
 include("../spine/DecisionSpine.jl")
 using ..DecisionSpine
 
-export StrategistAgent, generate_proposal, identify_leverage
+# Import Memory for semantic recall
+include("../../memory/Memory.jl")
+using ..Memory
+
+# Import Planning for hierarchical planning
+include("../../planning/HierarchicalPlanner.jl")
+using .HierarchicalPlanner: HierarchicalPlanner, Mission, create_mission, add_mission!
+
+export StrategistAgent, generate_proposal, identify_leverage, create_mission_from_strategy
 
 # ============================================================================
 # STRATEGIST AGENT IMPLEMENTATION
@@ -42,6 +51,17 @@ function generate_proposal(
     # Get current situation
     situation = get(perception, "situation", "unknown")
     
+    # STEP 0: Check for prior experience (Semantic Recall)
+    prior_context = nothing
+    try
+        prior_context = check_prior_experience(situation)
+        if prior_context !== nothing
+            @info "Found prior experience for situation: $(prior_context["num_experiences"]) similar cases"
+        end
+    catch e
+        @debug "Could not query semantic memory: $e"
+    end
+    
     # Identify leverage points
     leverage = identify_leverage(perception, doctrine, tactical, adversary)
     
@@ -56,12 +76,20 @@ function generate_proposal(
     
     confidence = calculate_strategist_confidence(leverage, asymmetries, second_order)
     
+    # Build reasoning with prior context if available
+    reasoning = if prior_context !== nothing
+        "Prior: $(round(prior_context["best_match_similarity"], digits=2)) similarity. " *
+        "Plan: $(join(leverage, ", ")). Asym: $(join(asymmetries, ", ")). Effects: $(length(second_order))."
+    else
+        "Long-horizon plan with leverage: $(join(leverage, ", ")). Asymmetries: $(join(asymmetries, ", ")). Second-order effects: $(length(second_order)) identified."
+    end
+    
     return AgentProposal(
         agent.id,
         :strategist,
         plan,
         confidence,
-        reasoning = "Long-horizon plan with leverage: $(join(leverage, ", ")). Asymmetries: $(join(asymmetries, ", ")). Second-order effects: $(length(second_order)) identified.",
+        reasoning = reasoning,
         weight = 1.0,
         evidence = ["leverage_analysis", "asymmetry_analysis", "second_order_analysis"]
     )
@@ -236,6 +264,80 @@ function update_leverage_discovery!(
             push!(agent.identified_leverage, leverage)
         end
     end
+end
+
+"""
+    create_mission_from_strategy - Convert strategic proposal to a mission
+    Creates a hierarchical mission from the Strategist's analysis
+"""
+function create_mission_from_strategy(
+    agent::StrategistAgent,
+    strategy::String,
+    target_state::Dict{Symbol, Any};
+    deadline::Union{DateTime, Nothing} = nothing,
+    planner::Union{HierarchicalPlanner, Nothing} = nothing
+)::Union{Mission, Nothing}
+    
+    # Extract key information from strategy
+    description = "Strategy: $strategy"
+    
+    # Build target state based on the strategy
+    final_target = merge!(Dict{Symbol, Any}(), target_state)
+    
+    # Add strategic markers
+    final_target[:strategy_implemented] = true
+    final_target[:leverage_exploited] = join(agent.identified_leverage, ", ")
+    
+    # Create the mission
+    mission = create_mission(description, final_target; deadline = deadline)
+    
+    # If planner is provided, add mission to planner
+    if planner !== nothing
+        add_mission!(planner, mission)
+        @info "Strategist created mission: $(mission.description)"
+    end
+    
+    return mission
+end
+
+"""
+    propose_mission_from_analysis - Propose a mission based on strategic analysis
+    Analyzes current situation and proposes appropriate missions
+"""
+function propose_mission_from_analysis(
+    agent::StrategistAgent,
+    perception::Dict{String, Any};
+    planner::Union{HierarchicalPlanner, Nothing} = nothing
+)::Union{Mission, Nothing}
+    
+    # Identify leverage points
+    doctrine = get(perception, "doctrine", nothing)
+    tactical = get(perception, "tactical", nothing)
+    adversary = get(perception, "adversary", AdversaryModels())
+    
+    leverage = identify_leverage(perception, doctrine, tactical, adversary)
+    
+    if isempty(leverage)
+        return nothing
+    end
+    
+    # Build target state from leverage analysis
+    target_state = Dict{Symbol, Any}(
+        :leverage_exploited => true,
+        :leverage_points => leverage,
+        :status => "leverage_implemented"
+    )
+    
+    # Create mission
+    mission_description = "Exploit leverage: $(join(leverage, ", "))"
+    mission = create_mission(mission_description, target_state)
+    
+    if planner !== nothing
+        add_mission!(planner, mission)
+        @info "Strategist proposed mission from analysis: $(mission.description)"
+    end
+    
+    return mission
 end
 
 end # module Strategist

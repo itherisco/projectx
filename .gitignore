@@ -1,0 +1,17 @@
+# Environment files (contains secrets)
+.env
+
+# MCP server node modules
+.mcp_modules/
+node_modules/
+
+# PID files
+.pids/
+
+# Logs
+logs/
+*.log
+
+# Docker volumes
+mcp-finance/
+mcp-github/

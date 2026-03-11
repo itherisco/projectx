@@ -47,20 +47,46 @@ kernel_veto_enabled = true
 # ============================================================================
 
 [llm]
-# LLM Provider
-provider = "openai"  # Options: :openai, :anthropic, :local
+# LLM Provider - Default to ollama for local/free, switch to openai for cloud
+provider = "ollama"  # Options: :openai, :ollama, :anthropic
 
-# API Key
+# API Key (for OpenAI/Anthropic)
 api_key = ""  # Your OpenAI API key
 
-# Model to use
-model = "gpt-4"  # Options: gpt-4, gpt-3.5-turbo, etc.
+# Model selection
+# For Ollama: llama3, mistral, codellama, phi3, gemma
+# For OpenAI: gpt-4o, gpt-4o-mini, gpt-4, gpt-3.5-turbo
+model = "llama3"  # Default to llama3 (Ollama) - no API cost!
 
 # Temperature (0.0 = deterministic, 1.0 = creative)
 temperature = 0.7
 
 # Maximum tokens per response
 max_tokens = 2000
+
+# For OpenAI-compatible APIs (like local proxies or other providers)
+base_url = "http://localhost:11434"  # Ollama default
+
+# Request timeout in seconds (longer for local models)
+timeout = 120.0
+
+# ============================================================================
+# ADAPTIVE-KERNEL LLM CONFIG
+# ============================================================================
+
+[llm_config]
+# Enable LLM integration for thought generation
+enabled = true
+
+# Fallback to hardcoded thoughts if LLM unavailable
+fallback_enabled = true
+
+# Use streaming for responses (experimental)
+streaming = false
+
+# Prompt configuration
+system_prompt = ""
+max_history_tokens = 4000
 
 # ============================================================================
 # SYSTEM CONFIG
@@ -119,3 +145,61 @@ common_phrases = [
     "How can I help you",
     "I'm listening"
 ]
+
+# ============================================================================
+# HIPPOCAMPUS CONFIG (Long-term Memory / Vector Store)
+# ============================================================================
+
+[hippocampus]
+# Qdrant vector database connection settings
+qdrant_host = "localhost"
+qdrant_port = 6333
+qdrant_grpc_port = 6334
+
+# Embedding configuration
+embedding_dim = 384
+distance_metric = "Cosine"  # Options: Cosine, Euclidean, Dot
+
+# Collection names for different memory types
+# Default collection for semantic memories
+collection_name = "brian_memories"
+
+# Kernel interaction memory - stores user-assistant conversations
+interactions_collection = "kernel_interactions"
+
+# User preferences memory - stores user preferences and settings
+preferences_collection = "user_preferences"
+
+# Knowledge memory - stores factual knowledge and context
+knowledge_collection = "knowledge_base"
+
+# Request timeout in seconds
+timeout = 30.0
+
+# Enable/disable vector store
+enabled = true
+
+# Enable semantic memory integration with kernel
+kernel_memory_enabled = true
+
+# ============================================================================
+# SERVER CONFIG (HTTP/WebSocket API)
+# ============================================================================
+
+[server]
+# HTTP server host - 0.0.0.0 listens on all interfaces
+server_host = "0.0.0.0"
+
+# HTTP server port
+server_port = 8080
+
+# Enable WebSocket support
+enable_ws = true
+
+# WebSocket endpoint path
+ws_path = "/ws"
+
+# SSL/TLS configuration (optional)
+ssl_enabled = false
+ssl_cert = ""
+ssl_key = ""

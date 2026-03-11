@@ -6,6 +6,23 @@
 
 ---
 
+## Table of Contents
+
+1. [Executive Summary](#executive-summary)
+2. [What You Have](#what-you-have)
+3. [File Manifest](#file-manifest)
+4. [How to Get Started](#how-to-get-started)
+5. [Key Achievements ✓](#key-achievements-)
+6. [Safety Checklist (Built-in)](#safety-checklist-built-in)
+7. [What's Next?](#whats-next)
+8. [Integration Example](#integration-example)
+9. [Troubleshooting](#troubleshooting)
+10. [Support & Feedback](#support--feedback)
+11. [License](#license)
+12. [Conclusion](#conclusion)
+
+---
+
 ## Executive Summary
 
 You have received a **production-ready prototype of an adaptive cognitive kernel**—the core reasoning engine for an intelligent, auditable, and safe autonomous system. The kernel is:

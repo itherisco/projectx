@@ -1,0 +1,158 @@
+# =============================================================================
+# MCP Servers Docker Compose Configuration
+# =============================================================================
+# This docker-compose.yml provides services for Itheris:
+#   - Qdrant Vector Database (port 6333 REST, 6334 gRPC): Long-term memory
+#   - Finance MCP Server (port 3000): Stock prices, historical data, income statements
+#   - GitHub MCP Server (port 3001): Issues, CI status, workflows, draft PRs
+#
+# Usage:
+#   docker-compose up -d
+#
+# Health checks:
+#   docker-compose ps
+#   curl http://localhost:6333/health  # Qdrant
+#   curl http://localhost:3000/health  # Finance
+#   curl http://localhost:3001/health  # GitHub
+#
+# Logs:
+#   docker-compose logs -f qdrant
+#   docker-compose logs -f mcp-finance
+#   docker-compose logs -f mcp-github
+#
+# Stop:
+#   docker-compose down
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Finance MCP Server (Port 3000)
+  # ---------------------------------------------------------------------------
+  # Provides: stock prices, historical data, income statements via yfinance
+  # No authentication required (or optional YF_API_KEY for premium)
+  # JSON-RPC endpoint on port 3000
+  # ---------------------------------------------------------------------------
+  mcp-finance:
+    image: node:18-alpine
+    container_name: ithers-mcp-finance
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Optional: Yahoo Finance API key for premium features
+      - YF_API_KEY=${YF_API_KEY:-}
+      # Override default endpoint if needed
+      - MCP_FINANCE_ENDPOINT=${MCP_FINANCE_ENDPOINT:-http://localhost:3000}
+    volumes:
+      - ./mcp-finance:/app
+    working_dir: /app
+    command: >
+      sh -c "npm install @modelcontextprotocol/server-yfinance 2>/dev/null || true &&
+             node node_modules/@modelcontextprotocol/server-yfinance/build/index.js"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ithers-network
+    labels:
+      - "com.projectx.service=mcp-finance"
+      - "com.projectx.type=mcp-server"
+
+  # ---------------------------------------------------------------------------
+  # GitHub MCP Server (Port 3001)
+  # ---------------------------------------------------------------------------
+  # Provides: issues, CI status, workflows, draft PRs via GitHub API
+  # Requires GITHUB_TOKEN environment variable
+  # JSON-RPC endpoint on port 3001
+  # ---------------------------------------------------------------------------
+  mcp-github:
+    image: node:18-alpine
+    container_name: ithers-mcp-github
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # Required: GitHub Personal Access Token
+      # Get token at: https://github.com/settings/tokens
+      # Required scopes: repo, read:org, workflow
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Override default endpoint if needed
+      - MCP_GITHUB_ENDPOINT=${MCP_GITHUB_ENDPOINT:-http://localhost:3001}
+    volumes:
+      - ./mcp-github:/app
+    working_dir: /app
+    command: >
+      sh -c "npm install @modelcontextprotocol/server-github 2>/dev/null || true &&
+             node node_modules/@modelcontextprotocol/server-github/build/index.js"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ithers-network
+    labels:
+      - "com.projectx.service=mcp-github"
+      - "com.projectx.type=mcp-server"
+    depends_on:
+      mcp-finance:
+        condition: service_started
+
+  # ---------------------------------------------------------------------------
+  # Qdrant Vector Database (Ports 6333 REST, 6334 gRPC)
+  # ---------------------------------------------------------------------------
+  # Provides: Vector database for long-term semantic memory storage
+  # Used by VectorStore.jl for similarity search and memory persistence
+  # REST API: http://localhost:6333
+  # gRPC API: localhost:6334
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ithers-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ithers-network
+    labels:
+      - "com.projectx.service=qdrant"
+      - "com.projectx.type=vector-store"
+      - "com.projectx.description=Long-term semantic memory backend"
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  ithers-network:
+    driver: bridge
+    name: ithers-mcp-network
+    labels:
+      - "com.projectx.network=mcp-servers"
+
+# ---------------------------------------------------------------------------
+# Volumes (for persistent data if needed)
+# ---------------------------------------------------------------------------
+volumes:
+  mcp-finance-cache:
+    name: ithers-mcp-finance-cache
+  mcp-github-cache:
+    name: ithers-mcp-github-cache
+  qdrant_storage:
+    name: ithers-qdrant-storage

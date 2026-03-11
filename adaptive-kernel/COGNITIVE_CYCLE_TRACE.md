@@ -1,5 +1,18 @@
 # Example Cognitive Cycle Trace
 
+## Table of Contents
+
+- [Cycle #42: Strategic Resource Acquisition](#cycle-42-strategic-resource-acquisition)
+  - [Phase 1: Perception](#phase-1-perception)
+  - [Phase 2: Parallel Agent Proposals](#phase-2-parallel-agent-proposals)
+  - [Phase 3: Conflict Resolution](#phase-3-conflict-resolution)
+  - [Phase 4: Committed Decision](#phase-4-committed-decision)
+  - [Phase 5: Kernel Approval](#phase-5-kernel-approval)
+  - [Phase 6: Execution](#phase-6-execution)
+  - [Phase 7: Immutable Log Entry](#phase-7-immutable-log-entry)
+
+---
+
 ## Cycle #42: Strategic Resource Acquisition
 
 ### Phase 1: Perception

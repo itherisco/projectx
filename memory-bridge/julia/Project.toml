@@ -1,0 +1,20 @@
+name = "MemoryBridge"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+authors = ["ITHERIS Team <itheris@example.com>"]
+version = "0.1.0"
+
+[deps]
+Dates = "adea43e2-fede-5f8d-a1b3-0e1c3c2d3e4f"
+Distributed = "8ba89e20-2852-5dad-bfe9-290b8f0e2e1a"
+JSON = "9f3a5ce9-ebf4-5f4a-a0e1-4b0f2c8d5e6a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c2e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+UUIDs = "cf7118a7-6974-5b02-9634-5f8c0faa80b8"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

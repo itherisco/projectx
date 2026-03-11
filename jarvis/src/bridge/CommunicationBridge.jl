@@ -94,12 +94,12 @@ struct CommunicationConfig
     
     function CommunicationConfig(;
         stt_provider::Symbol = :openai,
-        stt_api_key::String = "AIzaSyBwWCX8w2iJRiqyOPa5LEdXprzC7xHpGsI",
+        stt_api_key::String = get(ENV, "STT_API_KEY", ""),
         tts_provider::Symbol = :elevenlabs,
-        tts_api_key::String = "",
+        tts_api_key::String = get(ENV, "TTS_API_KEY", ""),
         tts_voice_id::String = "21m00Tcm4TlvDq8ikWAM",
         vlm_provider::Symbol = :openai,
-        vlm_api_key::String = "",
+        vlm_api_key::String = get(ENV, "VLM_API_KEY", ""),
         require_confirmation_threshold::TrustLevel = TRUST_STANDARD
     )
         new(

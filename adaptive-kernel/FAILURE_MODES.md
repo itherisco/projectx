@@ -1,5 +1,20 @@
 # How This System Fails If Misused
 
+## Table of Contents
+
+1. [Critical Warnings](#critical-warnings)
+2. [Failure Mode 1: Bypassing the Decision Spine](#failure-mode-1-bypassing-the-decision-spine)
+3. [Failure Mode 2: Disabling Agent Disagreement](#failure-mode-2-disabling-agent-disagreement)
+4. [Failure Mode 3: Ignoring Pain Signals](#failure-mode-3-ignoring-pain-signals)
+5. [Failure Mode 4: Stagnant Memory](#failure-mode-4-stagnant-memory)
+6. [Failure Mode 5: Disabling Reality Ingestion](#failure-mode-5-disabling-reality-ingestion)
+7. [Failure Mode 6: Power Metric Gaming](#failure-mode-6-power-metric-gaming)
+8. [Failure Mode 7: Kernel Bypass](#failure-mode-7-kernel-bypass)
+9. [Failure Mode 8: Over-Optimization](#failure-mode-8-over-optimization)
+10. [Summary](#summary)
+
+---
+
 ## Critical Warnings
 
 This system is designed for dominance, adaptability, and strategic leverage. It is NOT:

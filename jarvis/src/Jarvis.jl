@@ -14,7 +14,8 @@ const VERSION = v"1.0.0"
 export 
     # Core
     SystemIntegrator,
-    JarvisTypes
+    JarvisTypes,
+    NLPGateway,
     
     # Submodules
     LLMBridge,
@@ -32,6 +33,16 @@ export
     JarvisTypes.ExecutableAction,
     JarvisTypes.TrustLevel,
     JarvisTypes.SystemStatus,
+    
+    # NLP Gateway exports
+    NLPGateway.generate_feature_vector,
+    NLPGateway.construct_goal,
+    NLPGateway.FeatureVector,
+    NLPGateway.GoalContext,
+    NLPGateway.DoctrineConstraint,
+    NLPGateway.extract_keywords,
+    NLPGateway.detect_urgency,
+    NLPGateway.classify_intent,
     
     # Functions
     SystemIntegrator.initialize_jarvis,
@@ -54,6 +65,10 @@ export
 # Import all modules
 include("types.jl")
 using .JarvisTypes
+
+# NLP Gateway - must be after JarvisTypes
+include("nlp/NLPGateway.jl")
+using .NLPGateway
 
 include("llm/LLMBridge.jl")
 using .LLMBridge
@@ -113,3 +128,4 @@ function Base.show(io::IO, ::MIME"text/plain", system::JarvisSystem)
 end
 
 end # module Jarvis
+

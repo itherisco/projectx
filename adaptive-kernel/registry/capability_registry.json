@@ -75,5 +75,51 @@
     "risk": "low",
     "reversible": true,
     "run_command": "julia -e 'include(\"capabilities/observe_filesystem.jl\"); execute(Dict())'"
+  },
+  {
+    "id": "Finance_Data_Fetch",
+    "name": "Finance_Data_Fetch",
+    "description": "Fetch stock prices, historical data, and income statements via MCP Finance Server",
+    "inputs": {"symbol": "string", "start_date": "string", "end_date": "string"},
+    "outputs": {"stock_price": "float", "historical_data": "array", "income_statement": "object"},
+    "cost": 0.05,
+    "risk": "low",
+    "risk_score": "LOW",
+    "reversible": true,
+    "authorization": "finance:read",
+    "mcp_endpoint": "http://localhost:3000",
+    "operations": ["get_stock_price", "get_historical_data", "get_income_statement"],
+    "run_command": "mcp:finance"
+  },
+  {
+    "id": "Github_Read",
+    "name": "Github_Read",
+    "description": "Read GitHub issues, check CI/CD status, list workflows via MCP GitHub Server",
+    "inputs": {"repo": "string", "owner": "string"},
+    "outputs": {"issues": "array", "ci_status": "object", "workflows": "array"},
+    "cost": 0.03,
+    "risk": "low",
+    "risk_score": "LOW",
+    "reversible": true,
+    "authorization": "github:read",
+    "mcp_endpoint": "http://localhost:3001",
+    "operations": ["list_issues", "get_issue", "check_ci_status", "list_workflows"],
+    "run_command": "mcp:github:read"
+  },
+  {
+    "id": "Github_Draft_PR",
+    "name": "Github_Draft_PR",
+    "description": "Create draft pull requests on GitHub via MCP GitHub Server",
+    "inputs": {"repo": "string", "owner": "string", "title": "string", "body": "string", "head": "string", "base": "string"},
+    "outputs": {"pr_url": "string", "pr_number": "int", "success": "bool"},
+    "cost": 0.15,
+    "risk": "medium",
+    "risk_score": "MEDIUM",
+    "reversible": false,
+    "authorization": "github:write",
+    "mcp_endpoint": "http://localhost:3001",
+    "operations": ["create_draft_pull_request"],
+    "additional_security": "Ed25519 signature required",
+    "run_command": "mcp:github:write"
   }
 ]

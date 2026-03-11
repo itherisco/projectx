@@ -1,5 +1,22 @@
 # Phase 2 Migration Guide: Sovereign Cognition
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Architecture Changes](#architecture-changes)
+   - [Phase 1 Architecture](#phase-1-architecture)
+   - [Phase 2 Architecture](#phase-2-architecture)
+3. [Migration Steps](#migration-steps)
+   - [Step 1: Dependency Updates](#step-1-dependency-updates)
+   - [Step 2: Integrate Decision Spine](#step-2-integrate-decision-spine)
+   - [Step 3: Configure Agent Weights](#step-3-configure-agent-weights)
+   - [Step 4: Memory System Integration](#step-4-memory-system-integration)
+   - [Step 5: Power Metric Setup](#step-5-power-metric-setup)
+4. [Configuration Options](#configuration-options)
+5. [Testing](#testing)
+
+---
+
 ## Overview
 
 This document describes the migration from Phase 1 (reactive assistant) to Phase 2 (self-directing, multi-agent intelligence engine).
