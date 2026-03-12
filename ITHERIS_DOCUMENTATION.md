@@ -5,9 +5,11 @@
 > - Security Score: 12/100 (CRITICAL)
 > - Cognitive Completeness: 47/100 (Partial)
 > - Personal Assistant Readiness: 42/100 (Not production-ready)
+>
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md).
 
 **Version:** 2.0  
-**Last Updated:** 2026-03-02  
+**Last Updated:** 2026-03-12  
 **Status:** Experimental Neuro-Symbolic Autonomous System  
 **Implementation:** Julia 1.8+ / Rust (Itheris Brain)
 
@@ -85,7 +87,7 @@ The system underwent significant architectural evolution:
 2. **v2.0**: Introduction of the Adaptive Kernel for safety validation
 3. **v3.0**: Full cognitive cycle implementation with multi-agent coordination
 4. **v4.0**: Flow Integrity with cryptographic sovereignty verification
-5. **v5.0 (Current)**: Production-ready system with comprehensive security, memory systems, and multimodal interfaces
+5. **v5.0 (Current)**: ⚠️ **Under Development** - See [STATUS.md](STATUS.md) for current maturity assessment
 
 ---
 

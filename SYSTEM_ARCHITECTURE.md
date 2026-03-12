@@ -1,9 +1,11 @@
 # ITHERIS + JARVIS System Architecture Document
 
 **Document Version:** 1.0  
-**Date:** 2026-03-07  
+**Date:** 2026-03-12  
 **Classification:** Technical Architecture Report  
 **Status:** Comprehensive Synthesis (Phases 1-7)
+
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md).
 
 ---
 

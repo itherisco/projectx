@@ -1,0 +1,28 @@
+# GPIO Bridge Python Dependencies
+# For Raspberry Pi CM4
+
+# GPIO Control
+#RPi.GPIO==0.7.1  # Uncomment on actual Raspberry Pi
+#gpiozero==2.0.1  # Alternative GPIO library
+
+# Serial Communication
+pyserial==3.5
+
+# Configuration
+pyyaml==6.0.1
+
+# Optional: For extended logging
+python-logstash==0.4.0
+
+# Optional: For systemd integration
+#python-systemd==235
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Type checking
+mypy==1.8.0
+types-pyyaml==6.0.12.12
+types-pyserial==3.4.6.2

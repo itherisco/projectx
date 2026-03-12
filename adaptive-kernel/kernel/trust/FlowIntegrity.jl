@@ -237,8 +237,8 @@ end
     serialize_token - Convert token to a verification-friendly format
     Returns token_id hex + HMAC hex for external verification
 """
-function serialize_token(token::FlowToken)::Dict{String, String}
-    return Dict(
+function serialize_token(token::FlowToken)::Dict{String, Any}
+    return Dict{String, Any}(
         "token_id" => bytes2hex(token.token_id),
         "capability_id" => token.capability_id,
         "params_hash" => bytes2hex(token.params_hash),

@@ -13,6 +13,9 @@ use crate::shared_memory::{
     self, FFI_IPC_Message, IPCEntryType, IPCMessage, IPC_MAGIC, IPC_VERSION,
     MAX_PAYLOAD_SIZE,
 };
+use ed25519_dalek::{
+    Signer, SigningKey, Verifier, VerifyingKey, Signature, SIGNATURE_LENGTH, SECRET_KEY_LENGTH,
+};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
@@ -434,6 +437,249 @@ pub extern "C" fn kernel_shutdown() -> i32 {
 }
 
 // ============================================================================
+// Ed25519 Cryptographic Functions for IPC Signing
+// ============================================================================
+
+/// Error codes for crypto operations
+#[repr(i32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoError {
+    Success = 0,
+    NullPointer = -1,
+    InvalidKeySize = -2,
+    InvalidSignatureSize = -3,
+    SigningError = -4,
+    VerificationFailed = -5,
+    KeyGenerationError = -6,
+}
+
+/// Sign a message using Ed25519 (C ABI)
+///
+/// Arguments:
+/// - private_key_ptr: Pointer to 32-byte Ed25519 private key
+/// - message_ptr: Pointer to message data
+/// - message_len: Length of message in bytes
+/// - signature_out: Output buffer for 64-byte signature (must be pre-allocated)
+///
+/// Returns:
+/// - 0 on success
+/// - -1 if any pointer is null
+/// - -2 if private key is not 32 bytes
+/// - -4 on signing error
+#[no_mangle]
+pub extern "C" fn sign_message(
+    private_key_ptr: *const u8,
+    message_ptr: *const u8,
+    message_len: usize,
+    signature_out: *mut u8,
+) -> i32 {
+    // Validate pointers
+    if private_key_ptr.is_null() || message_ptr.is_null() || signature_out.is_null() {
+        log::error!("[FFI] sign_message: null pointer provided");
+        return CryptoError::NullPointer as i32;
+    }
+
+    // Load the 32-byte private key
+    let private_key_bytes = unsafe { std::slice::from_raw_parts(private_key_ptr, SECRET_KEY_LENGTH) };
+    
+    let signing_key = match SigningKey::from_bytes(private_key_bytes.try_into().unwrap()) {
+        Ok(key) => key,
+        Err(e) => {
+            log::error!("[FFI] sign_message: invalid private key: {:?}", e);
+            return CryptoError::InvalidKeySize as i32;
+        }
+    };
+
+    // Read the message
+    let message = unsafe { std::slice::from_raw_parts(message_ptr, message_len) };
+
+    // Sign the message
+    let signature = signing_key.sign(message);
+
+    // Write signature to output buffer
+    unsafe {
+        let sig_slice = std::slice::from_raw_parts_mut(signature_out, SIGNATURE_LENGTH);
+        sig_slice.copy_from_slice(signature.as_bytes());
+    }
+
+    log::debug!("[FFI] sign_message: signed {} bytes", message_len);
+    CryptoError::Success as i32
+}
+
+/// Verify an Ed25519 signature (C ABI)
+///
+/// Arguments:
+/// - public_key_ptr: Pointer to 32-byte Ed25519 public key
+/// - message_ptr: Pointer to message data
+/// - message_len: Length of message in bytes
+/// - signature_ptr: Pointer to 64-byte signature
+///
+/// Returns:
+/// - 0 on success (signature valid)
+/// - 1 if signature is invalid
+/// - -1 if any pointer is null
+/// - -2 if public key is not 32 bytes
+/// - -3 if signature is not 64 bytes
+#[no_mangle]
+pub extern "C" fn verify_message(
+    public_key_ptr: *const u8,
+    message_ptr: *const u8,
+    message_len: usize,
+    signature_ptr: *const u8,
+) -> i32 {
+    // Validate pointers
+    if public_key_ptr.is_null() || message_ptr.is_null() || signature_ptr.is_null() {
+        log::error!("[FFI] verify_message: null pointer provided");
+        return CryptoError::NullPointer as i32;
+    }
+
+    // Load the 32-byte public key
+    let public_key_bytes = unsafe { std::slice::from_raw_parts(public_key_ptr, 32) };
+    
+    let verifying_key = match VerifyingKey::from_bytes(public_key_bytes.try_into().unwrap()) {
+        Ok(key) => key,
+        Err(e) => {
+            log::error!("[FFI] verify_message: invalid public key: {:?}", e);
+            return CryptoError::InvalidKeySize as i32;
+        }
+    };
+
+    // Read the message
+    let message = unsafe { std::slice::from_raw_parts(message_ptr, message_len) };
+
+    // Read the signature
+    let signature_bytes = unsafe { std::slice::from_raw_parts(signature_ptr, SIGNATURE_LENGTH) };
+    let signature = match Signature::from_bytes(signature_bytes.try_into().unwrap()) {
+        Ok(sig) => sig,
+        Err(e) => {
+            log::error!("[FFI] verify_message: invalid signature: {:?}", e);
+            return CryptoError::InvalidSignatureSize as i32;
+        }
+    };
+
+    // Verify the signature
+    match verifying_key.verify(message, &signature) {
+        Ok(()) => {
+            log::debug!("[FFI] verify_message: signature valid");
+            CryptoError::Success as i32
+        }
+        Err(e) => {
+            log::debug!("[FFI] verify_message: signature invalid: {:?}", e);
+            1 // Signature invalid
+        }
+    }
+}
+
+/// Generate an Ed25519 keypair (C ABI)
+///
+/// Arguments:
+/// - seed_ptr: Optional pointer to 32-byte seed (can be null for random)
+/// - public_key_out: Output buffer for 32-byte public key (must be pre-allocated)
+/// - private_key_out: Output buffer for 64-byte private key (must be pre-allocated)
+///
+/// Returns:
+/// - 0 on success
+/// - -1 if output pointers are null
+/// - -2 if seed is provided but not 32 bytes
+/// - -6 on key generation error
+#[no_mangle]
+pub extern "C" fn generate_keypair(
+    seed_ptr: *const u8,
+    public_key_out: *mut u8,
+    private_key_out: *mut u8,
+) -> i32 {
+    // Validate output pointers
+    if public_key_out.is_null() || private_key_out.is_null() {
+        log::error!("[FFI] generate_keypair: null output pointer");
+        return CryptoError::NullPointer as i32;
+    }
+
+    let signing_key = if seed_ptr.is_null() {
+        // Generate random keypair
+        SigningKey::generate(&mut rand_core::OsRng)
+    } else {
+        // Use provided seed
+        let seed = unsafe { std::slice::from_raw_parts(seed_ptr, 32) };
+        let seed_array: [u8; 32] = match seed.try_into() {
+            Ok(arr) => arr,
+            Err(_) => {
+                log::error!("[FFI] generate_keypair: invalid seed size");
+                return CryptoError::InvalidKeySize as i32;
+            }
+        };
+        SigningKey::from_bytes(&seed_array)
+    };
+
+    let verifying_key = signing_key.verifying_key();
+
+    // Write public key (32 bytes)
+    unsafe {
+        let pk_slice = std::slice::from_raw_parts_mut(public_key_out, 32);
+        pk_slice.copy_from_slice(verifying_key.as_bytes());
+    }
+
+    // Write private key (64 bytes - includes public key)
+    unsafe {
+        let sk_slice = std::slice::from_raw_parts_mut(private_key_out, 64);
+        sk_slice.copy_from_slice(signing_key.to_bytes().as_ref());
+    }
+
+    log::debug!("[FFI] generate_keypair: keypair generated");
+    CryptoError::Success as i32
+}
+
+// ============================================================================
+// Cryptographic Random Number Generation (CSPRNG)
+// ============================================================================
+
+/// Generate cryptographically secure random bytes (C ABI)
+///
+/// This function uses the Rust `getrandom` crate which provides:
+/// - OS-specific CSPRNG (getrandom on Linux, SecRandomCopyBytes on macOS)
+/// - Fallback to TPM/HSM RNG if available
+///
+/// Arguments:
+/// - `buf_out`: Output buffer for random bytes
+/// - `n`: Number of bytes to generate
+///
+/// Returns:
+/// - 0 on success
+/// - -1 on error (buffer too small)
+/// - -2 if CSPRNG unavailable
+#[no_mangle]
+pub extern "C" fn get_secure_random(buf_out: *mut u8, n: usize) -> i32 {
+    use getrandom::getrandom;
+    
+    if n == 0 {
+        return 0;
+    }
+    
+    if buf_out.is_null() {
+        log::error!("[FFI] get_secure_random: null buffer pointer");
+        return -1;
+    }
+    
+    // Create buffer and fill with random bytes
+    let mut buffer = vec![0u8; n];
+    
+    match getrandom(&mut buffer) {
+        Ok(()) => {
+            // Copy to output buffer
+            unsafe {
+                let out_slice = std::slice::from_raw_parts_mut(buf_out, n);
+                out_slice.copy_from_slice(&buffer);
+            }
+            log::debug!("[FFI] get_secure_random: generated {} bytes", n);
+            0
+        }
+        Err(e) => {
+            log::error!("[FFI] get_secure_random: failed to get random: {:?}", e);
+            -2
+        }
+    }
+}
+
+// ============================================================================
 // Additional FFI functions for better Julia integration
 // ============================================================================
 
@@ -547,5 +793,183 @@ mod tests {
         
         // Cleanup
         let _ = kernel_reset();
+    }
+    
+    // ========================================================================
+    // Ed25519 Cryptographic Function Tests
+    // ========================================================================
+    
+    #[test]
+    fn test_generate_keypair() {
+        let mut public_key = [0u8; 32];
+        let mut private_key = [0u8; 64];
+        
+        // Generate keypair with null seed (random)
+        let result = generate_keypair(
+            std::ptr::null(),
+            public_key.as_mut_ptr(),
+            private_key.as_mut_ptr(),
+        );
+        assert_eq!(result, 0);
+        
+        // Verify public key is not all zeros
+        assert!(public_key.iter().any(|&x| x != 0));
+        
+        // Verify private key is not all zeros
+        assert!(private_key.iter().any(|&x| x != 0));
+    }
+    
+    #[test]
+    fn test_generate_keypair_with_seed() {
+        let seed: [u8; 32] = [0x42; 32];
+        let mut public_key = [0u8; 32];
+        let mut private_key = [0u8; 64];
+        
+        // Generate keypair with seed
+        let result = generate_keypair(
+            seed.as_ptr(),
+            public_key.as_mut_ptr(),
+            private_key.as_mut_ptr(),
+        );
+        assert_eq!(result, 0);
+        
+        // Generate again with same seed - should produce same keypair
+        let mut public_key2 = [0u8; 32];
+        let mut private_key2 = [0u8; 64];
+        
+        let result2 = generate_keypair(
+            seed.as_ptr(),
+            public_key2.as_mut_ptr(),
+            private_key2.as_mut_ptr(),
+        );
+        assert_eq!(result2, 0);
+        
+        assert_eq!(public_key, public_key2);
+        assert_eq!(private_key, private_key2);
+    }
+    
+    #[test]
+    fn test_sign_and_verify_message() {
+        // Generate keypair
+        let mut public_key = [0u8; 32];
+        let mut private_key = [0u8; 64];
+        
+        let result = generate_keypair(
+            std::ptr::null(),
+            public_key.as_mut_ptr(),
+            private_key.as_mut_ptr(),
+        );
+        assert_eq!(result, 0);
+        
+        // Sign a message
+        let message = b"Hello, World! This is a test message.";
+        let mut signature = [0u8; 64];
+        
+        let sign_result = sign_message(
+            private_key.as_ptr(),
+            message.as_ptr(),
+            message.len(),
+            signature.as_mut_ptr(),
+        );
+        assert_eq!(sign_result, 0);
+        
+        // Verify the signature
+        let verify_result = verify_message(
+            public_key.as_ptr(),
+            message.as_ptr(),
+            message.len(),
+            signature.as_ptr(),
+        );
+        assert_eq!(verify_result, 0); // 0 means valid
+    }
+    
+    #[test]
+    fn test_verify_invalid_signature() {
+        // Generate keypair
+        let mut public_key = [0u8; 32];
+        let mut private_key = [0u8; 64];
+        
+        let _ = generate_keypair(
+            std::ptr::null(),
+            public_key.as_mut_ptr(),
+            private_key.as_mut_ptr(),
+        );
+        
+        let message = b"Original message";
+        let mut signature = [0u8; 64];
+        
+        // Sign original message
+        let _ = sign_message(
+            private_key.as_ptr(),
+            message.as_ptr(),
+            message.len(),
+            signature.as_mut_ptr(),
+        );
+        
+        // Try to verify different message with original signature
+        let different_message = b"Different message";
+        let verify_result = verify_message(
+            public_key.as_ptr(),
+            different_message.as_ptr(),
+            different_message.len(),
+            signature.as_ptr(),
+        );
+        
+        assert_eq!(verify_result, 1); // 1 means invalid signature
+    }
+    
+    #[test]
+    fn test_verify_with_wrong_key() {
+        // Generate two keypairs
+        let mut public_key1 = [0u8; 32];
+        let mut private_key1 = [0u8; 64];
+        let mut public_key2 = [0u8; 32];
+        let mut private_key2 = [0u8; 64];
+        
+        let _ = generate_keypair(std::ptr::null(), public_key1.as_mut_ptr(), private_key1.as_mut_ptr());
+        let _ = generate_keypair(std::ptr::null(), public_key2.as_mut_ptr(), private_key2.as_mut_ptr());
+        
+        let message = b"Test message";
+        let mut signature = [0u8; 64];
+        
+        // Sign with key1
+        let _ = sign_message(
+            private_key1.as_ptr(),
+            message.as_ptr(),
+            message.len(),
+            signature.as_mut_ptr(),
+        );
+        
+        // Try to verify with key2's public key
+        let verify_result = verify_message(
+            public_key2.as_ptr(),
+            message.as_ptr(),
+            message.len(),
+            signature.as_ptr(),
+        );
+        
+        assert_eq!(verify_result, 1); // 1 means invalid signature
+    }
+    
+    #[test]
+    fn test_null_pointer_errors() {
+        let message = b"Test";
+        let mut signature = [0u8; 64];
+        let mut public_key = [0u8; 32];
+        let mut private_key = [0u8; 64];
+        
+        // Test sign_message with null pointers
+        assert_eq!(sign_message(std::ptr::null(), message.as_ptr(), message.len(), signature.as_mut_ptr()), -1);
+        assert_eq!(sign_message(private_key.as_ptr(), std::ptr::null(), message.len(), signature.as_mut_ptr()), -1);
+        assert_eq!(sign_message(private_key.as_ptr(), message.as_ptr(), message.len(), std::ptr::null_mut()), -1);
+        
+        // Test verify_message with null pointers
+        assert_eq!(verify_message(std::ptr::null(), message.as_ptr(), message.len(), signature.as_ptr()), -1);
+        assert_eq!(verify_message(public_key.as_ptr(), std::ptr::null(), message.len(), signature.as_ptr()), -1);
+        assert_eq!(verify_message(public_key.as_ptr(), message.as_ptr(), message.len(), std::ptr::null()), -1);
+        
+        // Test generate_keypair with null output pointers
+        assert_eq!(generate_keypair(std::ptr::null(), std::ptr::null_mut(), private_key.as_mut_ptr()), -1);
+        assert_eq!(generate_keypair(std::ptr::null(), public_key.as_mut_ptr(), std::ptr::null_mut()), -1);
     }
 }

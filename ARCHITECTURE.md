@@ -1,9 +1,11 @@
 # ITHERIS Architecture Documentation
 
 > **Version:** 1.0.0  
-> **Last Updated:** 2026-03-07  
+> **Last Updated:** 2026-03-12  
 > **System Status:** Experimental Prototype  
 > **Classification:** Technical Architecture Specification
+>
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md).
 
 ---
 

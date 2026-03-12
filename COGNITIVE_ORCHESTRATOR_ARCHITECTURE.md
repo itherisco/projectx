@@ -1,9 +1,11 @@
 # Cognitive Orchestrator Architecture
 
 **Version:** 1.0  
-**Date:** 2026-03-09  
+**Date:** 2026-03-12  
 **Status:** Integration and Enhancement Project  
 **Foundation:** Existing Implementation in `adaptive-kernel/`
+
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md).
 
 ## Table of Contents
 

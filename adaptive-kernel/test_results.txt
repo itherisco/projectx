@@ -1,28 +1,28 @@
 Adaptive Kernel Test Results
 ============================
-Timestamp: 2026-03-08T02:57:02.441
+Timestamp: 2026-03-12T07:31:29.481
 Total: 10
 Passed: 3
 Failed: 7
 Skipped: 0
-Execution Time: 123.17s
+Execution Time: 116.56s
 
 Detailed Results:
 ----------------
 failed: unit_kernel_test.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl", 6, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x00000000000098b8, Main.Kernel.RustIPC))))
-passed: unit_capability_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl", 12, Some tests did not pass: 39 passed, 1 failed, 1 errored, 0 broken.)
+failed: unit_capability_test.jl
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/unit_capability_test.jl", 5, Some tests did not pass: 20 passed, 0 failed, 1 errored, 0 broken.)
 failed: integration_simulation_test.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl", 7, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009a14, Main.Kernel.RustIPC))))
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl", 16, Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.)
 passed: test_emotional_causal_integration.jl
 failed: integration_test.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/integration_test.jl", 4, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009b9b, Main.IntegrationTests.Kernel.RustIPC))))
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/integration_test.jl", 4, Test.FallbackTestSetException("There was an error during testing"))
 failed: stress_test.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/stress_test.jl", 11, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009ccc, Main.Kernel.RustIPC))))
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/stress_test.jl", 347, Some tests did not pass: 5 passed, 0 failed, 1 errored, 0 broken.)
 failed: test_c1_prompt_injection.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl", 24, Some tests did not pass: 2 passed, 1 failed, 0 errored, 0 broken.)
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl", 24, Some tests did not pass: 0 passed, 2 failed, 4 errored, 0 broken.)
 failed: test_flow_integrity.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl", 9, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009e1c, Main.Kernel.RustIPC))))
+  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl", 15, Some tests did not pass: 0 passed, 0 failed, 7 errored, 0 broken.)
 passed: test_context_poisoning.jl
-failed: structural_integrity_attack_test.jl
-  Error: LoadError("/home/user/projectx/adaptive-kernel/tests/structural_integrity_attack_test.jl", 9, LoadError("/home/user/projectx/jarvis/src/types.jl", 4, LoadError("/home/user/projectx/jarvis/src/config/SecureKeystore.jl", 5, ArgumentError("Package Crypto not found in current path.\n- Run `import Pkg; Pkg.add(\"Crypto\")` to install the Crypto package."))))
+passed: structural_integrity_attack_test.jl

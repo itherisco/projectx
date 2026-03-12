@@ -1,0 +1,51 @@
+# GPIO Bridge Configuration for Raspberry Pi CM4
+# Hardware Fail-Closed Architecture Specification v1.0
+
+heartbeat:
+  # GPIO6 (BCM) - Pin 31 on 40-pin header
+  pin: 6
+  # 30ms timeout (3 missed heartbeats at 100Hz)
+  timeout_ms: 30
+  # Expected heartbeat frequency (Hz)
+  frequency_hz: 100
+  
+emergency:
+  # GPIO4 (BCM) - Pin 7 on 40-pin header
+  pin: 4
+  
+actuators:
+  # Motor/Actuator pins (BCM numbering)
+  # Default to LOW (safe state = no power to actuators)
+  motors: [17, 18, 22, 23, 24, 25, 26, 27]
+  # Network PHY Reset pin (BCM)
+  # Default to LOW = PHY enabled; HIGH = PHY held in reset
+  network_reset: 14
+  # Power Gate Relay pin (BCM)
+  # Default to LOW = power enabled; HIGH = power removed
+  power_gate: 15
+  
+comms:
+  # Communication type: serial or tcp
+  type: serial
+  # Serial port or TCP port
+  port: /dev/ttyS0
+  # Baud rate for serial
+  baud: 115200
+  # TCP listen port (if type is tcp)
+  tcp_port: 9000
+  # TCP bind address
+  bind: "0.0.0.0"
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+  # Log to syslog
+  syslog: true
+  # Log file (optional)
+  file: /var/log/gpio-bridge.log
+  
+system:
+  # Status LED pin (BCM) - Pin 37
+  status_led: 26
+  # Path to GPIO export directory
+  gpio_path: /sys/class/gpio

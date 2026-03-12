@@ -64,6 +64,9 @@ pub mod health;
 pub mod api;
 pub mod routes;
 
+// Part 9: Warden Security Layer (Sovereign)
+pub mod warden;
+
 // Re-exports
 pub use runtime::{JarvisRuntime, RuntimeConfig, RuntimeMode};
 pub use supervisor::{Supervisor, SupervisorConfig, RestartPolicy};

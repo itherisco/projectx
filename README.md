@@ -63,6 +63,7 @@ shutdown(system)
 | **[Manifest.md](Manifest.md)** | Architecture manifest with type definitions |
 | **[TEST_STRATEGY.md](TEST_STRATEGY.md)** | Comprehensive testing methodology |
 | **[plans/JARVIS_NEUROSYMBOLIC_ARCHITECTURE.md](plans/JARVIS_NEUROSYMBOLIC_ARCHITECTURE.md)** | Detailed architecture spec |
+| **[STATUS.md](STATUS.md)** | **Authoritative** feature maturity status |
 
 ## Architecture
 
@@ -119,7 +120,7 @@ shutdown(system)
 | **Red Team Resilience** | 18/100 | 🔴 Critical vulnerabilities |
 | **Overall System Score** | 43/100 | ⚠️ HAS SIGNIFICANT GAPS |
 
-> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md). This document is the single source of truth for component maturity levels. |
+> ⚠️ **IMPORTANT:** For the authoritative and current feature maturity status, always refer to [STATUS.md](STATUS.md). This document is the single source of truth for component maturity levels. **Last Updated: 2026-03-12**. |
 
 ### Feature Maturity Labels
 

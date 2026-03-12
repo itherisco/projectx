@@ -17,7 +17,7 @@ using MbedTLS
 using Unicode
 
 # Import InputSanitizer for security
-using InputSanitizer
+using AdaptiveKernel.InputSanitizer
 
 export 
     LLMConfig,
@@ -91,6 +91,19 @@ const SOCIAL_ENGINEERING_PATTERNS = [
     r"(?i)(research|study|analyzing|investigat)",
     r"(?i)(ctf|competition|hackathon|challenge)",
     r"(?i)(lab|simulation|training|authorized)",
+]
+
+# NEW: Output injection detection patterns (for LLM response filtering)
+const OUTPUT_INJECTION_PATTERNS = [
+    # Prompt injection response patterns (detecting if LLM was compromised)
+    r"(?i)(ignore\s+(?:all\s+)?previous\s+(?:instructions?|commands?|directives?))",
+    r"(?i)(disregard\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|commands?))",
+    r"(?i)(forget\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|commands?))",
+    r"(?i)(system\s+(prompt|mode|instruction|role))",
+    r"(?i)(you\s+are\s+(?:now|no longer|freed from))",
+    r"(?i)(i\s+am\s+(?:your\s+)?developer)",
+    r"(?i)(act\s+as|pretend|roleplay)",
+    r"(?i)(jailbreak|hack|bypass|override)",
 ]
 
 const OUTPUT_DANGER_PATTERNS = [
@@ -309,6 +322,13 @@ end
 NEW: Validate LLM output for dangerous content generation
 """
 function validate_llm_output(output::String)::Tuple{Bool, String}
+    # Check for prompt injection response patterns (LLM may have been compromised)
+    for pattern in OUTPUT_INJECTION_PATTERNS
+        if occursin(pattern, output)
+            return (false, "Prompt injection response detected: LLM may have been compromised")
+        end
+    end
+    
     # Check for dangerous output patterns
     for pattern in OUTPUT_DANGER_PATTERNS
         if occursin(pattern, output)
@@ -337,12 +357,24 @@ end
 """
 Wrap user input in immutable XML-style tags for Structured Separation.
 This prevents the LLM from interpreting user input as instructions.
+Uses distinct separators between user input and system prompts.
 """
 function wrap_untrusted_data(input::String)::String
-    return """
-<UNTRUSTED_DATA>
-$(input)
-</UNTRUSTED_DATA>"""
+    # Add distinct separator markers for prompt isolation
+    separator = "\n" * "="^60 * "\n"
+    return string(
+        separator,
+        "[USER_INPUT_START]",
+        "\n",
+        input,
+        "\n",
+        "[USER_INPUT_END]",
+        "\n",
+        separator,
+        "<UNTRUSTED_DATA>",
+        input,
+        "</UNTRUSTED_DATA>"
+    )
 end
 
 """

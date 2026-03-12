@@ -18,6 +18,10 @@ module KernelInterface
 using Dates
 using UUIDs
 
+# Include memory management
+include("MemoryManager.jl")
+import .MemoryManager: cleanup_memory, get_memory_stats
+
 # Kernel state tracking
 mutable struct KernelState
     approved_count::Int

@@ -1,9 +1,9 @@
 [package]
 name = "jarvis_runtime"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["JARVIS Team"]
-description = "Production-grade async runtime for JARVIS intelligent platform"
+description = "Production-grade async runtime for JARVIS intelligent platform with Warden security layer"
 license = "MIT"
 
 [dependencies]
@@ -39,7 +39,6 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
-
 # File watching
 notify = "6.1"
 
@@ -49,7 +48,7 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls"], optional = true
 # System info
 sys-info = "0.9"
 
-# JWT
+# JWT & Cryptography
 jsonwebtoken = "9.2"
 argon2 = "0.5"
 
@@ -84,6 +83,48 @@ ndarray = "0.15"
 # HTTP
 hyper = "1.1"
 
+# ============================================================================
+# WARDEN SECURITY LAYER DEPENDENCIES
+# ============================================================================
+
+# AES-256-GCM encryption for secrets management
+aes-gcm = "0.10"
+
+# Cryptographic primitives
+sha2 = "0.10"
+hmac = "0.12"
+rand_core = "0.6"
+
+# TPM 2.0 integration (optional - falls back if not available)
+tss-esapi = { version = "7.0", optional = true }
+
+# For secure random (CSPRNG)
+getrandom = "0.2"
+
+# For time operations
+time = "0.3"
+
+# Regex for pattern matching
+regex = "1.10"
+
+# URL validation
+url = "2.5"
+
+# Hex encoding
+hex = "0.4"
+
+# HTTP client for safe requests
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "blocking"] }
+
+# Async runtime for HTTP
+tokio = { version = "1.35", features = ["full"] }
+
+# Process execution for safe shell
+tokio-process = "0.3"
+
+# Seccomp (Linux security)
+seccomp = { version = "0.3", optional = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.12"
@@ -94,6 +135,7 @@ default = ["runtime"]
 runtime = []
 web = ["dep:reqwest"]
 sandbox = []
+warden = ["dep:tss-esapi", "dep:seccomp"]
 
 [lib]
 name = "jarvis_runtime"

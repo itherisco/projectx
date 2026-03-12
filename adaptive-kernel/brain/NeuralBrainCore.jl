@@ -22,14 +22,21 @@ end
 # Export neural brain types and functions
 export 
     NeuralBrain,
+    BrainCore,
     BrainInferenceResult,
     create_neural_brain,
+    create_brain_core,
+    initialize_neural_brain!,
     forward_pass,
     evaluate_value,
     add_experience!,
     train_step!,
     update_target_network!,
-    get_uncertainty
+    get_uncertainty,
+    deduct_inference_cost,
+    get_energy_status,
+    tick_metabolic_clock,
+    boost_energy!
 
 # ============================================================================
 # NEURAL NETWORK LAYER STUBS (Fallback when Flux not available)
@@ -79,6 +86,201 @@ function (dropout::SimpleDropout)(x::Vector{Float32})::Vector{Float32}
         return x .* mask ./ (1f0 - dropout.rate)
     end
     return x
+end
+
+# ============================================================================
+# BRAIN CORE - Metabolic Energy Management (Phase 1: Neuro-Symbolic Substrate)
+# ============================================================================
+
+# Metabolic clock frequency for energy tracking
+const METABOLIC_CLOCK_HZ = 136.1f0
+const METABOLIC_PERIOD_SEC = 1.0f0 / METABOLIC_CLOCK_HZ
+
+# Energy costs for cognitive operations
+const INFERENCE_COST = 0.005f0    # Cost per inference cycle
+const PERCEPTION_COST = 0.001f0   # Cost per perception
+const LEARNING_COST = 0.008f0    # Cost per learning step
+const STARTING_ENERGY = 1.0f0     # Initial energy level
+
+"""
+    BrainCore - Core brain structure with metabolic energy management
+    
+    This is the central hub for Phase 1: Neuro-Symbolic Substrate:
+    - `energy_acc`: Energy accumulation state tracked on 136.1 Hz metabolic clock
+    - Integration with MetabolicController for survival-driven cognition
+    - Connection to NeuralBrain for cognitive operations
+    
+    # Fields
+    - `energy_acc::Float32`: Current energy level (0.0-1.0)
+    - `neural_brain::Any`: The neural network brain for inference (set after construction)
+    - `metabolic_tick::Int64`: Number of metabolic clock ticks
+    - `last_tick_time::Float64`: Time of last metabolic tick
+    - `inference_count::Int64`: Total number of inferences performed
+    - `total_energy_spent::Float32`: Total energy consumed
+    - `energy_history::Vector{Tuple{DateTime, Float32}}`: Energy history for analysis
+"""
+mutable struct BrainCore
+    # Energy accumulation state (tracked on 136.1 Hz metabolic clock)
+    energy_acc::Float32
+    
+    # Neural brain for cognitive operations (set to NeuralBrain after construction)
+    neural_brain::Any
+    
+    # Metabolic clock state
+    metabolic_tick::Int64
+    last_tick_time::Float64
+    
+    # Statistics
+    inference_count::Int64
+    total_energy_spent::Float32
+    total_inference_cost::Float32
+    
+    # Energy history for monitoring
+    energy_history::Vector{Tuple{DateTime, Float32}}
+    
+    # Creation timestamp
+    created_at::DateTime
+    
+    function BrainCore(;
+        starting_energy::Float32=STARTING_ENERGY,
+        latent_dim::Int=128,
+        num_actions::Int=6
+    )
+        # Neural brain will be set via initialize_neural_brain! after construction
+        # to avoid forward reference issues
+        
+        new(
+            starting_energy,  # energy_acc
+            nothing,         # neural_brain (set later)
+            0,                # metabolic_tick
+            time(),          # last_tick_time
+            0,               # inference_count
+            0.0f0,           # total_energy_spent
+            0.0f0,           # total_inference_cost
+            Tuple{DateTime, Float32}[],  # energy_history
+            now()            # created_at
+        )
+    end
+end
+
+"""
+    initialize_neural_brain! - Initialize the neural brain component
+    
+    Called after BrainCore construction to set up the neural network."""
+function initialize_neural_brain!(core::BrainCore; latent_dim::Int=128, num_actions::Int=6)
+    core.neural_brain = NeuralBrain(latent_dim, num_actions)
+end
+
+"""
+    create_brain_core - Factory function to create BrainCore with energy management
+    
+    # Arguments
+    - `starting_energy::Float32`: Initial energy level (default 1.0)
+    - `latent_dim::Int`: Latent dimension for neural brain
+    - `num_actions::Int`: Number of actions
+"""
+function create_brain_core(
+    starting_energy::Float32=STARTING_ENERGY;
+    latent_dim::Int=128,
+    num_actions::Int=6
+)::BrainCore
+    core = BrainCore(
+        starting_energy=starting_energy,
+        latent_dim=latent_dim,
+        num_actions=num_actions
+    )
+    # Initialize the neural brain component
+    initialize_neural_brain!(core; latent_dim=latent_dim, num_actions=num_actions)
+    # Record initial energy state
+    record_energy!(core)
+    return core
+end
+
+"""
+    tick_metabolic_clock - Advance the metabolic clock by one tick
+    
+    Called at 136.1 Hz to track energy consumption and recovery.
+    Each tick represents a metabolic cycle."""
+function tick_metabolic_clock(core::BrainCore)::Float32
+    core.metabolic_tick += 1
+    current_time = time()
+    
+    # Calculate time delta since last tick
+    dt = current_time - core.last_tick_time
+    core.last_tick_time = current_time
+    
+    # Base metabolism cost per tick (very small)
+    base_cost = 0.0001f0 * Float32(dt)
+    
+    # Apply metabolic cost
+    core.energy_acc = clamp(core.energy_acc - base_cost, 0.0f0, 1.0f0)
+    
+    # Record energy periodically
+    if core.metabolic_tick % 1000 == 0
+        record_energy!(core)
+    end
+    
+    return core.energy_acc
+end
+
+"""
+    deduct_inference_cost - Deduct energy cost for cognitive inference
+    
+    Called before each thought cycle. Returns true if enough energy available.
+    
+    # Arguments
+    - `core::BrainCore`: The brain core
+    - `cost::Float32`: Additional cost to deduct (default: INFERENCE_COST)"""
+function deduct_inference_cost(core::BrainCore; cost::Float32=INFERENCE_COST)::Bool
+    # Check if enough energy available
+    if core.energy_acc < cost
+        return false
+    end
+    
+    # Deduct energy
+    core.energy_acc -= cost
+    core.inference_count += 1
+    core.total_energy_spent += cost
+    core.total_inference_cost += cost
+    
+    return true
+end
+
+"""
+    get_energy_status - Get current energy status for monitoring
+    
+    Returns a dict with energy level and metabolic statistics."""
+function get_energy_status(core::BrainCore)::Dict{Symbol, Any}
+    return Dict(
+        :energy => core.energy_acc,
+        :metabolic_tick => core.metabolic_tick,
+        :inference_count => core.inference_count,
+        :total_energy_spent => core.total_energy_spent,
+        :avg_cost_per_inference => core.inference_count > 0 ? 
+            core.total_energy_spent / Float32(core.inference_count) : 0.0f0,
+        :is_low_energy => core.energy_acc < 0.3f0,
+        :is_critical => core.energy_acc < 0.15f0
+    )
+end
+
+"""
+    record_energy! - Record current energy in history
+"""
+function record_energy!(core::BrainCore)
+    push!(core.energy_history, (now(), core.energy_acc))
+    
+    # Keep history bounded
+    if length(core.energy_history) > 1000
+        deleteat!(core.energy_history, 1:length(core.energy_history) - 1000)
+    end
+end
+
+"""
+    boost_energy! - Add energy (e.g., after successful task)
+"""
+function boost_energy!(core::BrainCore, amount::Float32)
+    core.energy_acc = clamp(core.energy_acc + amount, 0.0f0, 1.0f0)
+    record_energy!(core)
 end
 
 # ============================================================================

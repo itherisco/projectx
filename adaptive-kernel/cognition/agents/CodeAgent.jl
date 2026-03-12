@@ -20,6 +20,14 @@ using ..DecisionSpine
 include("../../sandbox/ExecutionSandbox.jl")
 using ..ExecutionSandbox
 
+# Import ToolRegistry for capability lookup
+include("../../registry/ToolRegistry.jl")
+using ..ToolRegistry
+
+# Import Kernel for sovereign approval
+include("../../kernel/Kernel.jl")
+using ..Kernel
+
 export CodeAgent, create_code_agent, generate_proposal
 
 # ============================================================================
@@ -491,33 +499,142 @@ end
 
 """
     execute_code_safely - Safely execute code using ExecutionSandbox
+    
+    This function implements the full sandbox execution pipeline:
+    1. Look up capability_code_interpreter in ToolRegistry
+    2. Call Kernel.approve() for sovereign approval (LEP score calculation)
+    3. Check agent's energy_acc (viability budget) against metabolic clock (136.1 Hz)
+    4. Execute in ExecutionSandbox with namespace isolation
+    5. Capture BrainOutput and compute RPE signal
+    6. Send RPE back via lock-free ring buffer IPC to update policy gradients
 """
 function execute_code_safely(
     agent::CodeAgent,
     code::String,
     language::String,
-    params::Dict{String, Any}
+    params::Dict{String, Any},
+    registry::Union{ToolRegistry, Nothing}=nothing,
+    kernel::Union{KernelState, Nothing}=nothing
 )::Dict{String, Any}
-    # Configure sandbox based on safety assessment
+    # Step 1: Look up capability_code_interpreter in ToolRegistry
+    tool_id = "capability_code_interpreter"
+    
+    if registry !== nothing
+        metadata = get_tool_metadata(registry, tool_id)
+        if metadata === nothing
+            return Dict{String, Any}(
+                "success" => false,
+                "output" => nothing,
+                "error" => "Code interpreter capability not registered",
+                "execution_time" => 0.0,
+                "sandbox_mode" => "none",
+                "rpe" => 0.0
+            )
+        end
+        
+        # Validate parameters against metadata
+        if !validate_params(metadata, params)
+            return Dict{String, Any}(
+                "success" => false,
+                "output" => nothing,
+                "error" => "Invalid parameters for code interpreter",
+                "execution_time" => 0.0,
+                "sandbox_mode" => "none",
+                "rpe" => 0.0
+            )
+        end
+    end
+    
+    # Step 2: Call Kernel.approve() for sovereign approval
+    if kernel !== nothing
+        # Create ActionProposal for approval
+        proposal = ActionProposal(
+            id=string(uuid4()),
+            action_type="code_execution",
+            parameters=Dict{String, Any}(
+                "code" => code,
+                "language" => language
+            ),
+            risk=0.8,  # Code execution is high risk
+            expected_reward=0.5,
+            timestamp=now()
+        )
+        
+        # Get kernel decision
+        decision = approve(kernel, proposal, Dict{String, Any}())
+        
+        # Fail-closed: deny if kernel doesn't approve
+        if decision !== APPROVED
+            return Dict{String, Any}(
+                "success" => false,
+                "output" => nothing,
+                "error" => "Kernel denied code execution approval",
+                "execution_time" => 0.0,
+                "sandbox_mode" => "none",
+                "rpe" => 0.0
+            )
+        end
+    end
+    
+    # Step 3: Check agent's energy_acc against metabolic clock (136.1 Hz)
+    # Configure sandbox with timeout in ms
+    timeout_ms = get(params, "timeout", 500) * 1000  # Convert to ms, default 500ms
+    
     config = SandboxConfig(
-        timeout = get(params, "timeout", 30),
+        timeout_ms = timeout_ms,
         memory_limit_mb = get(params, "memory_limit", 512),
         cpu_limit = get(params, "cpu_limit", 0.5),
         network_allowed = get(params, "network_allowed", false),
-        filesystem_allowed = get(params, "filesystem_allowed", false)
+        filesystem_allowed = get(params, "filesystem_allowed", false),
+        isolation_level = PROCESS_ISOLATION,
+        enable_wdt = get(params, "enable_wdt", true),
+        scratch_pad_path = get(params, "scratch_pad_path", nothing)
     )
     
-    # Select sandbox mode based on language
-    mode = LocalSandbox()
+    # Calculate required energy based on timeout and cpu limit
+    required_energy = calculate_energy_consumption(Float64(timeout_ms), config.cpu_limit)
     
-    # Create execution result
-    result = ExecutionResult(
-        success = false,
-        output = nothing,
-        error = "Code execution placeholder - requires ToolRegistry integration",
-        execution_time = 0.0,
-        sandbox_mode = :local
+    # Check energy budget (fail-closed)
+    if !check_energy_budget(agent.energy_acc, required_energy)
+        return Dict{String, Any}(
+            "success" => false,
+            "output" => nothing,
+            "error" => "Insufficient energy for code execution (metabolic gating)",
+            "execution_time" => 0.0,
+            "sandbox_mode" => "none",
+            "rpe" => 0.0
+        )
+    end
+    
+    # Step 4: Execute in ExecutionSandbox with namespace isolation
+    # Select sandbox mode based on language and security requirements
+    mode = WardenSandbox(PROCESS_ISOLATION)
+    
+    # Build execution params
+    execution_params = Dict{String, Any}(
+        "code" => code,
+        "language" => language
     )
+    
+    # Execute in sandbox
+    result = execute_in_sandbox(tool_id, execution_params, mode, registry, config)
+    
+    # Step 5: Capture BrainOutput and compute RPE signal
+    rpe = 0.0
+    if result.brain_output !== nothing
+        # Deduct energy consumed from agent's energy_acc
+        agent.energy_acc -= result.brain_output.energy_consumed
+        
+        # Compute RPE for policy gradient updates
+        rpe = compute_rpe_from_brain_output(result.brain_output)
+        
+        # Update brain output with RPE
+        result.brain_output.rpe_signal = rpe
+    end
+    
+    # Step 6: Send RPE back via lock-free ring buffer IPC
+    execution_id = generate_execution_id()
+    send_rpe_to_warden(rpe, execution_id)
     
     # Track success/failure
     if result.success
@@ -531,7 +648,9 @@ function execute_code_safely(
         "output" => result.output,
         "error" => result.error,
         "execution_time" => result.execution_time,
-        "sandbox_mode" => string(result.sandbox_mode)
+        "sandbox_mode" => string(result.sandbox_mode),
+        "rpe" => rpe,
+        "energy_remaining" => agent.energy_acc
     )
 end
 

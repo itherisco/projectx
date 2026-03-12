@@ -30,6 +30,14 @@ const COST_LEARNING = 0.008f0         # Cost per learning update
 const COST_PLANNING = 0.010f0         # Cost per planning cycle
 const COST_DREAMING = 0.0005f0        # Low cost dreaming mode
 
+# Metabolic clock - 136.1 Hz heartbeat for survival-driven cognition
+const METABOLIC_FREQUENCY_HZ = 136.1f0
+const METABOLIC_PERIOD_NS = UInt64(round(1e9 / METABOLIC_FREQUENCY_HZ))
+const METABOLIC_TICKS_PER_SECOND = Float32(METABOLIC_FREQUENCY_HZ)
+
+# Survival thresholds
+const DEATH_ENERGY = 0.05f0  # Death threshold per Phase 2 spec
+
 # Recovery rates
 const RECOVERY_RATE_IDLE = 0.002f0     # Recovery while idle
 const RECOVERY_RATE_ACTIVE = 0.001f0   # Recovery while active

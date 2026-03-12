@@ -13,7 +13,6 @@ using JSON
 # Export enums and types
 export RiskLevel, TrustLevel
 export RiskClassifier, TrustEvent
-export ConfirmationGate, PendingAction
 
 # Export secure trust types and functions
 export SecureTrustLevel
@@ -36,7 +35,6 @@ include("Types.jl")
 
 # Then include the implementation files
 include("RiskClassifier.jl")
-include("ConfirmationGate.jl")
 
 # Include secure confirmation gate (P0 C4 fix)
 include("SecureConfirmationGate.jl")

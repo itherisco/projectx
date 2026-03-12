@@ -1,30 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="AdaptiveKernel" tests="10" failures="7" skipped="0" time="123.151">
-  <testcase name="unit_kernel_test.jl" time="98.061">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl", 6, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x00000000000098b8, Main.Kernel.RustIPC))))"></failure>
+<testsuite name="AdaptiveKernel" tests="10" failures="7" skipped="0" time="116.553">
+  <testcase name="unit_kernel_test.jl" time="15.202">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl", 12, Some tests did not pass: 39 passed, 1 failed, 1 errored, 0 broken.)"></failure>
   </testcase>
-  <testcase name="unit_capability_test.jl" time="101.708">
+  <testcase name="unit_capability_test.jl" time="15.665">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/unit_capability_test.jl", 5, Some tests did not pass: 20 passed, 0 failed, 1 errored, 0 broken.)"></failure>
   </testcase>
-  <testcase name="integration_simulation_test.jl" time="102.035">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl", 7, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009a14, Main.Kernel.RustIPC))))"></failure>
+  <testcase name="integration_simulation_test.jl" time="17.638">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl", 16, Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.)"></failure>
   </testcase>
-  <testcase name="test_emotional_causal_integration.jl" time="102.414">
+  <testcase name="test_emotional_causal_integration.jl" time="17.73">
   </testcase>
-  <testcase name="integration_test.jl" time="102.75">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/integration_test.jl", 4, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009b9b, Main.IntegrationTests.Kernel.RustIPC))))"></failure>
+  <testcase name="integration_test.jl" time="19.736">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/integration_test.jl", 4, Test.FallbackTestSetException("There was an error during testing"))"></failure>
   </testcase>
-  <testcase name="stress_test.jl" time="103.315">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/stress_test.jl", 11, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009ccc, Main.Kernel.RustIPC))))"></failure>
+  <testcase name="stress_test.jl" time="111.96">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/stress_test.jl", 347, Some tests did not pass: 5 passed, 0 failed, 1 errored, 0 broken.)"></failure>
   </testcase>
-  <testcase name="test_c1_prompt_injection.jl" time="113.436">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl", 24, Some tests did not pass: 2 passed, 1 failed, 0 errored, 0 broken.)"></failure>
+  <testcase name="test_c1_prompt_injection.jl" time="113.097">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl", 24, Some tests did not pass: 0 passed, 2 failed, 4 errored, 0 broken.)"></failure>
   </testcase>
-  <testcase name="test_flow_integrity.jl" time="113.92">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl", 9, LoadError("/home/user/projectx/adaptive-kernel/kernel/Kernel.jl", 5, LoadError("/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl", 12, UndefVarError(:Usize, 0x0000000000009e1c, Main.Kernel.RustIPC))))"></failure>
+  <testcase name="test_flow_integrity.jl" time="115.758">
+    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl", 15, Some tests did not pass: 0 passed, 0 failed, 7 errored, 0 broken.)"></failure>
   </testcase>
-  <testcase name="test_context_poisoning.jl" time="122.179">
+  <testcase name="test_context_poisoning.jl" time="116.025">
   </testcase>
-  <testcase name="structural_integrity_attack_test.jl" time="122.251">
-    <failure message="LoadError("/home/user/projectx/adaptive-kernel/tests/structural_integrity_attack_test.jl", 9, LoadError("/home/user/projectx/jarvis/src/types.jl", 4, LoadError("/home/user/projectx/jarvis/src/config/SecureKeystore.jl", 5, ArgumentError("Package Crypto not found in current path.\n- Run `import Pkg; Pkg.add(\"Crypto\")` to install the Crypto package."))))"></failure>
+  <testcase name="structural_integrity_attack_test.jl" time="116.442">
   </testcase>
 </testsuite>

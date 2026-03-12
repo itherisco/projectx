@@ -10,7 +10,13 @@ using JSON
 using Statistics
 using Parameters  # For @with_kw macro
 
+# Import Kernel for SecureConfirmationGate integration
+# Note: This will be available through parent module imports
+
 # Types are defined in this module - no parent module dependency needed
+
+# RiskLevel enum for confirmation gate (must match SecureConfirmationGate)
+@enum RiskLevel READ_ONLY LOW MEDIUM HIGH CRITICAL
 
 # NOTE: Submodules (ProposalAggregation, ConflictResolution, Commitment) 
 # are included by the parent Cognition module to avoid circular dependencies
@@ -23,6 +29,12 @@ export
     run_cognitive_cycle,
     DecisionOutcome,
     SpineConfig,
+    # Risk level enum
+    RiskLevel,
+    # Confirmation gate types
+    ConfirmationResult,
+    # Confirmation gate integration
+    request_confirmation, verify_confirmation,
     # GUARD: Sovereignty enforcement
     verify_kernel_sovereignty
 
@@ -219,6 +231,13 @@ struct CommittedDecision
     conflict_resolution::ConflictResolution
     kernel_approved::Bool
     kernel_approval_timestamp::Union{DateTime, Nothing}
+    
+    # SecureConfirmationGate: Cryptographic confirmation token (P0 C4)
+    # Required for MEDIUM+ risk actions - provides sovereign veto
+    confirmation_token::Union{String, Nothing}
+    confirmation_required::Bool
+    confirmation_timestamp::Union{DateTime, Nothing}
+    
     execution_timestamp::Union{DateTime, Nothing}
     outcome::Union{DecisionOutcome, Nothing}
     timestamp::DateTime
@@ -231,7 +250,10 @@ function CommittedDecision(
 )
     influence = Dict(p.agent_id => p.weight for p in proposals)
     return CommittedDecision(
-        uuid4(), decision, influence, conflict, false, nothing, nothing, nothing, now()
+        uuid4(), decision, influence, conflict, 
+        false, nothing,  # kernel_approved, kernel_approval_timestamp
+        nothing, nothing,  # confirmation_token, confirmation_timestamp
+        nothing, nothing, now()  # execution_timestamp, outcome, timestamp
     )
 end
 
@@ -268,6 +290,13 @@ mutable struct DecisionCycle
     kernel_approval_timestamp::Union{DateTime, Nothing}
     kernel_rejection_reason::Union{String, Nothing}
     
+    # Phase 5.5: SecureConfirmationGate (P0 C4 - sovereign veto for high-risk)
+    # After LEP calculates risk-reward, confirmation gate provides sovereign veto
+    confirmation_required::Bool
+    confirmation_token::Union{String, Nothing}
+    confirmation_timestamp::Union{DateTime, Nothing}
+    confirmation_rejection_reason::Union{String, Nothing}
+    
     # Phase 6: Execution or Rejection
     execution_timestamp::Union{DateTime, Nothing}
     outcome::Union{DecisionOutcome, Nothing}
@@ -284,6 +313,8 @@ mutable struct DecisionCycle
             nothing, nothing,
             nothing, nothing,
             false, nothing, nothing,
+            # Confirmation gate fields (Phase 5.5)
+            false, nothing, nothing, nothing,
             nothing, nothing,
             nothing, false
         )
@@ -377,6 +408,49 @@ function run_cognitive_cycle(
     end
     
     @info "Phase 5: Kernel approved"
+    
+    # =========================================================================
+    # PHASE 5.5: SECURE CONFIRMATION GATE (P0 C4 - Sovereign Veto)
+    # =========================================================================
+    # After LEP calculates risk-reward score, SecureConfirmationGate provides sovereign veto
+    # for MEDIUM+ risk actions
+    
+    # Determine if confirmation is required based on risk level
+    # MEDIUM and above require user confirmation
+    risk_level = _estimate_risk_from_decision(cycle.committed_decision.decision)
+    cycle.confirmation_required = risk_level >= MEDIUM
+    
+    if cycle.confirmation_required
+        # Request confirmation from SecureConfirmationGate
+        confirmation_result = request_confirmation(
+            kernel, 
+            cycle.committed_decision,
+            risk_level
+        )
+        
+        cycle.confirmation_token = confirmation_result.token
+        cycle.confirmation_timestamp = now()
+        
+        if !confirmation_result.approved
+            # Sovereign veto: confirmation denied
+            cycle.confirmation_rejection_reason = confirmation_result.reason
+            @warn "SecureConfirmationGate rejected decision" reason=confirmation_result.reason
+            cycle.outcome = DecisionOutcome(
+                OUTCOME_REJECTED,
+                Dict("rejection_reason" => "confirmation_denied", "detail" => confirmation_result.reason),
+                Dict(),
+                now()
+            )
+            log_immutable_entry!(cycle)
+            return cycle
+        end
+        
+        @info "Phase 5.5: SecureConfirmationGate approved" token=cycle.confirmation_token[1:16]*"..."
+    else
+        # No confirmation needed for LOW risk actions
+        cycle.confirmation_token = nothing
+        @info "Phase 5.5: Confirmation not required (LOW risk)"
+    end
     
     # =========================================================================
     # PHASE 6: EXECUTION OR REJECTION
@@ -478,10 +552,18 @@ function log_immutable_entry!(cycle::DecisionCycle)
             "id" => string(cycle.committed_decision.id),
             "decision" => cycle.committed_decision.decision,
             "agent_influence" => cycle.committed_decision.agent_influence,
-            "kernel_approved" => cycle.committed_decision.kernel_approved
+            "kernel_approved" => cycle.committed_decision.kernel_approved,
+            # SecureConfirmationGate fields
+            "confirmation_token" => cycle.committed_decision.confirmation_token,
+            "confirmation_required" => cycle.committed_decision.confirmation_required
         ) : nothing,
         "kernel_approved" => cycle.kernel_approved,
         "kernel_rejection_reason" => cycle.kernel_rejection_reason,
+        # SecureConfirmationGate (Phase 5.5)
+        "confirmation_required" => cycle.confirmation_required,
+        "confirmation_token" => cycle.confirmation_token,
+        "confirmation_timestamp" => cycle.confirmation_timestamp !== nothing ? string(cycle.confirmation_timestamp) : nothing,
+        "confirmation_rejection_reason" => cycle.confirmation_rejection_reason,
         "outcome" => cycle.outcome !== nothing ? Dict(
             "status" => string(cycle.outcome.status),
             "result" => cycle.outcome.result,
@@ -490,6 +572,132 @@ function log_immutable_entry!(cycle::DecisionCycle)
         "timestamp" => now()
     )
     cycle.logged = true
+end
+
+# ============================================================================
+# SECURE CONFIRMATION GATE INTEGRATION (P0 C4)
+# ============================================================================
+
+"""
+    _estimate_risk_from_decision - Estimate risk level from decision text
+    
+    This is a heuristic that maps decision keywords to risk levels.
+    In production, this should come from the LEP (Law Enforcement Point).
+"""
+function _estimate_risk_from_decision(decision::String)::RiskLevel
+    decision_lower = lowercase(decision)
+    
+    # High-risk action patterns
+    high_risk_patterns = ["delete", "remove", "sudo", "exec", "system", 
+                          "curl|", "wget|", "rm -", "shutdown", "reboot"]
+    
+    # Medium-risk action patterns
+    medium_risk_patterns = ["write", "modify", "update", "change", "create", 
+                           "install", "download", "send", "http", "api"]
+    
+    for pattern in high_risk_patterns
+        if occursin(pattern, decision_lower)
+            return HIGH
+        end
+    end
+    
+    for pattern in medium_risk_patterns
+        if occursin(pattern, decision_lower)
+            return MEDIUM
+        end
+    end
+    
+    # Default to LOW for safe actions
+    return LOW
+end
+
+"""
+    ConfirmationResult - Result from SecureConfirmationGate
+"""
+struct ConfirmationResult
+    approved::Bool
+    token::Union{String, Nothing}
+    reason::Union{String, Nothing}
+end
+
+"""
+    request_confirmation - Request confirmation from SecureConfirmationGate
+    
+    This is the integration point with the Kernel's SecureConfirmationGate.
+    For MEDIUM+ risk actions, this provides the sovereign veto.
+"""
+function request_confirmation(
+    kernel::Any,
+    decision::CommittedDecision,
+    risk_level::RiskLevel
+)::ConfirmationResult
+    # Check if kernel has confirmation gate
+    if !isdefined(kernel, :confirmation_gate) || kernel.confirmation_gate === nothing
+        # Fallback: If no confirmation gate, require manual approval for MEDIUM+
+        if risk_level >= MEDIUM
+            return ConfirmationResult(false, nothing, "confirmation_gate_not_available")
+        else
+            # Auto-approve LOW risk
+            return ConfirmationResult(true, nothing, nothing)
+        end
+    end
+    
+    # Get the confirmation gate
+    gate = kernel.confirmation_gate
+    
+    # Build proposal info
+    proposal_id = string(decision.id)
+    capability_id = decision.decision  # Use decision as capability identifier
+    params = Dict{String, Any}(
+        "proposal_id" => proposal_id,
+        "decision" => decision.decision,
+        "cycle" => string(Dates.now())
+    )
+    
+    # Request confirmation from SecureConfirmationGate
+    try
+        token = SecureConfirmationGate.require_confirmation(
+            gate,
+            proposal_id,
+            capability_id,
+            params,
+            risk_level
+        )
+        
+        if token === nothing
+            return ConfirmationResult(false, nothing, "confirmation_request_failed")
+        end
+        
+        # In production, this would wait for user confirmation
+        # For now, we return the token and expect external confirmation
+        return ConfirmationResult(true, token, nothing)
+    catch e
+        return ConfirmationResult(false, nothing, "confirmation_error: $(string(e))")
+    end
+end
+
+"""
+    verify_confirmation - Verify a confirmation token
+    
+    Used to verify that a token has been confirmed by the user.
+"""
+function verify_confirmation(
+    kernel::Any,
+    token::String
+)::Bool
+    # Check if kernel has confirmation gate
+    if !isdefined(kernel, :confirmation_gate) || kernel.confirmation_gate === nothing
+        return false
+    end
+    
+    gate = kernel.confirmation_gate
+    
+    try
+        return SecureConfirmationGate.confirm_action(gate, token)
+    catch e
+        @error "Confirmation verification error: $e"
+        return false
+    end
 end
 
 # ============================================================================

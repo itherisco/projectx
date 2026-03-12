@@ -43,6 +43,10 @@ using .OnlineLearning
 include(joinpath(@__DIR__, "goals", "GoalSystem.jl"))
 using .GoalSystem
 
+# Import InputSanitizer for security - CRITICAL: Sanitize all external inputs
+include(joinpath(@__DIR__, "security", "InputSanitizer.jl"))
+using .InputSanitizer
+
 # Import brain for neural processing
 include(joinpath(@__DIR__, "..", "brain", "Brain.jl"))
 using .Brain
@@ -161,6 +165,24 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     
     # Update cycle count
     state.cycle_count += 1
+    
+    # === SECURITY: Input Sanitization (FAIL-CLOSED) ===
+    # Sanitize all external inputs before processing to prevent prompt injection
+    # This is the critical security boundary - fail-closed behavior
+    if haskey(raw_input, "text") || haskey(raw_input, "message") || haskey(raw_input, "user_input")
+        text_input = get(raw_input, "text", get(raw_input, "message", get(raw_input, "user_input", "")))
+        sanitize_result = sanitize_input(text_input)
+        if sanitize_result.level == MALICIOUS
+            error("SECURITY: Malicious input detected and blocked. Input sanitization failed.")
+        elseif sanitize_result.level == SUSPICIOUS
+            # Strip suspicious content but allow through
+            if sanitize_result.sanitized !== nothing
+                raw_input["text"] = sanitize_result.sanitized
+                raw_input["message"] = sanitize_result.sanitized
+                raw_input["user_input"] = sanitize_result.sanitized
+            end
+        end
+    end
     
     # === STEP 1: Sensory Processing ===
     processed_sensory = process_sensory_input(state.sensory_buffer, raw_input)

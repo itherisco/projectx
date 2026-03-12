@@ -1,80 +1,80 @@
 {
   "total_tests": 10,
   "passed": 3,
-  "execution_time": 122.25217604637146,
-  "timestamp": "2026-03-08T02:57:01.519",
+  "execution_time": 116.44761395454407,
+  "timestamp": "2026-03-12T07:31:29.371",
   "failed": 7,
   "skipped": 0,
   "tests": [
     {
       "name": "unit_kernel_test.jl",
-      "time": 98.06071710586548,
+      "time": 15.20232605934143,
       "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl\", 6, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/Kernel.jl\", 5, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl\", 12, UndefVarError(:Usize, 0x00000000000098b8, Main.Kernel.RustIPC))))",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/unit_kernel_test.jl\", 12, Some tests did not pass: 39 passed, 1 failed, 1 errored, 0 broken.)",
       "assertions": 0
     },
     {
       "name": "unit_capability_test.jl",
-      "time": 101.70833110809326,
-      "status": "passed",
-      "error": null,
-      "assertions": 1
+      "time": 15.665471076965332,
+      "status": "failed",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/unit_capability_test.jl\", 5, Some tests did not pass: 20 passed, 0 failed, 1 errored, 0 broken.)",
+      "assertions": 0
     },
     {
       "name": "integration_simulation_test.jl",
-      "time": 102.03512001037598,
+      "time": 17.638231992721558,
       "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl\", 7, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/Kernel.jl\", 5, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl\", 12, UndefVarError(:Usize, 0x0000000000009a14, Main.Kernel.RustIPC))))",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/integration_simulation_test.jl\", 16, Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.)",
       "assertions": 0
     },
     {
       "name": "test_emotional_causal_integration.jl",
-      "time": 102.41404414176941,
+      "time": 17.730452060699463,
       "status": "passed",
       "error": null,
       "assertions": 1
     },
     {
       "name": "integration_test.jl",
-      "time": 102.75029397010803,
+      "time": 19.735997915267944,
       "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/integration_test.jl\", 4, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/Kernel.jl\", 5, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl\", 12, UndefVarError(:Usize, 0x0000000000009b9b, Main.IntegrationTests.Kernel.RustIPC))))",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/integration_test.jl\", 4, Test.FallbackTestSetException(\"There was an error during testing\"))",
       "assertions": 0
     },
     {
       "name": "stress_test.jl",
-      "time": 103.31508898735046,
+      "time": 111.95960903167725,
       "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/stress_test.jl\", 11, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/Kernel.jl\", 5, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl\", 12, UndefVarError(:Usize, 0x0000000000009ccc, Main.Kernel.RustIPC))))",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/stress_test.jl\", 347, Some tests did not pass: 5 passed, 0 failed, 1 errored, 0 broken.)",
       "assertions": 0
     },
     {
       "name": "test_c1_prompt_injection.jl",
-      "time": 113.4355731010437,
+      "time": 113.09666991233826,
       "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl\", 24, Some tests did not pass: 2 passed, 1 failed, 0 errored, 0 broken.)",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/test_c1_prompt_injection.jl\", 24, Some tests did not pass: 0 passed, 2 failed, 4 errored, 0 broken.)",
       "assertions": 0
     },
     {
       "name": "test_flow_integrity.jl",
-      "time": 113.91978406906128,
+      "time": 115.75840187072754,
       "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl\", 9, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/Kernel.jl\", 5, LoadError(\"/home/user/projectx/adaptive-kernel/kernel/ipc/RustIPC.jl\", 12, UndefVarError(:Usize, 0x0000000000009e1c, Main.Kernel.RustIPC))))",
+      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/test_flow_integrity.jl\", 15, Some tests did not pass: 0 passed, 0 failed, 7 errored, 0 broken.)",
       "assertions": 0
     },
     {
       "name": "test_context_poisoning.jl",
-      "time": 122.17938494682312,
+      "time": 116.02483201026917,
       "status": "passed",
       "error": null,
       "assertions": 1
     },
     {
       "name": "structural_integrity_attack_test.jl",
-      "time": 122.25065493583679,
-      "status": "failed",
-      "error": "LoadError(\"/home/user/projectx/adaptive-kernel/tests/structural_integrity_attack_test.jl\", 9, LoadError(\"/home/user/projectx/jarvis/src/types.jl\", 4, LoadError(\"/home/user/projectx/jarvis/src/config/SecureKeystore.jl\", 5, ArgumentError(\"Package Crypto not found in current path.\\n- Run `import Pkg; Pkg.add(\\\"Crypto\\\")` to install the Crypto package.\"))))",
-      "assertions": 0
+      "time": 116.44163203239441,
+      "status": "passed",
+      "error": null,
+      "assertions": 1
     }
   ]
 }
