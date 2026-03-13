@@ -46,6 +46,7 @@ pub mod task_orchestrator;
 pub mod safe_shell;
 pub mod safe_http;
 pub mod ffi; // FFI bridge for Julia interop
+pub mod shared_memory; // Shared memory ring buffer for IPC
 pub mod emergency; // Emergency halt and seal mechanism (Phase 6)
 
 // Re-export commonly used types

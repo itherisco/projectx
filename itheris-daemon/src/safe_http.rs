@@ -44,7 +44,7 @@ pub enum HttpError {
 
 /// HTTP method
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "uppercase")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethod {
     GET,
     POST,

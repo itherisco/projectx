@@ -29,6 +29,7 @@ regex = "1.10"
 
 # Cryptographic random number generation
 getrandom = "0.2"
+rand_core = "0.6"
 
 # Julia integration - jlrs for embedded Julia
 jlrs = { version = "0.22", features = ["multi-rt", "async"], optional = true }
@@ -77,14 +78,14 @@ tonic = "0.12"
 # Protobuf types
 prost = "0.13"
 
-# For tonic-build code generation
-tonic-build = "0.12"
-
 # Tower for gRPC service utilities
 tower = "0.4"
 
 
 # scallop = "0.2"  # For Linux seccomp (optional)
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [dev-dependencies]
 mockall = "0.12"

@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if proto_path.exists() {
         tonic_build::configure()
             .out_dir("src/")
-            .compile(
+            .compile_protos(
                 &["../proto/warden.proto"],
                 &["../proto/"],
             )?;
@@ -15,6 +15,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("cargo:warning=Proto file not found at {:?}, skipping code generation", proto_path);
     }
-
+    
     Ok(())
 }

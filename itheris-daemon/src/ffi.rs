@@ -10,8 +10,9 @@
 //! - get_kernel_status - Get kernel status
 
 use crate::shared_memory::{
-    self, FFI_IPC_Message, IPCEntryType, IPCMessage, IPC_MAGIC, IPC_VERSION,
-    MAX_PAYLOAD_SIZE,
+    FFI_IPC_Message, IPCEntryType, IPCMessage, IPC_MAGIC, IPC_VERSION,
+    MAX_PAYLOAD_SIZE, SHM_PATH, SHM_SIZE, RING_BUFFER_ENTRIES,
+    SharedMemoryIPCRef, create_shared_memory_ipc,
 };
 use ed25519_dalek::{
     Signer, SigningKey, Verifier, VerifyingKey, Signature, SIGNATURE_LENGTH, SECRET_KEY_LENGTH,
@@ -19,6 +20,7 @@ use ed25519_dalek::{
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
+use rand_core::{OsRng, RngCore};
 
 /// Kernel initialization state
 static KERNEL_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -148,8 +150,8 @@ pub extern "C" fn julia_acknowledge_halt() -> i32 {
 /// - -1 if already sealed
 #[no_mangle]
 pub extern "C" fn emergency_seal() -> i32 {
-    log::critical!("[FFI] EMERGENCY SEAL: Kernel permanently locked!");
-    log::critical!("[FFI] FATAL: System in lockdown - restart required");
+     log::error!("[FFI] EMERGENCY SEAL: Kernel permanently locked!");
+     log::error!("[FFI] FATAL: System in lockdown - restart required");
     
     // Set all states to halt
     PANIC_IN_PROGRESS.store(true, Ordering::Release);
