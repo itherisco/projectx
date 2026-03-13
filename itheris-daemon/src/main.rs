@@ -12,8 +12,10 @@ mod types;
 mod isolation;
 mod warden;
 mod hardware;
+mod grpc;
 
 use chrono::Utc;
+use grpc::{start_grpc_server, WardenServiceState};
 use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
@@ -34,6 +36,7 @@ pub struct DaemonConfig {
     pub health_check_interval_secs: u64,
     pub watchdog_timeout_secs: u64,
     pub http_port: u16,
+    pub grpc_port: u16,
     pub log_level: String,
     pub heartbeat_pin: u32,
     pub heartbeat_frequency_hz: f64,
@@ -47,6 +50,7 @@ impl Default for DaemonConfig {
             health_check_interval_secs: 30,
             watchdog_timeout_secs: 120,
             http_port: 8080,
+            grpc_port: 9090,
             log_level: "info".to_string(),
             heartbeat_pin: 6,  // GPIO6 (Pin 31) - HEARTBEAT_OUT
             heartbeat_frequency_hz: 100.0,  // 100Hz = 10ms period
@@ -431,6 +435,16 @@ async fn main() -> Result<(), String> {
     tokio::spawn(async move {
         start_http_server(daemon_for_http, config.http_port).await;
     });
+    
+    // Start gRPC server for frontend communication
+    let grpc_state = Arc::new(WardenServiceState::new());
+    let daemon_for_grpc = daemon.clone();
+    tokio::spawn(async move {
+        if let Err(e) = start_grpc_server(grpc_state.clone(), config.grpc_port).await {
+            log::error!("❌ gRPC server error: {}", e);
+        }
+    });
+    log::info!("🔌 gRPC server will start on port {}", config.grpc_port);
     
     // Start watchdog
     daemon.watchdog().await;

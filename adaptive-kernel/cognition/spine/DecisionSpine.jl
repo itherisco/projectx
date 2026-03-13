@@ -50,7 +50,7 @@ export
     conflict_threshold::Float64 = 0.3        # Threshold for triggering conflict resolution
     max_deliberation_rounds::Int = 3          # Maximum rounds of deliberation
     entropy_injection_enabled::Bool = true    # Inject entropy if agents agree too often
-    entropy_threshold::Float64 = 0.85         # Agreement threshold for entropy injection
+    entropy_threshold::Float64 = 0.90         # Agreement threshold for entropy injection
     kernel_approval_required::Bool = true    # Always require kernel approval
     log_immutable::Bool = true                # Make decision logs immutable
 end
@@ -113,6 +113,73 @@ function diagnose_entropy_injection(
         "injection_triggered" => mean_conf >= config.entropy_threshold,
         "default_entropy_value" => SpineConfig().entropy_injection_enabled
     )
+end
+
+# ============================================================================
+# GOAL HIERARCHY VIOLATION DETECTION
+# ============================================================================
+
+"""
+    check_goal_hierarchy_violation - Check if a decision violates the goal hierarchy
+    
+    This function implements goal hierarchy violation detection to prevent agent drift.
+    It checks whether a proposed decision conflicts with core goals in the hierarchy.
+"""
+function check_goal_hierarchy_violation(
+    decision::String,
+    goal_graph::GoalGraph
+)::Vector{Symbol}
+    violated_goals = Symbol[]
+    
+    # If no goals are defined, no violation can occur
+    if isempty(goal_graph.goals)
+        return violated_goals
+    end
+    
+    decision_lowercase = lowercase(decision)
+    
+    # Check each goal for potential violation
+    for (goal_id, goal) in goal_graph.goals
+        # Skip goals that are not active or completed (they don't constrain current decisions)
+        if goal.status != :active && goal.status != :completed
+            continue
+        end
+        
+        # Check for explicit violation patterns in the decision
+        violation_detected = false
+        
+        # Pattern 1: Explicit negation of goal achievement
+        if occursin(r"not\s+.*$(Regex.escape(goal.description))|never\s+.*$(Regex.escape(goal.description))|avoid\s+.*$(Regex.escape(goal.description))", decision_lowercase)
+            violation_detected = true
+        end
+        
+        # Pattern 2: Contradiction of goal's target state (simplified check)
+        # In a full implementation, this would involve semantic analysis
+        # For now, we check for obvious contradictions
+        if !isempty(goal.target_state) && !isempty(goal.current_state)
+            # Simple heuristic: if decision mentions doing the opposite of what the goal wants
+            # This is a placeholder for more sophisticated semantic checking
+            if occursin(r"decrease|reduce|lower|minimize", decision_lowercase) && 
+               any(x -> x > 0.5, goal.target_state)  # Goal wants high values
+                violation_detected = true
+            elseif occursin(r"increase|raise|raise|maximize", decision_lowercase) && 
+                   any(x -> x < 0.5, goal.target_state)  # Goal wants low values
+                violation_detected = true
+            end
+        end
+        
+        # Pattern 3: Resource contradiction (if goal is about conservation)
+        if occursin(r"conserv|save|preserve|protect", goal.description) && 
+           occursin(r"spend|use|consume|expend|waste", decision_lowercase)
+            violation_detected = true
+        end
+        
+        if violation_detected
+            push!(violated_goals, goal_id)
+        end
+    end
+    
+    return violated_goals
 end
 
 # ============================================================================

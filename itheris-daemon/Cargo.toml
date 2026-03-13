@@ -67,6 +67,22 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 # URL validation
 url = "2"
 
+# ============================================
+# gRPC Dependencies
+# ============================================
+
+# gRPC server with tonic
+tonic = "0.12"
+
+# Protobuf types
+prost = "0.13"
+
+# For tonic-build code generation
+tonic-build = "0.12"
+
+# Tower for gRPC service utilities
+tower = "0.4"
+
 
 # scallop = "0.2"  # For Linux seccomp (optional)
 

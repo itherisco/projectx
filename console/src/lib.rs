@@ -4,37 +4,44 @@
 //! for reactive WebAssembly-based UI.
 
 pub mod components;
+pub mod pages;
 pub mod services;
 pub mod state;
+pub mod app;
 
 // Re-export commonly used types
 pub use state::signals::{
     CognitiveMode, MetabolicSignals, MetabolicState, 
     ENERGY_CRITICAL, ENERGY_DEATH, ENERGY_MAX, ENERGY_RECOVERY,
 };
+pub use state::theme::{Theme, ThemeProvider, CircadianTheme, CIRCADIAN_THEMES};
 
 use leptos::*;
 
 #[cfg(feature = "wasm")]
 mod wasm_entry {
     use super::*;
+    use wasm_bindgen::prelude::*;
+    
+    /// Initialize panic hook for better error messages in browser console
+    #[wasm_bindgen]
+    pub fn init_panic_hook() {
+        #[cfg(feature = "console_error_panic_hook")]
+        console_error_panic_hook::set_once();
+    }
     
     /// WASM entry point for the application
-    #[wasm_bindgen::prelude::wasm_bindgen(start)]
-    pub fn main() -> Result<(), wasm_bindgen::JsValue> {
-        // Initialize console
-        console_error_panic_hook_set();
+    #[wasm_bindgen(start)]
+    pub fn main() -> Result<(), JsValue> {
+        // Initialize panic hook
+        init_panic_hook();
         
+        // Mount the Leptos application to the body
         leptos::mount_to_body(|cx| {
             view! { cx, <App /> }
         });
         
         Ok(())
-    }
-    
-    fn console_error_panic_hook_set() {
-        #[cfg(feature = "console_error_panic_hook")]
-        console_error_panic_hook::set_once();
     }
 }
 
@@ -54,6 +61,7 @@ pub fn App() -> impl IntoView {
 }
 
 /// Initialize the application (non-WASM entry point)
+#[cfg(not(feature = "wasm"))]
 pub fn initialize() {
     // Initialize logging
     tracing_subscriber::fmt()

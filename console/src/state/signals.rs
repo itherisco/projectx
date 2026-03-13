@@ -107,6 +107,8 @@ pub struct MetabolicSignals {
     pub tick_count: Signal<u64>,
     /// Current cognitive mode
     pub cognitive_mode: Signal<CognitiveMode>,
+    /// Alias for cognitive_mode for convenience
+    pub mode: Signal<CognitiveMode>,
     /// Whether system is dreaming
     pub is_dreaming: Signal<bool>,
     /// Whether containment mode is active (energy < ENERGY_DEATH)
@@ -143,8 +145,20 @@ impl MetabolicSignals {
             viability,
             tick_count,
             cognitive_mode,
+            mode: cognitive_mode, // Alias for convenience
             is_dreaming,
             containment_active,
+        }
+    }
+
+    /// Get current metabolic state
+    pub fn get_state(&self) -> MetabolicState {
+        MetabolicState {
+            energy_level: self.energy.get(),
+            viability_budget: self.viability.get(),
+            tick_count: self.tick_count.get(),
+            cognitive_mode: self.cognitive_mode.get(),
+            is_dreaming: self.is_dreaming.get(),
         }
     }
 

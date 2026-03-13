@@ -11,22 +11,32 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # WebAssembly UI Framework
 leptos = { version = "0.6", features = ["wasm"] }
+leptos_router = "0.6"
 wasm-bindgen = "0.2"
 
+# WASM-specific dependencies
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# Tauri (for desktop app)
+tauri = { version = "1.6", optional = true }
+
 # gRPC and Protobuf
-tonic = "0.10"
+tonic = { version = "0.10", optional = true }
 prost = "0.12"
+
+# gRPC-Web (browser-compatible)
+reqwest = { version = "0.11", default-features = false, features = ["wasm"], optional = true }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Async runtime
-tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync"], optional = true }
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 # Utilities
 anyhow = "1.0"
@@ -35,8 +45,19 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
 [build-dependencies]
-tonic-build = "0.10"
+tonic-build = { version = "0.10", optional = true }
 
 [features]
-default = []
+default = ["wasm", "grpc-web", "console_error_panic_hook"]
 dev = ["leptos/dev"]
+tauri = ["dep:tauri", "dep:tokio", "dep:tracing-subscriber", "dep:tonic", "dep:tonic-build"]
+wasm = []
+grpc-web = ["dep:reqwest"]
+console_error_panic_hook = ["dep:console_error_panic_hook"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

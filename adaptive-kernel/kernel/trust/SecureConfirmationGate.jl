@@ -29,6 +29,8 @@
     - Random for CSPRNG
 """
 
+module SecureConfirmationGate
+
 using SHA
 using Random
 using JSON
@@ -1110,3 +1112,5 @@ export LOW_POWER, NORMAL, HIGH_PERFORMANCE
 export ConfirmationAuditLog, ConfirmationEventAction
 export CONFIRMATION_REQUESTED, CONFIRMATION_CONFIRMED, CONFIRMATION_DENIED, CONFIRMATION_EXPIRED, CONFIRMATION_TIMEOUT
 export log_confirmation_event, _get_rust_timestamp, _log_to_persistence
+
+end

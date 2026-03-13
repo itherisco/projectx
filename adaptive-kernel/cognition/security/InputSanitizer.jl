@@ -130,6 +130,8 @@ const PATTERN_HEX_ENCODED = r"(\\x[0-9a-fA-F]{2}|0x[0-9a-fA-F]{2,})"
 const PATTERN_SUDO = r"(?i)(\bsudo\b)"
 const PATTERN_RM_RF = r"(\brm\s+-rf\b|\brm\s+-[rf]+\b|\bdel\s+\/[fq]\b|\brmdir\b)"
 const PATTERN_EXEC = r"(\bexec\s*\(|\beval\s*\(|\bsystem\s*\(|\bspawn\s*\(|\bpopen\s*\()"
+# SQL injection patterns
+const PATTERN_SQL_KEYWORDS = r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|CREATE|ALTER|EXEC|EXECUTE|TRUNCATE|MERGE|CALL|GRANT|REVOKE|COMMIT|ROLLBACK|SAVEPOINT|SET|SHOW|DESCRIBE|EXPLAIN|WITH|UNION ALL|UNION SELECT)\b"
 
 # XML/HTML tag patterns - Layer 2
 const PATTERN_XML_TAG = r"<(?:[a-zA-Z][a-zA-Z0-9]*(?:\s+[a-zA-Z_][a-zA-Z0-9_]*(?:=(?:\"[^\"]*\"|'[^']*'|[^\s>]+))?)*\s*/?|\?[xX][mM][lL]|\![dD][oO][cC][tT][yY][pP][eE]|[a-zA-Z][a-zA-Z0-9]*:[a-zA-Z][a-zA-Z0-9]*)"
@@ -302,12 +304,21 @@ function contains_malicious_pattern(input::String)::Vector{SanitizationError}
     end
     
     if occursin(PATTERN_JSON_INJECTION, input)
-        push!(errors, SanitizationError(
-            :JSON_INJECTION,
-            "Detected JSON injection attempt",
-            MALICIOUS
-        ))
-    end
+         push!(errors, SanitizationError(
+             :JSON_INJECTION,
+             "Detected JSON injection attempt",
+             MALICIOUS
+         ))
+     end
+     
+     # SQL injection detection
+     if occursin(PATTERN_SQL_KEYWORDS, input)
+         push!(errors, SanitizationError(
+             :SQL_INJECTION,
+             "Detected SQL injection attempt",
+             MALICIOUS
+         ))
+     end
     
     return errors
 end
