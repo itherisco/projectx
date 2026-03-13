@@ -20,6 +20,11 @@
 
 using JSON
 
+# Include InputSanitizer for SQL injection detection
+push!(LOAD_PATH, joinpath(@__DIR__, "../.."))
+include("../../cognition/security/InputSanitizer.jl")
+using .InputSanitizer
+
 # ============================================================================
 # SCHEMA DEFINITIONS
 # ============================================================================
@@ -256,6 +261,9 @@ end
     _sanitize_string - Sanitize string values to prevent injection
 """
 function _sanitize_string(s::String)::String
+    # First, remove SQL injection patterns using InputSanitizer
+    s = sanitize_sql_patterns(s)
+    
     # Remove null bytes
     s = replace(s, "\0" => "")
     

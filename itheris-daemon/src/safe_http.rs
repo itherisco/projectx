@@ -17,7 +17,7 @@
 
 use reqwest::{Client, Method, header::{HeaderMap, HeaderName, HeaderValue}};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use thiserror::Error;

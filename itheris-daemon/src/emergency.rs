@@ -5,6 +5,7 @@
 //! - Emergency seal: Permanently lock the kernel (irreversible)
 //! - Panic handlers: Automatic halt on Rust panics
 
+use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
@@ -72,9 +73,9 @@ pub fn emergency_seal(reason: &str) -> Result<(), EmergencyError> {
         return Err(EmergencyError::KernelSealed);
     }
     
-    log::critical!("[EMERGENCY] FATAL: Emergency seal activated!");
-    log::critical!("[EMERGENCY] Reason: {}", reason);
-    log::critical!("[EMERGENCY] KERNEL PERMANENTLY LOCKED - RESTART REQUIRED");
+    log::error!("[EMERGENCY] FATAL: Emergency seal activated!");
+    log::error!("[EMERGENCY] Reason: {}", reason);
+    log::error!("[EMERGENCY] KERNEL PERMANENTLY LOCKED - RESTART REQUIRED");
     
     // Set sealed state
     KERNEL_SEALED.store(true, Ordering::Release);

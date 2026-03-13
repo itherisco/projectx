@@ -644,21 +644,44 @@ end
 # ```
 
 # ============================================================================
-# AES-256-GCM Encryption (REPLACING XOR CIPHER)
+# AES-256-GCM Encryption (using Rust FFI)
 # ============================================================================
 
-# AES-256-GCM constants
+# AES-256-GCM constants (GCM mode)
 const AES_256_KEY_SIZE = 32
 const AES_GCM_NONCE_SIZE = 12  # 96 bits for GCM
 const AES_GCM_TAG_SIZE = 16    # 128 bits authentication tag
 
+# Track if Rust library is available
+const _rust_gcm_available = Ref{Union{Bool, Nothing}}(nothing)
+
 """
     AES256GCMResult - Result of AES-256-GCM encryption
+
+Uses true AES-256-GCM from Rust for authenticated encryption.
 """
 struct AES256GCMResult
     ciphertext::Vector{UInt8}
-    nonce::Vector{UInt8}
-    tag::Vector{UInt8}
+    nonce::Vector{UInt8}  # 12-byte nonce for GCM
+    tag::Vector{UInt8}   # 16-byte authentication tag
+end
+
+"""
+    _is_rust_available()::Bool
+
+Check if Rust library with GCM support is available.
+"""
+function _is_rust_available()::Bool
+    if _rust_gcm_available[] === nothing
+        _rust_gcm_available[] = try
+            # Try to call a simple Rust function to check availability
+            ccall((:panic_in_progress, "libitheris"), Bool, ())
+            true
+        catch
+            false
+        end
+    end
+    return _rust_gcm_available[]::Bool
 end
 
 """
@@ -673,6 +696,9 @@ Provides both confidentiality and authentication.
 - 128-bit authentication tag (detects tampering)
 - Authenticated encryption (cannot decrypt without valid tag)
 
+# Implementation:
+Uses Rust FFI to call the aes_gcm crate for proper GCM encryption.
+
 # Arguments:
 - plaintext: Data to encrypt
 - key: 32-byte encryption key
@@ -684,69 +710,47 @@ function encrypt_aes256_gcm(plaintext::Vector{UInt8}, key::Vector{UInt8})::AES25
         error("Invalid key size: $(length(key)). Must be $AES_256_KEY_SIZE bytes for AES-256.")
     end
     
-    # Generate random 96-bit nonce
-    nonce = rand(UInt8, AES_GCM_NONCE_SIZE)
-    
-    # For demonstration, use a simplified GCM-like construction
-    # In production, use a proper AES-GCM library (like MbedTLS or Sodium)
-    
-    # Step 1: Generate subkeys
-    h_key = sha256(key)
-    
-    # Step 2: Counter = nonce || 1
-    counter = vcat(nonce, [0x00, 0x00, 0x00, 0x01])
-    
-    # Step 3: Encrypt plaintext using CTR mode
-    ciphertext = Vector{UInt8}()
-    counter_block = copy(counter)
-    
-    for i in 1:length(plaintext)
-        # Generate keystream block
-        keystream = sha256(vcat(key, counter_block))
-        # XOR plaintext with keystream
-        push!(ciphertext, plaintext[i] ⊻ keystream[1])
-        
-        # Increment counter (big-endian)
-        for j in length(counter_block):-1:1
-            counter_block[j] += 1
-            if counter_block[j] != 0x00
-                break
-            end
-        end
+    # Try Rust FFI first
+    if _is_rust_available()
+        return _encrypt_aes256_gcm_rust(plaintext, key)
     end
     
-    # Step 4: Compute authentication tag (GMAC-like)
-    # Tag = GHASH(H, nonce, ciphertext)
-    auth_input = vcat(nonce, Vector{UInt8}(length(plaintext)), ciphertext)
-    # Pad to 16-byte boundary
-    while length(auth_input) % 16 != 0
-        push!(auth_input, 0x00)
+    # Fallback: error since we need GCM for security
+    error("Rust library not available for AES-256-GCM. This is a P0 security requirement.")
+end
+
+"""
+    _encrypt_aes256_gcm_rust(plaintext::Vector{UInt8}, key::Vector{UInt8})::AES256GCMResult
+
+Internal: Encrypt using Rust FFI AES-256-GCM.
+"""
+function _encrypt_aes256_gcm_rust(plaintext::Vector{UInt8}, key::Vector{UInt8})::AES256GCMResult
+    # Allocate output buffers
+    # GCM output = ciphertext + tag (16 bytes), so plaintext_len + 16
+    ciphertext_len = length(plaintext) + AES_GCM_TAG_SIZE
+    ciphertext_out = Vector{UInt8}(undef, ciphertext_len)
+    nonce_out = Vector{UInt8}(undef, AES_GCM_NONCE_SIZE)
+    
+    # Call Rust FFI
+    result_len = ccall(
+        (:aes_gcm_encrypt, "libitheris"),
+        usize,
+        (Ptr{UInt8}, usize, Ptr{UInt8}, usize, Ptr{UInt8}, Ptr{UInt8}),
+        key, length(key),
+        plaintext, length(plaintext),
+        ciphertext_out, nonce_out
+    )
+    
+    if result_len == 0
+        error("AES-256-GCM encryption failed via Rust FFI")
     end
     
-    # Simplified GHASH: XOR of blocks after multiplying by H
-    tag = Vector{UInt8}(undef, AES_GCM_TAG_SIZE)
-    for i in 1:AES_GCM_TAG_SIZE
-        tag[i] = 0x00
-    end
+    # GCM format: nonce (12) || ciphertext_with_tag
+    # ciphertext_with_tag includes the 16-byte authentication tag
+    ciphertext = ciphertext_out[1:ciphertext_len]
+    tag = ciphertext_out[ciphertext_len-AES_GCM_TAG_SIZE+1:end]
     
-    for block_start in 1:16:length(auth_input)
-        block = auth_input[block_start:min(block_start+15, end)]
-        # Multiply by H (simplified - just XOR with hashed key)
-        h_block = sha256(vcat(h_key, block))
-        for i in 1:min(16, length(block))
-            tag[i] = tag[i] ⊻ h_block[i]
-        end
-    end
-    
-    # Final tag = tag XOR (length || 0^112)
-    len_bytes = Vector{UInt8}([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60])
-    len_tag = sha256(vcat(tag, len_bytes))
-    for i in 1:AES_GCM_TAG_SIZE
-        tag[i] = tag[i] ⊻ len_tag[i]
-    end
-    
-    return AES256GCMResult(ciphertext, nonce, tag)
+    return AES256GCMResult(ciphertext, nonce_out, tag)
 end
 
 """
@@ -779,59 +783,55 @@ function decrypt_aes256_gcm(encrypted::AES256GCMResult, key::Vector{UInt8})::Vec
         error("Invalid key size: $(length(key)). Must be $AES_256_KEY_SIZE bytes.")
     end
     
-    # Re-compute authentication tag for verification
-    h_key = sha256(key)
-    
-    # Re-verify the tag
-    auth_input = vcat(encrypted.nonce, Vector{UInt8}(length(encrypted.ciphertext)), encrypted.ciphertext)
-    while length(auth_input) % 16 != 0
-        push!(auth_input, 0x00)
+    # Validate input sizes
+    if length(encrypted.nonce) != AES_GCM_NONCE_SIZE
+        error("Invalid nonce size: $(length(encrypted.nonce)). Must be $AES_GCM_NONCE_SIZE bytes.")
     end
     
-    tag = Vector{UInt8}(undef, AES_GCM_TAG_SIZE)
-    for i in 1:AES_GCM_TAG_SIZE
-        tag[i] = 0x00
+    if length(encrypted.tag) != AES_GCM_TAG_SIZE
+        error("Invalid tag size: $(length(encrypted.tag)). Must be $AES_GCM_TAG_SIZE bytes.")
     end
     
-    for block_start in 1:16:length(auth_input)
-        block = auth_input[block_start:min(block_start+15, end)]
-        h_block = sha256(vcat(h_key, block))
-        for i in 1:min(16, length(block))
-            tag[i] = tag[i] ⊻ h_block[i]
-        end
+    # Try Rust FFI first
+    if _is_rust_available()
+        return _decrypt_aes256_gcm_rust(encrypted, key)
     end
     
-    len_bytes = Vector{UInt8}([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60])
-    len_tag = sha256(vcat(tag, len_bytes))
-    for i in 1:AES_GCM_TAG_SIZE
-        tag[i] = tag[i] ⊻ len_tag[i]
+    # Fallback: error since we need GCM for security
+    error("Rust library not available for AES-256-GCM. This is a P0 security requirement.")
+end
+
+"""
+    _decrypt_aes256_gcm_rust(encrypted::AES256GCMResult, key::Vector{UInt8})::Vector{UInt8}
+
+Internal: Decrypt using Rust FFI AES-256-GCM.
+"""
+function _decrypt_aes256_gcm_rust(encrypted::AES256GCMResult, key::Vector{UInt8})::Vector{UInt8}
+    # GCM ciphertext includes the tag
+    ciphertext_with_tag = vcat(encrypted.ciphertext, encrypted.tag)
+    ciphertext_len = length(ciphertext_with_tag)
+    
+    # Allocate output buffer
+    # Plaintext = ciphertext - tag (16 bytes)
+    plaintext_len = ciphertext_len - AES_GCM_TAG_SIZE
+    plaintext_out = Vector{UInt8}(undef, plaintext_len)
+    
+    # Call Rust FFI
+    result_len = ccall(
+        (:aes_gcm_decrypt, "libitheris"),
+        usize,
+        (Ptr{UInt8}, usize, Ptr{UInt8}, Ptr{UInt8}, usize, Ptr{UInt8}),
+        key, length(key),
+        encrypted.nonce,
+        ciphertext_with_tag, ciphertext_len,
+        plaintext_out
+    )
+    
+    if result_len == 0
+        error("AES-256-GCM decryption failed - authentication tag verification failed (data may have been tampered with)")
     end
     
-    # Verify tag (constant-time)
-    if !constant_time_compare(tag, encrypted.tag)
-        error("Authentication failed: data may have been tampered. Decryption rejected.")
-    end
-    
-    # Decrypt using CTR mode (same as encryption - CTR is symmetric)
-    ciphertext = encrypted.ciphertext
-    plaintext = Vector{UInt8}()
-    
-    counter = vcat(encrypted.nonce, [0x00, 0x00, 0x00, 0x01])
-    
-    for i in 1:length(ciphertext)
-        keystream = sha256(vcat(key, counter))
-        push!(plaintext, ciphertext[i] ⊻ keystream[1])
-        
-        for j in length(counter):-1:1
-            counter[j] += 1
-            if counter[j] != 0x00
-                break
-            end
-        end
-    end
-    
-    return plaintext
+    return plaintext_out[1:result_len]
 end
 
 """

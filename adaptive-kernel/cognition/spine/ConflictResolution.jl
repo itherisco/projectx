@@ -52,7 +52,7 @@ struct ConflictResolver
         false,       # Don't require unanimity by default
         0.3,         # 30% disagreement triggers resolution
         3,           # Max 3 deliberation rounds
-        0.85,        # 85% agreement triggers entropy injection
+        0.90,        # 90% agreement triggers entropy injection (increased from 0.85 for context poisoning defense)
         true         # Auditor has veto power
     )
 end

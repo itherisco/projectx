@@ -22,6 +22,8 @@ use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
 use secure_boot::{BootStageResult, SecureBootManager};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -91,6 +93,8 @@ pub struct ItherisDaemon {
     start_time: Arc<RwLock<Option<chrono::DateTime<Utc>>>>,
     health_check_failures: Arc<RwLock<u32>>,
     hardware_guard: Arc<RwLock<Option<HardwareGuard>>>,
+    #[allow(dead_code)]
+    julia_process: Arc<RwLock<Option<std::process::Child>>>,
 }
 
 impl ItherisDaemon {
@@ -104,6 +108,7 @@ impl ItherisDaemon {
             start_time: Arc::new(RwLock::new(None)),
             health_check_failures: Arc::new(RwLock::new(0)),
             hardware_guard: Arc::new(RwLock::new(None)),
+            julia_process: Arc::new(RwLock::new(None)),
         }
     }
     

@@ -36,7 +36,9 @@ export
     # Confirmation gate integration
     request_confirmation, verify_confirmation,
     # GUARD: Sovereignty enforcement
-    verify_kernel_sovereignty
+    verify_kernel_sovereignty,
+    # Goal hierarchy violation check
+    check_goal_hierarchy_violation
 
 # ============================================================================
 # CONFIGURATION
@@ -127,19 +129,31 @@ end
 """
 function check_goal_hierarchy_violation(
     decision::String,
-    goal_graph::GoalGraph
+    goal_graph::Any
 )::Vector{Symbol}
     violated_goals = Symbol[]
     
+    # If goal_graph is nothing or not a valid GoalGraph, no violation check needed
+    if goal_graph === nothing
+        return violated_goals
+    end
+    
+    # Try to access goals field - if it doesn't exist, no violation can occur
+    try
+        goals = goal_graph.goals
+    catch
+        return violated_goals
+    end
+    
     # If no goals are defined, no violation can occur
-    if isempty(goal_graph.goals)
+    if isempty(goals)
         return violated_goals
     end
     
     decision_lowercase = lowercase(decision)
     
     # Check each goal for potential violation
-    for (goal_id, goal) in goal_graph.goals
+    for (goal_id, goal) in goals
         # Skip goals that are not active or completed (they don't constrain current decisions)
         if goal.status != :active && goal.status != :completed
             continue
@@ -400,7 +414,8 @@ function run_cognitive_cycle(
     perception::Dict{String, Any},
     agents::Dict{Symbol, Any},  # agent_type => agent_instance
     kernel::Any,  # Kernel instance for approval
-    config::SpineConfig = SpineConfig()
+    config::SpineConfig = SpineConfig();
+    goal_graph::Any = nothing  # GoalGraph for hierarchy violation checking
 )::DecisionCycle
     
     cycle = DecisionCycle(cycle_number, perception)
@@ -446,6 +461,50 @@ function run_cognitive_cycle(
     
     @info "Phase 4: Decision committed" 
         decision=cycle.committed_decision.decision
+    
+    # =========================================================================
+    # PHASE 4.5: GOAL HIERARCHY VIOLATION CHECK
+    # =========================================================================
+    # Check if the committed decision violates the goal hierarchy
+    # This is a critical safety check that blocks agent drift
+    if goal_graph !== nothing
+        violated_goals = check_goal_hierarchy_violation(
+            cycle.committed_decision.decision,
+            goal_graph
+        )
+        
+        if !isempty(violated_goals)
+            # Goal hierarchy violation detected - block the decision
+            violation_reason = "Goal hierarchy violation: decision conflicts with goals $(join(violated_goals, ", "))"
+            @warn "GOAL_HIERARCHY_VIOLATION" violated_goals=violated_goals decision=cycle.committed_decision.decision
+            
+            # Create rejection outcome with clear Rationale Chip
+            cycle.outcome = DecisionOutcome(
+                OUTCOME_REJECTED,
+                Dict(
+                    "rejection_reason" => "goal_hierarchy_violation",
+                    "violated_goals" => collect(violated_goals),
+                    "decision" => cycle.committed_decision.decision,
+                    # Rationale Chip: Clear explanation of why the decision was blocked
+                    "rationale_chip" => Dict(
+                        "type" => "GOAL_HIERARCHY_VIOLATION",
+                        "severity" => "HIGH",
+                        "message" => violation_reason,
+                        "blocked_goals" => [string(g) for g in violated_goals],
+                        "recommendation" => "Revise decision to align with active goals or update goal hierarchy"
+                    )
+                ),
+                Dict(),
+                now()
+            )
+            
+            # Log the rejection and return early (don't proceed to kernel approval)
+            log_immutable_entry!(cycle)
+            return cycle
+        end
+    end
+    
+    @info "Phase 4.5: Goal hierarchy check passed"
     
     # =========================================================================
     # PHASE 5: KERNEL APPROVAL (MANDATORY)

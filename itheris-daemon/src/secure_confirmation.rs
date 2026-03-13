@@ -14,6 +14,7 @@
 //! - **WDT Integration**: Watchdog timer for fail-closed isolation
 
 use aes_gcm::aead::OsRng;
+use rand_core::RngCore;
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;

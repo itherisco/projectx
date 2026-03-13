@@ -16,6 +16,7 @@
 //! - **Fail-Closed**: Missing/invalid/expired tokens = DENIED
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use rand_core::RngCore;
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;

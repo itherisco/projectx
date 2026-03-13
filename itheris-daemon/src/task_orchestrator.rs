@@ -71,7 +71,7 @@ pub enum TaskStatus {
 }
 
 /// Task definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Ord, Eq, PartialOrd, PartialEq)]
 pub struct Task {
     /// Unique task ID
     pub id: String,

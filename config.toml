@@ -36,6 +36,11 @@ require_kernel_approval = true
 # Minimum score threshold (0-100)
 score_threshold = 70
 
+# Entropy injection threshold for context poisoning defense (0.0-1.0)
+# Higher values require more disagreement before entropy injection triggers
+# Recommended: 0.90+ for production environments
+entropy_threshold = 0.90
+
 # Enable all security features
 warden_enabled = true
 sovereignty_gate_enabled = true

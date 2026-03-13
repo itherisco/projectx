@@ -94,6 +94,7 @@ end
 # ═══════════════════════════════════════════════════════════════════════════════
 
 export sanitize_input, sanitize_shell_command, sanitize_path, detect_injection
+export sanitize_sql_patterns, detect_contradictions
 export SanitizationResult, SanitizationError, SanitizationLevel
 export CLEAN, SUSPICIOUS, MALICIOUS
 export is_clean, is_malicious, block_until_clean
@@ -133,6 +134,16 @@ const PATTERN_EXEC = r"(\bexec\s*\(|\beval\s*\(|\bsystem\s*\(|\bspawn\s*\(|\bpop
 # SQL injection patterns
 const PATTERN_SQL_KEYWORDS = r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|CREATE|ALTER|EXEC|EXECUTE|TRUNCATE|MERGE|CALL|GRANT|REVOKE|COMMIT|ROLLBACK|SAVEPOINT|SET|SHOW|DESCRIBE|EXPLAIN|WITH|UNION ALL|UNION SELECT)\b"
 
+# SQL Injection Patterns - Enhanced detection
+const SQL_INJECTION_PATTERNS = [
+    r"(?i)\b(DROP|DELETE|TRUNCATE|ALTER|CREATE|INSERT|UPDATE|EXEC|EXECUTE)\b", # Keywords
+    r"(?i)(--|\#|\/\*|\*\/)",                                                # SQL comments
+    r"(?i)(UNION\s+(ALL\s+)?SELECT)",                                         # UNION-based
+    r"(?i)(OR\s+1\s*=\s*1|AND\s+1\s*=\s*1)",                                  # Tautologies
+    r"(?i)('\s*OR\s*'1'\s*=\s*'1)",                                           # Quote injection
+    r"(?i)(;\s*(DROP|DELETE|INSERT|UPDATE))",                                 # Command chaining
+]
+
 # XML/HTML tag patterns - Layer 2
 const PATTERN_XML_TAG = r"<(?:[a-zA-Z][a-zA-Z0-9]*(?:\s+[a-zA-Z_][a-zA-Z0-9_]*(?:=(?:\"[^\"]*\"|'[^']*'|[^\s>]+))?)*\s*/?|\?[xX][mM][lL]|\![dD][oO][cC][tT][yY][pP][eE]|[a-zA-Z][a-zA-Z0-9]*:[a-zA-Z][a-zA-Z0-9]*)"
 const PATTERN_TOOL_TAG = r"<(?:tool|function|command|action|execute|invoke|call)\b"
@@ -156,6 +167,71 @@ const PATTERN_SHELL_INJECTION = r"(?:;\s*|\|\s*|`|\$\(|&&|\|\||>)\s*(?:rm|cat|ls
 
 # JSON-specific attacks
 const PATTERN_JSON_INJECTION = r"(\"\s*:\s*[\"{]|\b__proto__\b|\bconstructor\b|\bprototype\b)"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTRADICTION DENSITY DETECTION - Context Poisoning Defense
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Patterns that indicate self-contradicting statements (potential context poisoning)
+const CONTRADICTION_PATTERNS = [
+    r"(?i)(but|however|although|yet)\s+(not|no|never)",  # "do X but not X"
+    r"(?i)(both|all)\s+\w+\s+(and|or)\s+(none|no)",      # "both X and none X"
+    r"(?i)(always|never)\s+(always|never)",                # "always never"
+    r"(?i)(must|should)\s+(not|never)\s+(must|should)",   # "must not must"
+    r"(?i)(enable|disable)\s+(enable|disable)",            # "enable disable"
+    r"(?i)(allow|deny)\s+(allow|deny)",                    # "allow deny"
+    r"(?i)(trust|distrust)\s+(trust|distrust)",           # "trust distrust"
+    r"(?i)(safe|dangerous)\s+(safe|dangerous)",           # "safe dangerous"
+    r"(?i)(yes|no)\s+(yes|no)",                           # Direct contradictions
+]
+
+# Maximum allowed contradiction density (contradictions per 100 words)
+const MAX_CONTRADICTION_DENSITY = 0.3
+
+"""
+    detect_contradictions(input::String)::Vector{SanitizationError}
+
+Detect self-contradicting statements in input (context poisoning defense).
+This helps identify inputs that contain conflicting instructions which could
+confuse the Brain and lead to goal hierarchy violations.
+"""
+function detect_contradictions(input::String)::Vector{SanitizationError}
+    errors = SanitizationError[]
+    
+    # Count contradictions
+    contradiction_count = 0
+    for pattern in CONTRADICTION_PATTERNS
+        matches = eachmatch(pattern, input)
+        contradiction_count += length(collect(matches))
+    end
+    
+    # Calculate word count for density
+    word_count = length(split(input))
+    word_count = max(word_count, 1)  # Avoid division by zero
+    
+    # Calculate density (contradictions per 100 words)
+    density = (contradiction_count * 100) / word_count
+    
+    # Check if density exceeds threshold
+    if density > MAX_CONTRADICTION_DENSITY
+        push!(errors, SanitizationError(
+            :CONTRADICTION_DENSITY,
+            "High contradiction density ($density per 100 words) - potential context poisoning",
+            SUSPICIOUS
+        ))
+    end
+    
+    # Also flag if absolute number of contradictions is high
+    if contradiction_count >= 3
+        push!(errors, SanitizationError(
+            :MULTIPLE_CONTRADICTIONS,
+            "Detected $contradiction_count self-contradicting statements",
+            SUSPICIOUS
+        ))
+    end
+    
+    return errors
+end
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
@@ -321,6 +397,61 @@ function contains_malicious_pattern(input::String)::Vector{SanitizationError}
      end
     
     return errors
+end
+
+"""
+    contains_sql_injection(input::String)::Vector{SanitizationError}
+
+Dedicated SQL injection detection function that uses the enhanced
+SQL_INJECTION_PATTERNS for comprehensive detection.
+"""
+function contains_sql_injection(input::String)::Vector{SanitizationError}
+    errors = SanitizationError[]
+    for pattern in SQL_INJECTION_PATTERNS
+        if occursin(pattern, input)
+            push!(errors, SanitizationError(
+                :SQL_INJECTION,
+                "Detected SQL injection pattern: $(pattern)",
+                MALICIOUS
+            ))
+        end
+    end
+    return errors
+end
+
+"""
+    sanitize_sql_patterns(input::String)::String
+
+Remove SQL injection patterns from input string.
+This is used for sanitizing inputs that should be allowed but cleaned.
+"""
+function sanitize_sql_patterns(input::String)::String
+    result = input
+    
+    # Remove SQL keywords (case insensitive)
+    sql_keywords = ["DROP", "DELETE", "TRUNCATE", "ALTER", "CREATE", "INSERT", "UPDATE", 
+                   "EXEC", "EXECUTE", "SELECT", "UNION", "FROM", "WHERE", "TABLE",
+                   "DATABASE", "INDEX", "VIEW", "PROCEDURE", "FUNCTION", "TRIGGER"]
+    for keyword in sql_keywords
+        # Use word boundary matching to avoid partial word removal
+        pattern = Regex("(?i)\\b" * keyword * "\\b")
+        result = replace(result, pattern => "")
+    end
+    
+    # Remove SQL comments
+    result = replace(result, r"(?i)--" => "")
+    result = replace(result, r"(?i)#" => "")
+    result = replace(result, r"(?i)/\*.*\*/" => "")
+    
+    # Remove common SQL injection patterns
+    result = replace(result, r"(?i)'\s*OR\s*'1'\s*=\s*'1" => "")
+    result = replace(result, r"(?i)'" => "")
+    result = replace(result, r"(?i);\s*(DROP|DELETE|INSERT|UPDATE)" => "")
+    
+    # Clean up extra whitespace
+    result = replace(result, r"\s+" => " ")
+    
+    return strip(result)
 end
 
 """
@@ -590,6 +721,9 @@ function sanitize_input(input::AbstractString)::SanitizationResult
     
     # Layer 3: Structural validation
     append!(errors, validate_structure(normalized))
+    
+    # Layer 4: Contradiction density detection (context poisoning defense)
+    append!(errors, detect_contradictions(normalized))
     
     # Step 3: Determine final severity
     level = determine_level(errors)

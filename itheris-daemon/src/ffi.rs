@@ -66,7 +66,7 @@ pub extern "C" fn kernel_init() -> i32 {
     }
     
     // Initialize shared memory
-    let shm = match shared_memory::create_shared_memory_ipc() {
+    let shm = match create_shared_memory_ipc() {
         Ok(s) => s,
         Err(e) => {
             // FATAL: Cannot create shared memory - fail-closed
@@ -873,6 +873,143 @@ pub extern "C" fn secrets_get(key: *const std::ffi::c_char) -> *mut std::ffi::c_
 #[no_mangle]
 pub extern "C" fn secrets_lock() {
     secrets::lock_global();
+}
+
+// ============================================================================
+// AES-256-GCM Encryption FFI (for Julia interop)
+// ============================================================================
+
+/// Encrypt data using AES-256-GCM
+/// 
+/// # Arguments
+/// * `key` - 32-byte encryption key
+/// * `key_len` - Must be 32
+/// * `plaintext` - Data to encrypt
+/// * `plaintext_len` - Length of plaintext
+/// * `ciphertext_out` - Output buffer (must be at least plaintext_len + 28 bytes for nonce + tag)
+/// * `nonce_out` - 12-byte nonce output
+///
+/// # Returns
+/// * Total output length (ciphertext_len + 12 nonce + 16 tag) on success
+/// * 0 on error
+#[no_mangle]
+pub extern "C" fn aes_gcm_encrypt(
+    key: *const u8,
+    key_len: usize,
+    plaintext: *const u8,
+    plaintext_len: usize,
+    ciphertext_out: *mut u8,
+    nonce_out: *mut u8,
+) -> usize {
+    use aes_gcm::{
+        aead::{Aead, KeyInit, OsRng},
+        Aes256Gcm, Nonce,
+    };
+    use std::ptr;
+
+    // Validate inputs
+    if key.is_null() || plaintext.is_null() || ciphertext_out.is_null() || nonce_out.is_null() {
+        return 0;
+    }
+    if key_len != 32 || plaintext_len == 0 {
+        return 0;
+    }
+
+    // Get key bytes
+    let key_bytes = unsafe { std::slice::from_raw_parts(key, key_len) };
+    let plaintext_bytes = unsafe { std::slice::from_raw_parts(plaintext, plaintext_len) };
+
+    // Create cipher
+    let cipher = match Aes256Gcm::new_from_slice(key_bytes) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+
+    // Generate random 96-bit nonce
+    let mut nonce_bytes = [0u8; 12];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    // Encrypt
+    let ciphertext = match cipher.encrypt(nonce, plaintext_bytes) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+
+    // Copy outputs
+    unsafe {
+        ptr::copy_nonoverlapping(nonce_bytes.as_ptr(), nonce_out, 12);
+        ptr::copy_nonoverlapping(ciphertext.as_ptr(), ciphertext_out, ciphertext.len());
+    }
+
+    // Return total length: nonce (12) + ciphertext + tag (16)
+    // GCM appends the tag to ciphertext, so ciphertext.len() = plaintext_len + 16
+    12 + ciphertext.len()
+}
+
+/// Decrypt data using AES-256-GCM
+/// 
+/// # Arguments
+/// * `key` - 32-byte decryption key
+/// * `key_len` - Must be 32
+/// * `nonce` - 12-byte nonce
+/// * `ciphertext` - Ciphertext + tag (from encrypt)
+/// * `ciphertext_len` - Length of ciphertext + tag
+/// * `plaintext_out` - Output buffer (must be at least ciphertext_len - 28 bytes)
+///
+/// # Returns
+/// * Plaintext length on success
+/// * 0 on error (authentication failure or other)
+#[no_mangle]
+pub extern "C" fn aes_gcm_decrypt(
+    key: *const u8,
+    key_len: usize,
+    nonce: *const u8,
+    ciphertext: *const u8,
+    ciphertext_len: usize,
+    plaintext_out: *mut u8,
+) -> usize {
+    use aes_gcm::{
+        aead::{Aead, KeyInit, OsRng},
+        Aes256Gcm, Nonce,
+    };
+    use std::ptr;
+
+    // Validate inputs
+    if key.is_null() || nonce.is_null() || ciphertext.is_null() || plaintext_out.is_null() {
+        return 0;
+    }
+    if key_len != 32 || ciphertext_len < 28 {
+        // Minimum: 12 nonce + 16 tag = 28
+        return 0;
+    }
+
+    // Get key and data bytes
+    let key_bytes = unsafe { std::slice::from_raw_parts(key, key_len) };
+    let nonce_bytes = unsafe { std::slice::from_raw_parts(nonce, 12) };
+    let ciphertext_bytes = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
+
+    // Create cipher
+    let cipher = match Aes256Gcm::new_from_slice(key_bytes) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+
+    // Create nonce
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    // Decrypt (this verifies the authentication tag)
+    let plaintext = match cipher.decrypt(nonce, ciphertext_bytes) {
+        Ok(p) => p,
+        Err(_) => return 0, // Authentication failure
+    };
+
+    // Copy output
+    unsafe {
+        ptr::copy_nonoverlapping(plaintext.as_ptr(), plaintext_out, plaintext.len());
+    }
+
+    plaintext.len()
 }
 
 // ============================================================================
