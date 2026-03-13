@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package warden;
+
+option go_package = "github.com/itheris/warden;warden";
+
+// ============================================================
+// Metabolic Telemetry Messages
+// ============================================================
+
+/// MetabolicSnapshot represents the current metabolic state of the system.
+/// This includes energy levels, viability budget, and cognitive mode.
+message MetabolicSnapshot {
+    /// Current energy level (0.0 - 1.0)
+    double energy_level = 1;
+    
+    /// Viability budget remaining (0.0 - 1.0)
+    double viability_budget = 2;
+    
+    /// Total tick count since system initialization
+    uint64 tick_count = 3;
+    
+    /// Current cognitive mode
+    string cognitive_mode = 4;
+    
+    /// Whether the system is in dreaming/oneiric state
+    bool is_dreaming = 5;
+}
+
+// ============================================================
+// Decision Spine Messages
+// ============================================================
+
+/// Proposal represents a decision proposal from the Decision Spine
+message Proposal {
+    /// Unique identifier for this proposal
+    string id = 1;
+    
+    /// Human-readable rationale for this proposal
+    string rationale = 2;
+    
+    /// Priority level (0.0 - 1.0)
+    double priority = 3;
+    
+    /// Expected reward from executing this proposal
+    double reward = 4;
+    
+    /// Risk level associated with this proposal
+    double risk = 5;
+    
+    /// Calculated score (reward - risk)
+    double score = 6;
+    
+    /// Whether this proposal has been approved
+    bool approved = 7;
+    
+    /// Hallucination detection score
+    double hallucination_score = 8;
+    
+    /// Reason for veto if rejected
+    string veto_reason = 9;
+}
+
+/// Empty message for streaming subscriptions
+message Empty {}
+
+// ============================================================
+// TPM Unsealing Messages
+// ============================================================
+
+/// UnsealingRequest represents a request to unseal TPM-protected data
+message UnsealingRequest {
+    /// PCR values to verify
+    repeated bytes pcr_values = 1;
+    
+    /// Authentication string
+    string auth = 2;
+}
+
+/// UnsealingResponse represents the result of an unsealing operation
+message UnsealingResponse {
+    /// Whether the unsealing was successful
+    bool success = 1;
+    
+    /// Unsealed data (if successful)
+    bytes data = 2;
+    
+    /// Error message if failed
+    string error = 3;
+}
+
+// ============================================================
+// gRPC Services
+// ============================================================
+
+/// WardenService provides the core management interface for ITHERIS
+service WardenService {
+    /// Subscribe to metabolic telemetry updates
+    rpc SubscribeMetabolic(Empty) returns (stream MetabolicSnapshot);
+    
+    /// Stream decision proposals from the Decision Spine
+    rpc GetProposals(Empty) returns (stream Proposal);
+    
+    /// Request TPM unsealing for secure operations
+    rpc RequestUnsealing(UnsealingRequest) returns (UnsealingResponse);
+}

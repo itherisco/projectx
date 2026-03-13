@@ -1,0 +1,380 @@
+// =============================================================================
+// ProjectX Jarvis/ITHERIS Full OS Interface Architecture
+// Warden Service gRPC Contract Definitions
+// =============================================================================
+// This file defines the foundational contract between the frontend
+// (Leptos WASM/Tauri) and the Rust Warden backend.
+// =============================================================================
+
+syntax = "proto3";
+
+package warden;
+
+option go_package = "github.com/projectx/warden;warden";
+option java_package = "com.projectx.warden";
+option java_multiple_files = true;
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/// Status of a brain proposal submitted for kernel approval
+enum ProposalStatus {
+    PROPOSAL_STATUS_UNSPECIFIED = 0;
+    PROPOSAL_STATUS_PENDING = 1;
+    PROPOSAL_STATUS_APPROVED = 2;
+    PROPOSAL_STATUS_VETOED = 3;
+}
+
+/// Risk level classification for actions and confirmations
+enum RiskLevel {
+    RISK_LEVEL_UNSPECIFIED = 0;
+    RISK_LEVEL_READ_ONLY = 1;
+    RISK_LEVEL_LOW = 2;
+    RISK_LEVEL_MEDIUM = 3;
+    RISK_LEVEL_HIGH = 4;
+    RISK_LEVEL_CRITICAL = 5;
+}
+
+/// Cognitive mode of the adaptive kernel
+enum CognitiveMode {
+    COGNITIVE_MODE_UNSPECIFIED = 0;
+    COGNITIVE_MODE_ACTIVE = 1;
+    COGNITIVE_MODE_IDLE = 2;
+    COGNITIVE_MODE_SLEEP = 3;
+    COGNITIVE_MODE_DREAM = 4;
+    COGNITIVE_MODE_EMERGENCY = 5;
+}
+
+/// Event type for decision streaming
+enum DecisionEventType {
+    DECISION_EVENT_TYPE_UNSPECIFIED = 0;
+    DECISION_EVENT_TYPE_PROPOSAL_RECEIVED = 1;
+    DECISION_EVENT_TYPE_DECISION_MADE = 2;
+    DECISION_EVENT_TYPE_CONFIRMATION_REQUESTED = 3;
+    DECISION_EVENT_TYPE_CONTAINMENT_TRIGGERED = 4;
+    DECISION_EVENT_TYPE_KERNEL_STATE_CHANGE = 5;
+}
+
+/// Status of a decision event
+enum DecisionStatus {
+    DECISION_STATUS_UNSPECIFIED = 0;
+    DECISION_STATUS_PROCESSING = 1;
+    DECISION_STATUS_APPROVED = 2;
+    DECISION_STATUS_REJECTED = 3;
+    DECISION_STATUS_PENDING_CONFIRMATION = 4;
+    DECISION_STATUS_CONTAINED = 5;
+}
+
+/// Agent type for proposal attribution
+enum AgentType {
+    AGENT_TYPE_UNSPECIFIED = 0;
+    AGENT_TYPE_CODE = 1;
+    AGENT_TYPE_STRATEGIST = 2;
+    AGENT_TYPE_AUDITOR = 3;
+    AGENT_TYPE_EXECUTOR = 4;
+    AGENT_TYPE_EVOLUTION = 5;
+    AGENT_TYPE_MINDMAP = 6;
+    AGENT_TYPE_POLICY_VALIDATOR = 7;
+    AGENT_TYPE_WEB_SEARCH = 8;
+}
+
+/// Containment status
+enum ContainmentStatus {
+    CONTAINMENT_STATUS_UNSPECIFIED = 0;
+    CONTAINMENT_STATUS_INACTIVE = 1;
+    CONTAINMENT_STATUS_ACTIVE = 2;
+    CONTAINMENT_STATUS_ESCALATED = 3;
+    CONTAINMENT_STATUS_RESOLVED = 4;
+}
+
+// =============================================================================
+// TELEMETRY MESSAGES
+// =============================================================================
+
+/// Request for telemetry data streaming
+message TelemetryRequest {
+    /// Interval in milliseconds between telemetry updates
+    uint32 interval_ms = 1;
+    
+    /// Include agent-specific metrics
+    bool include_agents = 2;
+    
+    /// Include IPC latency metrics
+    bool include_ipc_latency = 3;
+    
+    /// Request specific metric categories
+    repeated string metric_categories = 4;
+}
+
+/// Response containing system telemetry data
+message TelemetryResponse {
+    /// Timestamp of the telemetry reading (Unix epoch milliseconds)
+    int64 timestamp = 1;
+    
+    /// Metabolic energy level (0-100)
+    float metabolic_energy = 2;
+    
+    /// CPU usage percentage (0-100)
+    float cpu_usage = 3;
+    
+    /// Memory usage percentage (0-100)
+    float memory_usage = 4;
+    
+    /// Current tick rate (ticks per second)
+    float tick_rate = 5;
+    
+    /// Current cognitive mode
+    CognitiveMode cognitive_mode = 6;
+    
+    /// Agent confidence scores (agent_id -> confidence)
+    map<string, float> agent_confidences = 7;
+    
+    /// IPC latency in milliseconds
+    float ipc_latency_ms = 8;
+    
+    /// Active agent count
+    uint32 active_agent_count = 9;
+    
+    /// Decision throughput (decisions per second)
+    float decision_throughput = 10;
+    
+    /// Queue depth for pending proposals
+    uint32 pending_proposal_queue = 11;
+}
+
+// =============================================================================
+// PROPOSAL MESSAGES
+// =============================================================================
+
+/// Request to submit a brain proposal for kernel approval
+message ProposalRequest {
+    /// Unique identifier for the proposal
+    string proposal_id = 1;
+    
+    /// ID of the agent submitting the proposal
+    string agent_id = 2;
+    
+    /// Type of agent submitting the proposal
+    AgentType agent_type = 3;
+    
+    /// The proposed decision or action
+    string decision = 4;
+    
+    /// Confidence score (0.0-1.0)
+    float confidence = 5;
+    
+    /// Reasoning behind the proposal
+    string reasoning = 6;
+    
+    /// Evidence supporting the proposal
+    repeated string evidence = 7;
+    
+    /// Additional metadata
+    map<string, string> metadata = 8;
+    
+    /// Expected risk level of the proposal
+    RiskLevel risk_level = 9;
+}
+
+/// Response to a proposal submission
+message ProposalResponse {
+    /// The proposal ID (echoed back)
+    string proposal_id = 1;
+    
+    /// Status of the proposal
+    ProposalStatus status = 2;
+    
+    /// Human-readable status message
+    string message = 3;
+    
+    /// Timestamp when the proposal was processed
+    int64 processed_at = 4;
+    
+    /// Optional: ID of the kernel that approved/vetoed
+    string kernel_id = 5;
+    
+    /// Optional: Additional response metadata
+    map<string, string> metadata = 6;
+}
+
+// =============================================================================
+// CONFIRMATION MESSAGES
+// =============================================================================
+
+/// Request for sovereign confirmation of an action
+message ConfirmationRequest {
+    /// Unique identifier for the confirmation request
+    string confirmation_id = 1;
+    
+    /// The action requiring confirmation
+    string action = 2;
+    
+    /// Risk level of the action
+    RiskLevel risk_level = 3;
+    
+    /// Required capability for this action
+    string required_capability = 4;
+    
+    /// Agent requesting confirmation
+    string requesting_agent_id = 5;
+    
+    /// Additional context for the confirmation
+    map<string, string> context = 6;
+    
+    /// Timeout in seconds
+    uint32 timeout_seconds = 7;
+}
+
+/// Response to a confirmation request
+message ConfirmationResponse {
+    /// Confirmation ID (echoed back)
+    string confirmation_id = 1;
+    
+    /// Whether confirmation was granted
+    bool confirmed = 2;
+    
+    /// Human-readable response message
+    string message = 3;
+    
+    /// Timestamp of the confirmation
+    int64 confirmed_at = 4;
+    
+    /// Optional: Confirmer identity
+    string confirmer_id = 5;
+    
+    /// Optional: Conditions or limitations
+    repeated string conditions = 6;
+}
+
+// =============================================================================
+// DECISION MESSAGES
+// =============================================================================
+
+/// Request to subscribe to decision events
+message DecisionRequest {
+    /// Filter by specific agent IDs
+    repeated string filter_agent_ids = 1;
+    
+    /// Filter by event types
+    repeated DecisionEventType filter_event_types = 2;
+    
+    /// Filter by decision status
+    repeated DecisionStatus filter_statuses = 3;
+    
+    /// Include historical events (from the last N seconds)
+    uint32 history_seconds = 4;
+    
+    /// Maximum events per second to stream
+    uint32 max_events_per_second = 5;
+}
+
+/// Event representing a decision or state change
+message DecisionEvent {
+    /// Unique event identifier
+    string event_id = 1;
+    
+    /// Timestamp of the event (Unix epoch milliseconds)
+    int64 timestamp = 2;
+    
+    /// Type of decision event
+    DecisionEventType event_type = 3;
+    
+    /// Associated proposal ID (if applicable)
+    string proposal_id = 4;
+    
+    /// Agent that generated the event
+    string agent_id = 5;
+    
+    /// The decision made
+    string decision = 6;
+    
+    /// Status of the decision
+    DecisionStatus status = 7;
+    
+    /// Confidence score (0.0-1.0)
+    float confidence = 8;
+    
+    /// Risk level
+    RiskLevel risk_level = 9;
+    
+    /// Additional event metadata
+    map<string, string> metadata = 10;
+}
+
+// =============================================================================
+// CONTAINMENT MESSAGES
+// =============================================================================
+
+/// Request to trigger emergency containment
+message ContainmentRequest {
+    /// Reason for triggering containment
+    string reason = 1;
+    
+    /// ID of the agent or system triggering containment
+    string triggered_by = 2;
+    
+    /// Whether this is a hard containment (cannot be overridden)
+    bool hard_containment = 3;
+    
+    /// Optional: Specific agents to contain (empty = all)
+    repeated string target_agent_ids = 4;
+    
+    /// Optional: Scope of containment
+    string scope = 5;
+    
+    /// TPM registers to verify (base64 encoded)
+    repeated string tpm_registers = 6;
+}
+
+/// Response to a containment trigger
+message ContainmentResponse {
+    /// Whether containment was successfully activated
+    bool success = 1;
+    
+    /// Current containment status
+    ContainmentStatus status = 2;
+    
+    /// Human-readable status message
+    string message = 3;
+    
+    /// Timestamp when containment was activated
+    int64 activated_at = 4;
+    
+    /// Instructions for human operator (if any)
+    repeated string instructions = 5;
+    
+    /// TPM registers state (for verification)
+    map<string, string> tpm_registers = 6;
+    
+    /// Containment ID
+    string containment_id = 7;
+}
+
+// =============================================================================
+// SERVICE DEFINITIONS
+// =============================================================================
+
+/// Warden service for OS-level operations and brain integration
+service WardenService {
+    /// StreamTelemetry - Full-duplex telemetry stream
+    /// Client sends TelemetryRequest with streaming parameters
+    /// Server streams TelemetryResponse with system metrics
+    rpc StreamTelemetry(stream TelemetryRequest) returns (stream TelemetryResponse);
+    
+    /// SubmitProposal - Submit brain proposal for kernel approval
+    /// Blocks until proposal is processed by the kernel
+    rpc SubmitProposal(ProposalRequest) returns (ProposalResponse);
+    
+    /// RequestConfirmation - Request sovereign confirmation
+    /// Used for high-risk operations requiring human-in-the-loop
+    rpc RequestConfirmation(ConfirmationRequest) returns (ConfirmationResponse);
+    
+    /// StreamDecisions - Subscribe to decision events
+    /// Server streams DecisionEvent messages to the client
+    rpc StreamDecisions(DecisionRequest) returns (stream DecisionEvent);
+    
+    /// TriggerContainment - Emergency lockdown
+    /// Immediately halts agent operations and isolates the kernel
+    rpc TriggerContainment(ContainmentRequest) returns (ContainmentResponse);
+}
