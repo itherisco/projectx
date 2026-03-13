@@ -127,6 +127,29 @@ default_goal_priority = 0.8
 monitoring_interval = 60
 
 # ============================================================================
+# IPC CONFIG (Native Shared Memory)
+# ============================================================================
+
+[ipc]
+# Native IPC mode: shared_memory (TCP fallback is deprecated)
+mode = "shared_memory"
+
+# Shared memory path (Linux tmpfs)
+shm_path = "/dev/shm/itheris_ipc"
+
+# Shared memory size: 64MB (supports 1.97M thoughts/second)
+shm_size = 67108864  # 64MB in bytes
+
+# Ring buffer entries (lock-free)
+ring_buffer_entries = 1024
+
+# Enable native IPC (disable for TCP fallback only)
+native_ipc_enabled = true
+
+# Fail-closed: halt if Rust kernel unavailable
+fail_closed = true
+
+# ============================================================================
 # PHRASE CACHE
 # ============================================================================
 

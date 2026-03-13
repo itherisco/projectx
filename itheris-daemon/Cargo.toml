@@ -15,7 +15,7 @@ tokio = { version = "1.35", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
-ed25519-dalek = { version = "2.0", features = ["rand_core", "os_rng"] }
+ed25519-dalek = { version = "2.0", features = ["rand_core", "std"] }
 hex = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -31,13 +31,44 @@ regex = "1.10"
 getrandom = "0.2"
 
 # Julia integration - jlrs for embedded Julia
-jlrs = { version = "0.22", features = ["multi-rt", "async"] }
-jlrs-derive = "^0.9"
+jlrs = { version = "0.22", features = ["multi-rt", "async"], optional = true }
+jlrs-derive = { version = "0.5", optional = true }
 once_cell = "1.19"
 
 # Hardware watchdog and GPIO (optional - falls back to software simulation)
 # rustix for MSR access (model-specific registers) on x86
 rustix = { version = "0.38", features = ["fs", "mm"] }
+
+# ============================================
+# NEW: Security & Encryption Dependencies
+# ============================================
+
+# AES-GCM for secrets encryption
+aes-gcm = "0.10"
+
+# Argon2 for key derivation (better than PBKDF2)
+argon2 = "0.5"
+
+# JWT support
+jsonwebtoken = "9"
+
+# HMAC for token authentication
+hmac = "0.12"
+
+# Time-lock encryption / rate limiting
+# Used for rate limiting and cryptographic time delays
+
+# TPM 2.0 support (optional - falls back to software)
+# tss-esapi = "0.5"  # Uncomment when TPM hardware available
+
+# Async HTTP client for safe_http_request
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# URL validation
+url = "2"
+
+
+# scallop = "0.2"  # For Linux seccomp (optional)
 
 [dev-dependencies]
 mockall = "0.12"

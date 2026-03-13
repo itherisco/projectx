@@ -4,7 +4,7 @@
 # Rust bare-metal kernel via shared memory ring buffers.
 #
 # Architecture:
-# - Shared memory region: 0x01000000 - 0x01100000 (16MB)
+# - Shared memory region: 0x01000000 - 0x05100000 (64MB)
 # - Ring buffer protocol with lock-free access
 # - Ed25519 signatures for authentication
 # - HMAC-SHA256 for message authentication with replay protection
@@ -172,28 +172,26 @@ Returns true if successful, false if fallback mode activated.
 function init_rust_ipc()::Bool
     success = try_load_rust_library()
     
-    if success
-        _fallback_mode[] = false
-        @info "Rust IPC initialized successfully"
-    else
-        _fallback_mode[] = true
-        @warn """
-        ⚠️ RUST BRAIN UNAVAILABLE - ENTERING FALLBACK MODE
+    if !success
+        # FAIL-CLOSED: Do NOT allow fallback - halt system
+        error("""
+        FATAL SECURITY FAILURE: Rust kernel unavailable.
         
-        System will operate in Julia-only fallback mode with:
-        - No Rust brain integration
-        - No cryptographic signing  
-        - No multi-agent debate
-        - Limited cognitive capabilities
+        The Julia brain is strictly advisory and cannot operate
+        without explicit Rust kernel approval for all actions.
         
-        To fix:
-        1. Build Rust brain: cd Itheris/Brain && cargo build --release
-        2. Ensure library in LD_LIBRARY_PATH or working directory
-        3. Restart ITHERIS
-        """
+        Without the Warden (Rust kernel), flow integrity tokens
+        cannot be verified. System is halting to maintain 
+        fail-closed security invariants.
+        
+        To recover: Ensure Rust kernel is running and properly
+        initialized before starting Julia brain.
+        """)
     end
     
-    return success
+    _fallback_mode[] = false
+    @info "Rust IPC initialized successfully - Warden active"
+    return true
 end
 
 """
@@ -204,17 +202,23 @@ Check if Rust brain is available.
 is_brain_available() = _rust_available[] && !_fallback_mode[]
 
 """
-    require_rust_brain()
+    require_rust_brain(action_name::String="unknown")
 
 Throw error if Rust brain not available.
 Use for operations that cannot work in fallback mode.
+This implements fail-closed security - the Julia brain cannot act
+without explicit Rust kernel approval.
 """
-function require_rust_brain()
+function require_rust_brain(action_name::String="unknown")
     if !is_brain_available()
         error("""
-        This operation requires Rust brain but it's unavailable.
-        System is in fallback mode.
-        Run init_rust_ipc() to attempt reinitialization.
+        FATAL: Cannot execute '$action_name' - Rust kernel unavailable.
+        
+        Fail-closed security requires explicit kernel approval
+        for all actions. The Julia brain cannot act without
+        the Warden's Law Enforcement Point (LEP) validation.
+        
+        System state: SECURITY_HALTED
         """)
     end
 end
@@ -462,8 +466,8 @@ Get cryptographically secure random bytes from Rust's CSPRNG.
 
 This function uses Rust's `getrandom` crate which provides:
 - OS-specific CSPRNG (arc4random on macOS, getrandom on Linux, CryptGenRandom on Windows)
-- Fallback to TPM/HSM-backed RNG if available
-- Fail-closed behavior: returns Julia fallback if Rust unavailable
+- TPM 2.0 RNG if available
+- FAIL-CLOSED: Returns error if Rust CSPRNG unavailable
 
 # Arguments
 - `n::Integer`: Number of random bytes to generate
@@ -471,43 +475,49 @@ This function uses Rust's `getrandom` crate which provides:
 # Returns
 - `Vector{UInt8}`: Cryptographically secure random bytes
 
-# Fallback Chain (fail-closed):
-1. Rust CSPRNG (getrandom crate) - preferred
-2. TPM 2.0 RNG if available
-3. Julia Random (CSPRNG) with warning
-4. Deterministic fallback (SHA256 of timestamp) - last resort
+# Fail-Closed Behavior:
+This function will ERROR if Rust CSPRNG is unavailable.
+For fail-closed security, we cannot use predictable
+fallback random number generation. The Warden must
+be available for cryptographic operations.
 """
 function get_secure_random(n::Integer)::Vector{UInt8}
     n > 0 || return Vector{UInt8}()
     
-    # Try Rust CSPRNG first (preferred)
-    if _rust_available[]
-        try
-            buf = Vector{UInt8}(undef, n)
-            result = ccall(
-                (:get_secure_random, LIBITHERIS),
-                Int32,
-                (Ptr{UInt8}, Csize_t),
-                buf, n
-            )
-            if result == 0
-                return buf
-            end
-        catch e
-            # Fall through to fallback
-        end
+    # FAIL-CLOSED: Cannot use fallback - require Rust CSPRNG
+    if !_rust_available[]
+        error("""
+        FATAL: Cannot generate secure random - Rust CSPRNG unavailable.
+        
+        For fail-closed security, we cannot use predictable
+        fallback random number generation. The Warden must
+        be available for cryptographic operations.
+        """)
     end
     
-    # Julia Random CSPRNG fallback (with warning)
-    @warn "Using Julia Random fallback for secure token generation - Rust CSPRNG unavailable"
+    # Use Rust CSPRNG
     try
-        return rand(UInt8, n)
-    catch
-        # Last resort: deterministic but unpredictable enough for non-security-critical
-        @error "All entropy sources failed - using deterministic fallback"
-        data = string(time_ns()) * string(getpid()) * string(hash(rand(UInt64)))
-        return sha256(data)[1:n]
+        buf = Vector{UInt8}(undef, n)
+        result = ccall(
+            (:get_secure_random, LIBITHERIS),
+            Int32,
+            (Ptr{UInt8}, Csize_t),
+            buf, n
+        )
+        if result == 0
+            return buf
+        end
+    catch e
+        error("""
+        FATAL: Rust CSPRNG call failed: $e
+        
+        Cannot generate secure random - cryptographic
+        operations require the Warden's CSPRNG.
+        """)
     end
+    
+    # This should never be reached due to error above
+    error("Failed to generate secure random - Rust CSPRNG returned error")
 end
 
 """
@@ -644,8 +654,8 @@ function _get_shm_path()
 end
 
 const SHM_PATH = _get_shm_path()
-const SHM_SIZE = 0x0010_0000  # 16MB
-const RING_BUFFER_ENTRIES = 256
+const SHM_SIZE = 0x0040_0000  # 64MB (matches Rust kernel configuration)
+const RING_BUFFER_ENTRIES = 1024  # Lock-free ring buffer entries
 
 # Response region offset - separated from request region to avoid collisions
 const RESPONSE_OFFSET = 4096  # Response written at offset 4096 bytes
@@ -759,8 +769,8 @@ function get_shm_size()::Int
             return parse(Int, size_str)
         end
     end
-    # Default: 16MB (0x00100000)
-    return 0x0010_0000
+    # Default: 64MB (0x00400000) - matches Rust kernel SHM_SIZE
+    return 0x0040_0000
 end
 
 # ============================================================================
@@ -914,7 +924,7 @@ end
     
     Checks:
     1. Path exists
-    2. Size matches expected 16MB
+    2. Size matches expected 64MB
     3. Memory region is page-aligned
     4. Permissions allow access
     
@@ -946,7 +956,7 @@ function validate_shm_region(shm_path::String=SHM_PATH, expected_size::Int=get_s
         
         # Check 3: Alignment (page-aligned at 0x01000000)
         # For /dev/shm files, we check if the virtual address would be aligned
-        # The expected virtual address range is 0x01000000 - 0x01100000
+        # The expected virtual address range is 0x01000000 - 0x05100000 (64MB)
         expected_base = 0x01000000
         if expected_base % 4096 != 0  # 4KB page size
             push!(errors, "Expected base address 0x$(string(expected_base, base=16)) is not page-aligned")

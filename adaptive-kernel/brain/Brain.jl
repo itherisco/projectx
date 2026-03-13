@@ -12,6 +12,11 @@ using Statistics
 # ITHERIS Neural Brain Integration
 using ..ITHERISCore  # infer(), learn!(), initialize_brain()
 
+# Input Sanitization - SECURITY BOUNDARY for LLM interaction paths
+# This module implements fail-closed sanitization before Brain access
+include(joinpath(@__DIR__, "..", "cognition", "security", "InputSanitizer.jl"))
+using ..cognition.security.InputSanitizer
+
 # Trust and Confirmation (P0 Security - require explicit approval for fallback)
 # Note: SecureConfirmationGate integration happens at higher levels (Kernel)
 # Brain uses fallback_approval_token field in BrainConfig for security checks
@@ -39,7 +44,11 @@ export
     BoundaryInvariant,
     
     # SECURITY: Fallback approval functions (P0 - Vulnerability #5 & Weakness #6)
-    check_fallback_approval
+    check_fallback_approval,
+    
+    # Input Sanitization - SECURITY BOUNDARY
+    sanitize_brain_output,
+    sanitize_reasoning
 
 # ============================================================================
 # BRAIN-KERNEL BOUNDARY CONTRACTS
@@ -589,7 +598,8 @@ function _itheris_thought_to_brain_output(thought::Thought, input::BrainInput)::
         for i in eachindex(action_names)
     )
     
-    BrainOutput(
+    # Create output first
+    output = BrainOutput(
         proposed_actions,
         confidence=confidence,
         value_estimate=thought.value,
@@ -597,6 +607,10 @@ function _itheris_thought_to_brain_output(thought::Thought, input::BrainInput)::
         reasoning="ITHERIS inference: action=$(thought.action), value=$(thought.value)",
         latent_features=thought.context_vector
     )
+    
+    # SECURITY: Sanitize output before returning - this is the primary defense
+    # against prompt injection in LLM interaction paths
+    return sanitize_brain_output(output)
 end
 
 function _heuristic_fallback(input::BrainInput)::BrainOutput
@@ -616,24 +630,98 @@ function _heuristic_fallback(input::BrainInput)::BrainOutput
         ["log_status", "observe_system"]
     end
     
+    # SECURITY: Sanitize reasoning using InputSanitizer before creating output
+    base_reasoning = "Heuristic fallback - NO BRAIN VERIFICATION (insecure mode)"
+    sanitized_reasoning = sanitize_reasoning(base_reasoning)
+    
     return BrainOutput(
         actions;
         confidence=0.7f0,
         value_estimate=0.5f0,
         uncertainty=0.3f0,
-        reasoning="Heuristic fallback - NO BRAIN VERIFICATION (insecure mode)"
+        reasoning=sanitized_reasoning
     )
 end
 
 function _safe_fallback_output(reason::String)::BrainOutput
     # FAIL-CLOSED: Safe output that will be rejected by kernel due to low confidence
     # This is the secure default when brain verification is unavailable
+    
+    # SECURITY: Sanitize reasoning using InputSanitizer before creating output
+    sanitized_reasoning = sanitize_reasoning("Safe fallback (fail-closed): $reason")
+    
     return BrainOutput(
         ["log_status"];
         confidence=0.1f0,
         value_estimate=0.0f0,
         uncertainty=1.0f0,
-        reasoning="Safe fallback (fail-closed): $reason"
+        reasoning=sanitized_reasoning
+    )
+end
+
+# ============================================================================
+# INPUT SANITIZATION - SECURITY BOUNDARY FOR LLM INTERACTION PATHS
+# ============================================================================
+
+"""
+    sanitize_reasoning(reasoning::String)::String
+
+Sanitize reasoning string using InputSanitizer. This is the primary defense
+against prompt injection in LLM output paths.
+
+# Fail-Closed Behavior
+- If reasoning contains MALICIOUS content, return a safe default
+- If reasoning contains SUSPICIOUS content, strip dangerous patterns
+- If reasoning is CLEAN, return original
+"""
+function sanitize_reasoning(reasoning::String)::String
+    result = sanitize_input(reasoning)
+    
+    if result.level == MALICIOUS
+        # FAIL-CLOSED: Block malicious reasoning entirely
+        @error "Malicious reasoning detected and blocked" 
+               original_length=length(reasoning)
+        return "[SANITIZED] Reasoning blocked due to security policy violation"
+    elseif result.level == SUSPICIOUS
+        # Strip suspicious patterns but allow to proceed
+        @warn "Suspicious reasoning pattern detected and stripped"
+        return result.sanitized !== nothing ? result.sanitized : "[SANITIZED] Reasoning contains filtered content"
+    else
+        # CLEAN - return sanitized version
+        return result.sanitized !== nothing ? result.sanitized : reasoning
+    end
+end
+
+"""
+    sanitize_brain_output(output::BrainOutput)::BrainOutput
+
+Sanitize all text fields in BrainOutput before returning to kernel.
+This ensures the brain cannot be manipulated via prompt injection attacks.
+"""
+function sanitize_brain_output(output::BrainOutput)::BrainOutput
+    # Sanitize reasoning
+    sanitized_reasoning = sanitize_reasoning(output.reasoning)
+    
+    # Sanitize proposed actions
+    sanitized_actions = String[]
+    for action in output.proposed_actions
+        action_result = sanitize_input(action)
+        if action_result.level == MALICIOUS
+            @error "Malicious action detected and blocked" action=action
+            push!(sanitized_actions, "[BLOCKED]")
+        else
+            push!(sanitized_actions, action_result.sanitized !== nothing ? action_result.sanitized : action)
+        end
+    end
+    
+    # Return sanitized output with same metadata
+    return BrainOutput(
+        sanitized_actions;
+        confidence=output.confidence,
+        value_estimate=output.value_estimate,
+        uncertainty=output.uncertainty,
+        reasoning=sanitized_reasoning,
+        latent_features=output.latent_features
     )
 end
 

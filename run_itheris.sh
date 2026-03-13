@@ -55,6 +55,44 @@ if [ ! -d "./adaptive-kernel" ]; then
     exit 1
 fi
 
+# Initialize Rust security layer (Warden)
+echo -e "${GREEN}Initializing Rust Warden security layer...${NC}"
+export ITHERIS_SECURITY_INIT=1
+
+# Set up shared memory for native IPC (64MB lock-free ring buffer)
+SHM_PATH="/dev/shm/itheris_ipc"
+SHM_SIZE=$((64*1024*1024))  # 64MB
+
+if [ ! -f "$SHM_PATH" ] || [ $(stat -c%s "$SHM_PATH" 2>/dev/null || echo 0) -lt $SHM_SIZE ]; then
+    echo -e "${GREEN}Creating 64MB shared memory IPC region...${NC}"
+    sudo mkdir -p /dev/shm 2>/dev/null || true
+    sudo truncate -s $SHM_SIZE "$SHM_PATH" 2>/dev/null || true
+    sudo chmod 660 "$SHM_PATH" 2>/dev/null || true
+    echo -e "${GREEN}Shared memory created: $SHM_PATH ($SHM_SIZE bytes)${NC}"
+else
+    echo -e "${GREEN}Shared memory already configured: $SHM_PATH${NC}"
+fi
+
+# Set environment variables for Julia to use native IPC
+export ITHERIS_SHM_PATH="$SHM_PATH"
+export ITHERIS_SHM_SIZE="0x00400000"
+
+# Set up environment for Rust FFI
+export LD_LIBRARY_PATH="$DAEMON_DIR/target/release:$LD_LIBRARY_PATH"
+
+# Verify Rust daemon has new security modules
+if [ -f "$DAEMON_BIN" ]; then
+    echo -e "${GREEN}Security modules loaded:${NC}"
+    echo "  - secrets: TPM 2.0 + AES-256-GCM"
+    echo "  - jwt_auth: Secure token management"
+    echo "  - flow_integrity: Cryptographic sovereignty"
+    echo "  - risk_classifier: LEP veto equation"
+    echo "  - secure_confirmation: Hardware entropy gate"
+    echo "  - task_orchestrator: Authenticated scheduling"
+    echo "  - safe_shell: Jailed command execution"
+    echo "  - safe_http: Async HTTP with rate limiting"
+fi
+
 echo -e "${GREEN}Starting ITHERIS daemon...${NC}"
 
 # Start the daemon

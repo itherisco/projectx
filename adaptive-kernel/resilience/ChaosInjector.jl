@@ -852,6 +852,222 @@ function inject_with_circuit_breaker(cb::Any, fn::Function; config::ChaosConfig=
 end
 
 # ============================================================================
+# Network Degradation Simulation (Packet Loss)
+# ============================================================================
+
+"""
+    PacketLossConfig - Configuration for packet loss simulation
+
+Fields:
+- loss_rate::Float64 - Probability of packet loss (0-1)
+- corruption_rate::Float64 - Probability of packet corruption (0-1)
+- duplication_rate::Float64 - Probability of packet duplication (0-1)
+- reorder_probability::Float64 - Probability of packet reordering (0-1)
+"""
+mutable struct PacketLossConfig
+    loss_rate::Float64
+    corruption_rate::Float64
+    duplication_rate::Float64
+    reorder_probability::Float64
+    
+    function PacketLossConfig(;loss_rate::Float64=0.1,
+                              corruption_rate::Float64=0.05,
+                              duplication_rate::Float64=0.01,
+                              reorder_probability::Float64=0.05)
+        new(loss_rate, corruption_rate, duplication_rate, reorder_probability)
+    end
+end
+
+"""
+    should_drop_packet(config::PacketLossConfig) -> Bool
+
+Determine if a packet should be dropped based on loss rate.
+
+# Arguments
+- `config::PacketLossConfig`: Packet loss configuration
+
+# Returns
+- true if packet should be dropped
+"""
+function should_drop_packet(config::PacketLossConfig)::Bool
+    return rand() < config.loss_rate
+end
+
+"""
+    should_corrupt_packet(config::PacketLossConfig) -> Bool
+
+Determine if a packet should be corrupted based on corruption rate.
+
+# Arguments
+- `config::PacketLossConfig`: Packet loss configuration
+
+# Returns
+- true if packet should be corrupted
+"""
+function should_corrupt_packet(config::PacketLossConfig)::Bool
+    return rand() < config.corruption_rate
+end
+
+"""
+    should_duplicate_packet(config::PacketLossConfig) -> Bool
+
+Determine if a packet should be duplicated based on duplication rate.
+
+# Arguments
+- `config::PacketLossConfig`: Packet loss configuration
+
+# Returns
+- true if packet should be duplicated
+"""
+function should_duplicate_packet(config::PacketLossConfig)::Bool
+    return rand() < config.duplication_rate
+end
+
+"""
+    simulate_packet_loss(data::Vector{UInt8}; config::PacketLossConfig=PacketLossConfig()) -> Union{Vector{UInt8}, Nothing}
+
+Simulate packet loss on network data.
+
+# Arguments
+- `data::Vector{UInt8}`: Data to potentially lose
+- `config::PacketLossConfig`: Packet loss configuration
+
+# Returns
+- Nothing if packet is lost, otherwise the original or corrupted data
+
+# Example
+```julia
+result = simulate_packet_loss(UInt8[1,2,3,4,5]; loss_rate=0.5)
+```
+"""
+function simulate_packet_loss(data::Vector{UInt8}; config::PacketLossConfig=PacketLossConfig())::Union{Vector{UInt8}, Nothing}
+    # Check if packet should be dropped
+    if should_drop_packet(config)
+        return nothing
+    end
+    
+    # Check if packet should be corrupted
+    if should_corrupt_packet(config)
+        # Corrupt a random byte
+        if length(data) > 0
+            corrupt_pos = rand(1:length(data))
+            data[corrupt_pos] = rand(0x00:0xFF)
+        end
+    end
+    
+    return data
+end
+
+"""
+    simulate_packet_loss(data::String; config::PacketLossConfig=PacketLossConfig()) -> Union{String, Nothing}
+
+Simulate packet loss on string data.
+
+# Arguments
+- `data::String`: String data to potentially lose
+- `config::PacketLossConfig`: Packet loss configuration
+
+# Returns
+- Nothing if packet is lost, otherwise the original or corrupted data
+"""
+function simulate_packet_loss(data::String; config::PacketLossConfig=PacketLossConfig())::Union{String, Nothing}
+    bytes = Vector{UInt8}(data)
+    result = simulate_packet_loss(bytes; config=config)
+    
+    if result === nothing
+        return nothing
+    end
+    
+    return String(result)
+end
+
+"""
+    simulate_packet_duplication(data::Vector{UInt8}; config::PacketLossConfig=PacketLossConfig()) -> Vector{Vector{UInt8}}
+
+Simulate packet duplication.
+
+# Arguments
+- `data::Vector{UInt8}`: Data to potentially duplicate
+- `config::PacketLossConfig`: Packet loss configuration
+
+# Returns
+- Vector containing original data (and duplicate if triggered)
+"""
+function simulate_packet_duplication(data::Vector{UInt8}; config::PacketLossConfig=PacketLossConfig())::Vector{Vector{UInt8}}
+    result = [data]
+    
+    if should_duplicate_packet(config)
+        push!(result, copy(data))
+    end
+    
+    return result
+end
+
+"""
+    NetworkDegradationError - Error for network degradation simulation
+"""
+struct NetworkDegradationError <: Exception
+    message::String
+    degradation_type::Symbol  # :packet_loss, :corruption, :timeout
+end
+
+"""
+    simulate_network_degradation(fn::Function; 
+                                   loss_rate::Float64=0.1,
+                                   corruption_rate::Float64=0.05,
+                                   timeout_rate::Float64=0.05,
+                                   config::ChaosConfig=default_config())
+
+Execute function with simulated network degradation.
+
+# Arguments
+- `fn::Function`: Function to execute
+- `loss_rate::Float64`: Probability of packet loss
+- `corruption_rate::Float64`: Probability of packet corruption
+- `timeout_rate::Float64`: Probability of timeout
+- `config::ChaosConfig`: Chaos configuration
+
+# Throws
+- NetworkDegradationError when degradation is triggered
+
+# Example
+```julia
+result = simulate_network_degradation(() -> api_call(); loss_rate=0.3, timeout_rate=0.1)
+```
+"""
+function simulate_network_degradation(fn::Function;
+                                        loss_rate::Float64=0.1,
+                                        corruption_rate::Float64=0.05,
+                                        timeout_rate::Float64=0.05,
+                                        config::ChaosConfig=default_config())
+    if !config.enabled
+        return fn()
+    end
+    
+    # Determine type of degradation
+    roll = rand()
+    
+    if roll < loss_rate
+        if config.log_injections
+            @info "Network degradation: packet loss"
+        end
+        throw(NetworkDegradationError("Simulated packet loss", :packet_loss))
+    elseif roll < loss_rate + corruption_rate
+        if config.log_injections
+            @info "Network degradation: packet corruption"
+        end
+        throw(NetworkDegradationError("Simulated packet corruption", :corruption))
+    elseif roll < loss_rate + corruption_rate + timeout_rate
+        if config.log_injections
+            @info "Network degradation: timeout"
+        end
+        throw(NetworkDegradationError("Simulated network timeout", :timeout))
+    end
+    
+    return fn()
+end
+
+# ============================================================================
 # Module Exports
 # ============================================================================
 
@@ -893,6 +1109,16 @@ export
     simulate_network_partition,
     with_network_partition,
     NetworkPartitionError,
+    
+    # Network Degradation / Packet Loss
+    PacketLossConfig,
+    should_drop_packet,
+    should_corrupt_packet,
+    should_duplicate_packet,
+    simulate_packet_loss,
+    simulate_packet_duplication,
+    simulate_network_degradation,
+    NetworkDegradationError,
     
     # CPU
     inject_cpu_pressure,

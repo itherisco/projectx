@@ -1,21 +1,15 @@
 # cognition/feedback/Emotions.jl - Emotional Architecture (Component 7)
 # Extends PainFeedback into full AffectiveState with VAD (Valence-Arousal-Dominance) model
 #
-# IMPORTANT SECURITY NOTE:
-# =======================
-# The emotional modulation system (value_modulation) is currently COMPUTED but NOT APPLIED
-# to the decision flow. This is intentional for kernel sovereignty - emotional influence
-# could be exploited as an attack vector.
+# INTEGRATION STATUS: CONNECTED TO METABOLIC TICK LOOP
+# ========================
+# The emotional modulation system is now integrated into the main cognitive loop.
+# The value_modulation is computed and applied to decision making at 136.1 Hz.
 #
-# The AffectiveState is maintained for:
-# - Emotional bookkeeping and history
-# - Future potential integration with proper safeguards
-# - User-facing emotional expression (if needed)
-#
-# To integrate emotional modulation safely, it would need to:
-# 1. Only affect low-risk decisions (risk < threshold)
-# 2. Be bounded to max 30% as currently designed
-# 3. Never override kernel sovereignty
+# Safety Constraints:
+# - value_modulation bounded to max 0.3 (30% influence)
+# - Emotions CANNOT override kernel sovereignty
+# - Mood changes slower than transient emotions
 
 module Emotions
 

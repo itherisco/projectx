@@ -46,12 +46,16 @@ pub enum KernelStatus {
     Stopped = 4,
 }
 
-/// Initialize the kernel (C ABI)
+/// Initialize the kernel (C ABI) - FAIL-CLOSED
+///
+/// This function implements fail-closed security behavior. If shared memory
+/// initialization fails, the kernel will NOT allow Julia to continue with
+/// insecure operations.
 ///
 /// Returns:
 /// - 0 on success
 /// - -1 if already initialized
-/// - -2 on error
+/// - -3 on FATAL error (kernel panic - Julia MUST halt)
 #[no_mangle]
 pub extern "C" fn kernel_init() -> i32 {
     if KERNEL_INITIALIZED.load(Ordering::Acquire) {
@@ -60,19 +64,101 @@ pub extern "C" fn kernel_init() -> i32 {
     }
     
     // Initialize shared memory
-    let shm = shared_memory::create_shared_memory_ipc();
+    let shm = match shared_memory::create_shared_memory_ipc() {
+        Ok(s) => s,
+        Err(e) => {
+            // FATAL: Cannot create shared memory - fail-closed
+            log::error!("[FFI] FATAL: Failed to create shared memory: {}", e);
+            log::error!("[FFI] SECURITY BREACH PREVENTED: Julia must halt immediately");
+            
+            // Set panic state to prevent any unsafe operations
+            PANIC_IN_PROGRESS.store(true, Ordering::Release);
+            KERNEL_RUNNING.store(false, Ordering::Release);
+            
+            // Return FATAL error code - Julia MUST NOT continue
+            return -3;
+        }
+    };
+    
     match shm.initialize() {
         Ok(()) => {
             KERNEL_INITIALIZED.store(true, Ordering::Release);
             KERNEL_RUNNING.store(true, Ordering::Release);
-            log::info!("[FFI] Kernel initialized successfully");
+            log::info!("[FFI] Kernel initialized successfully - FAIL-SECURE");
             0
         }
         Err(e) => {
-            log::error!("[FFI] Failed to initialize kernel: {}", e);
-            -2
+            // FATAL: Initialization failed - fail-closed
+            log::error!("[FFI] FATAL: Failed to initialize kernel: {}", e);
+            log::error!("[FFI] SECURITY BREACH PREVENTED: Julia must halt immediately");
+            
+            // Set panic state to prevent any unsafe operations
+            PANIC_IN_PROGRESS.store(true, Ordering::Release);
+            KERNEL_RUNNING.store(false, Ordering::Release);
+            
+            // Return FATAL error code - Julia MUST NOT continue
+            -3
         }
     }
+}
+
+/// Emergency halt signal - Rust kernel commands Julia to stop (C ABI)
+///
+/// This is called by the Rust kernel when a critical security issue is detected.
+/// Julia MUST immediately cease all operations upon receiving this signal.
+///
+/// Returns:
+/// - 0 on success (halt signal sent)
+/// - -1 if Julia is already halted
+#[no_mangle]
+pub extern "C" fn emergency_halt() -> i32 {
+    log::error!("[FFI] EMERGENCY HALT: Julia must stop immediately!");
+    log::error!("[FFI] FATAL: Security boundary breach detected");
+    
+    // Set panic state to enforce halt
+    PANIC_IN_PROGRESS.store(true, Ordering::Release);
+    KERNEL_RUNNING.store(false, Ordering::Release);
+    
+    // Julia should call get_kernel_status() and see status == Panicked (3)
+    // This will cause Julia to enter safe mode and not execute any proposals
+    0
+}
+
+/// Julia acknowledges emergency halt (C ABI)
+///
+/// Called by Julia to confirm it has received and is processing the halt request.
+///
+/// Returns:
+/// - 0 on success
+#[no_mangle]
+pub extern "C" fn julia_acknowledge_halt() -> i32 {
+    log::info!("[FFI] Julia acknowledged emergency halt - entering safe mode");
+    // Julia is now in safe mode - it will not execute any operations
+    // without explicit Rust kernel approval
+    0
+}
+
+/// Emergency seal - permanently lock the kernel (C ABI)
+///
+/// Once sealed, the kernel cannot be initialized again until system restart.
+/// This is a last-resort security measure.
+///
+/// Returns:
+/// - 0 on success (sealed)
+/// - -1 if already sealed
+#[no_mangle]
+pub extern "C" fn emergency_seal() -> i32 {
+    log::critical!("[FFI] EMERGENCY SEAL: Kernel permanently locked!");
+    log::critical!("[FFI] FATAL: System in lockdown - restart required");
+    
+    // Set all states to halt
+    PANIC_IN_PROGRESS.store(true, Ordering::Release);
+    KERNEL_RUNNING.store(false, Ordering::Release);
+    KERNEL_INITIALIZED.store(false, Ordering::Release);
+    
+    // Julia should detect this via get_kernel_status() returning Panicked (3)
+    // and must not attempt any further operations
+    0
 }
 
 /// Get kernel status (C ABI)
@@ -697,6 +783,462 @@ pub extern "C" fn kernel_ready() -> i32 {
     }
     0
 }
+
+// FFI Functions for new security modules
+// These provide C ABI entry points that Julia can call
+
+use crate::secrets;
+use crate::jwt_auth::{self, Role};
+use crate::flow_integrity::{self, RiskLevel as FlowRiskLevel};
+use crate::risk_classifier::{self, RiskLevel};
+use crate::secure_confirmation::{self, RiskLevel as ConfirmRiskLevel};
+use crate::task_orchestrator::{self, TaskPriority};
+use crate::safe_shell;
+use crate::safe_http::{self, HttpMethod};
+
+// ============================================================================
+// Secrets Manager FFI
+// ============================================================================
+
+/// Initialize secrets manager with passphrase
+/// Returns 0 on success, -1 on error
+#[no_mangle]
+pub extern "C" fn secrets_init(passphrase: *const std::ffi::c_char) -> i32 {
+    use std::ffi::CStr;
+    
+    if passphrase.is_null() {
+        return -1;
+    }
+    
+    let c_str = unsafe { CStr::from_ptr(passphrase) };
+    if let Ok(pass) = c_str.to_str() {
+        match secrets::unlock_global(pass, None) {
+            Ok(_) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -1
+    }
+}
+
+/// Store a secret
+/// Returns 0 on success, -1 on error
+#[no_mangle]
+pub extern "C" fn secrets_store(key: *const std::ffi::c_char, value: *const std::ffi::c_char) -> i32 {
+    use std::ffi::CStr;
+    
+    if key.is_null() || value.is_null() {
+        return -1;
+    }
+    
+    let key_str = unsafe { CStr::from_ptr(key) };
+    let value_str = unsafe { CStr::from_ptr(value) };
+    
+    if let (Ok(k), Ok(v)) = (key_str.to_str(), value_str.to_str()) {
+        match secrets::store_global(k, v) {
+            Ok(_) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -1
+    }
+}
+
+/// Get a secret (returns pointer to string, caller must free)
+#[no_mangle]
+pub extern "C" fn secrets_get(key: *const std::ffi::c_char) -> *mut std::ffi::c_char {
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+    
+    if key.is_null() {
+        return ptr::null_mut();
+    }
+    
+    let key_str = unsafe { CStr::from_ptr(key) };
+    
+    if let Ok(k) = key_str.to_str() {
+        if let Ok(value) = secrets::get_global(k) {
+            if let Ok(c_string) = CString::new(value) {
+                return c_string.into_raw();
+            }
+        }
+    }
+    
+    ptr::null_mut()
+}
+
+/// Lock secrets manager
+#[no_mangle]
+pub extern "C" fn secrets_lock() {
+    secrets::lock_global();
+}
+
+// ============================================================================
+// JWT Auth FFI
+// ============================================================================
+
+/// Initialize JWT auth
+#[no_mangle]
+pub extern "C" fn jwt_init(enabled: i32, secret: *const std::ffi::c_char) -> i32 {
+    use std::ffi::CStr;
+    
+    let config = jwt_auth::AuthConfig {
+        jwt_secret: if secret.is_null() {
+            jwt_auth::generate_token(32)
+        } else {
+            let c_str = unsafe { CStr::from_ptr(secret) };
+            c_str.to_str().unwrap_or("default_secret").to_string()
+        },
+        algorithm: jsonwebtoken::Algorithm::HS256,
+        token_ttl: 3600,
+        refresh_ttl: 604800,
+        enabled: enabled != 0,
+        allow_dev_bypass: false,
+        rate_limit: 100,
+        rate_limit_window: 60,
+    };
+    
+    jwt_auth::init(config);
+    0
+}
+
+/// Create JWT token
+#[no_mangle]
+pub extern "C" fn jwt_create_token(
+    subject: *const std::ffi::c_char,
+    role: *const std::ffi::c_char,
+) -> *mut std::ffi::c_char {
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+    use crate::jwt_auth::Role;
+    
+    if subject.is_null() {
+        return ptr::null_mut();
+    }
+    
+    let sub = unsafe { CStr::from_ptr(subject) }.to_str().unwrap_or("");
+    
+    // Parse role
+    let roles = if !role.is_null() {
+        let role_str = unsafe { CStr::from_ptr(role) }.to_str().unwrap_or("user");
+        match role_str {
+            "admin" => vec![Role::Admin],
+            "service" => vec![Role::Service],
+            "readonly" => vec![Role::ReadOnly],
+            _ => vec![Role::User],
+        }
+    } else {
+        vec![Role::User]
+    };
+    
+    match jwt_auth::create_token(sub, roles) {
+        Ok(token) => CString::new(token).unwrap_or_default().into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Validate JWT token
+/// Returns 1 if valid, 0 if invalid
+#[no_mangle]
+pub extern "C" fn jwt_validate(token: *const std::ffi::c_char) -> i32 {
+    use std::ffi::CStr;
+    
+    if token.is_null() {
+        return 0;
+    }
+    
+    let token_str = unsafe { CStr::from_ptr(token) }.to_str().unwrap_or("");
+    
+    match jwt_auth::validate_token(token_str) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+// ============================================================================
+// Flow Integrity FFI
+// ============================================================================
+
+/// Initialize flow integrity gate
+#[no_mangle]
+pub extern "C" fn flow_init(secret: *const u8) -> i32 {
+    use aes_gcm::aead::OsRng;
+    
+    let mut key = [0u8; 32];
+    
+    if secret.is_null() {
+        // Generate random key
+        OsRng.fill_bytes(&mut key);
+    } else {
+        // Use provided key
+        unsafe {
+            std::ptr::copy_nonoverlapping(secret, key.as_mut_ptr(), 32);
+        }
+    }
+    
+    flow_integrity::init(&key);
+    0
+}
+
+/// Issue flow token
+#[no_mangle]
+pub extern "C" fn flow_issue_token(
+    capability: *const std::ffi::c_char,
+    params: *const std::ffi::c_char,
+    risk_level: i32,
+) -> *mut std::ffi::c_char {
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+    use crate::flow_integrity::RiskLevel;
+    
+    if capability.is_null() {
+        return ptr::null_mut();
+    }
+    
+    let cap = unsafe { CStr::from_ptr(capability) }.to_str().unwrap_or("");
+    let params_str = if params.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(params) }.to_str().unwrap_or("{}").to_string()
+    };
+    
+    let risk = match risk_level {
+        0 => RiskLevel::ReadOnly,
+        1 => RiskLevel::Low,
+        2 => RiskLevel::Medium,
+        3 => RiskLevel::High,
+        _ => RiskLevel::Critical,
+    };
+    
+    match flow_integrity::issue_token(cap, &params_str, risk) {
+        Ok(token) => {
+            let json = flow_integrity::serialize_token(&token);
+            CString::new(json).unwrap_or_default().into_raw()
+        }
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Verify flow token
+/// Returns 1 if valid, 0 if invalid
+#[no_mangle]
+pub extern "C" fn flow_verify_token(
+    token_json: *const std::ffi::c_char,
+    capability: *const std::ffi::c_char,
+    params: *const std::ffi::c_char,
+) -> i32 {
+    use std::ffi::CStr;
+    
+    if token_json.is_null() || capability.is_null() {
+        return 0;
+    }
+    
+    let token_str = unsafe { CStr::from_ptr(token_json) }.to_str().unwrap_or("");
+    let cap = unsafe { CStr::from_ptr(capability) }.to_str().unwrap_or("");
+    let params_str = if params.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(params) }.to_str().unwrap_or("{}").to_string()
+    };
+    
+    match flow_integrity::deserialize_token(token_str) {
+        Ok(token) => {
+            let (valid, _) = flow_integrity::verify_token(&token, cap, &params_str);
+            if valid { 1 } else { 0 }
+        }
+        Err(_) => 0,
+    }
+}
+
+// ============================================================================
+// Risk Classifier FFI
+// ============================================================================
+
+/// Initialize risk classifier
+#[no_mangle]
+pub extern "C" fn risk_init() -> i32 {
+    risk_classifier::init();
+    0
+}
+
+/// Classify action risk
+/// Returns risk level (0-4)
+#[no_mangle]
+pub extern "C" fn risk_classify(
+    capability: *const std::ffi::c_char,
+    params: *const std::ffi::c_char,
+    priority: f64,
+    reward: f64,
+    risk: f64,
+) -> i32 {
+    use std::ffi::CStr;
+    
+    if capability.is_null() {
+        return 2; // Default to Medium
+    }
+    
+    let cap = unsafe { CStr::from_ptr(capability) }.to_str().unwrap_or("");
+    let params_str = if params.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(params) }.to_str().unwrap_or("{}").to_string()
+    };
+    
+    match risk_classifier::classify(cap, &params_str, priority, reward, risk) {
+        Ok(result) => result.risk_level.to_numeric() as i32,
+        Err(_) => 2, // Default to Medium on error
+    }
+}
+
+// ============================================================================
+// Confirmation Gate FFI
+// ============================================================================
+
+/// Initialize confirmation gate
+#[no_mangle]
+pub extern "C" fn confirmation_init(secret: *const u8) -> i32 {
+    use aes_gcm::aead::OsRng;
+    
+    let mut key = [0u8; 32];
+    
+    if secret.is_null() {
+        OsRng.fill_bytes(&mut key);
+    } else {
+        unsafe {
+            std::ptr::copy_nonoverlapping(secret, key.as_mut_ptr(), 32);
+        }
+    }
+    
+    secure_confirmation::init(&key);
+    0
+}
+
+/// Request confirmation
+#[no_mangle]
+pub extern "C" fn confirmation_request(
+    proposal_id: *const std::ffi::c_char,
+    capability: *const std::ffi::c_char,
+    params: *const std::ffi::c_char,
+    risk_level: i32,
+) -> *mut std::ffi::c_char {
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+    use crate::secure_confirmation::{ConfirmationRequest, RiskLevel};
+    
+    if proposal_id.is_null() || capability.is_null() {
+        return ptr::null_mut();
+    }
+    
+    let prop_id = unsafe { CStr::from_ptr(proposal_id) }.to_str().unwrap_or("");
+    let cap = unsafe { CStr::from_ptr(capability) }.to_str().unwrap_or("");
+    let params_str = if params.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(params) }.to_str().unwrap_or("{}").to_string()
+    };
+    
+    let risk = match risk_level {
+        0..=1 => RiskLevel::Low,
+        2 => RiskLevel::Medium,
+        3 => RiskLevel::High,
+        _ => RiskLevel::Critical,
+    };
+    
+    let request = ConfirmationRequest {
+        proposal_id: prop_id.to_string(),
+        capability_id: cap.to_string(),
+        params: params_str,
+        risk_level: risk,
+        reasoning: "Confirmation requested".to_string(),
+    };
+    
+    match secure_confirmation::request_confirmation(&request) {
+        Ok(result) => {
+            let json = serde_json::to_string(&result).unwrap_or_default();
+            CString::new(json).unwrap_or_default().into_raw()
+        }
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Confirm action
+#[no_mangle]
+pub extern "C" fn confirmation_confirm(token: *const std::ffi::c_char) -> i32 {
+    use std::ffi::CStr;
+    
+    if token.is_null() {
+        return 0;
+    }
+    
+    let token_str = unsafe { CStr::from_ptr(token) }.to_str().unwrap_or("");
+    
+    match secure_confirmation::confirm(token_str) {
+        Ok(result) => if result.confirmed { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+// ============================================================================
+// Safe Shell FFI
+// ============================================================================
+
+/// Execute safe shell command
+#[no_mangle]
+pub extern "C" fn shell_execute(command: *const std::ffi::c_char) -> *mut std::ffi::c_char {
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+    
+    if command.is_null() {
+        return ptr::null_mut();
+    }
+    
+    let cmd = unsafe { CStr::from_ptr(command) }.to_str().unwrap_or("");
+    
+    match safe_shell::execute(cmd) {
+        Ok(result) => {
+            let json = serde_json::to_string(&result).unwrap_or_default();
+            CString::new(json).unwrap_or_default().into_raw()
+        }
+        Err(e) => {
+            let json = serde_json::to_string(&safe_shell::ShellResult {
+                success: false,
+                stdout: String::new(),
+                stderr: e.to_string(),
+                exit_code: -1,
+                duration_ms: 0,
+            }).unwrap_or_default();
+            CString::new(json).unwrap_or_default().into_raw()
+        }
+    }
+}
+
+// ============================================================================
+// Safe HTTP FFI
+// ============================================================================
+
+/// Initialize HTTP client
+#[no_mangle]
+pub extern "C" fn http_init() -> i32 {
+    safe_http::init();
+    0
+}
+
+/// Add allowed domain
+#[no_mangle]
+pub extern "C" fn http_add_domain(domain: *const std::ffi::c_char) -> i32 {
+    use std::ffi::CStr;
+    
+    if domain.is_null() {
+        return -1;
+    }
+    
+    let d = unsafe { CStr::from_ptr(domain) }.to_str().unwrap_or("");
+    safe_http::add_allowed_domain(d);
+    0
+}
+
+// Note: Async functions (http_get, http_post) require runtime integration
+// They should be called through the async tokio runtime in main.rs
 
 #[cfg(test)]
 mod tests {

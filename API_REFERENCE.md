@@ -543,7 +543,446 @@ denied = deny_action(action_id)
 
 ---
 
-## 7. Type Definitions
+## 7. UI Layer - Web Dashboard
+
+**Module:** `Interfaces.Web`
+
+### Dashboard API
+
+#### `serve_dashboard(;host::String="127.0.0.1", port::Int=8080)`
+
+Start the web dashboard server.
+
+```julia
+using Interfaces.Web
+serve_dashboard(host="0.0.0.0", port=8080)
+```
+
+**Parameters:**
+- `host::String` - Host to bind to (default: "127.0.0.1")
+- `port::Int` - Port to listen on (default: 8080)
+
+---
+
+#### `get_live_status()::Dict`
+
+Get current live system status.
+
+```julia
+status = get_live_status()
+println(status["system"]["brain_health"])
+```
+
+**Returns:**
+- `Dict` with system, metabolic, telemetry, and action status
+
+---
+
+#### `get_telemetry_history()::Dict`
+
+Get historical telemetry data.
+
+```julia
+history = get_telemetry_history()
+```
+
+**Returns:**
+- `Dict` with energy_history, attention_variance_history, policy_entropy_history
+
+---
+
+#### `get_sanity_status()::Dict`
+
+Get cognitive sanity check status.
+
+```julia
+sanity = get_sanity_status()
+```
+
+**Returns:**
+- `Dict` with attention_variance, policy_entropy, cognitive_load, is_sane
+
+---
+
+#### `refresh_dashboard!()`
+
+Manually refresh dashboard data.
+
+```julia
+refresh_dashboard!()
+```
+
+---
+
+## 8. UI Layer - Mobile API
+
+**Module:** `Interfaces.MobileAPI`
+
+### Authentication
+
+#### `create_access_token(user_id::String; roles::Vector{String}=["user"])`
+
+Create JWT access token for mobile client.
+
+```julia
+token = create_access_token("user123", roles=["user", "admin"])
+```
+
+**Parameters:**
+- `user_id::String` - User identifier
+- `roles::Vector{String}` - User roles (default: ["user"])
+
+**Returns:**
+- `String` - JWT access token
+
+---
+
+#### `validate_token(token::String)::Union{MobileClaims, Nothing}`
+
+Validate JWT token.
+
+```julia
+claims = validate_token(token)
+if claims !== nothing
+    println(claims.user_id)
+end
+```
+
+**Returns:**
+- `Union{MobileClaims, Nothing}` - Claims if valid, nothing otherwise
+
+---
+
+### Sovereign Approval
+
+#### `approve_action(request::ApprovalRequest; timeout_seconds::Int64=30)`
+
+Request sovereign approval for an action.
+
+```julia
+request = ApprovalRequest(
+    proposal_id="prop-123",
+    capability_id="safe_shell",
+    params=Dict("command" => "ls"),
+    priority=0.8,
+    risk=0.3,
+    reward=0.7
+)
+response = approve_action(request)
+```
+
+**Parameters:**
+- `request::ApprovalRequest` - Approval request details
+- `timeout_seconds::Int64` - Timeout for approval (default: 30)
+
+**Returns:**
+- `ApprovalResponse` - Approval decision
+
+---
+
+### Notifications
+
+#### `send_sovereign_notification(user_id::String; title::String, body::String)`
+
+Send sovereign approval notification.
+
+```julia
+send_sovereign_notification("user123"; title="Action Approved", body="Your request was approved")
+```
+
+---
+
+#### `api_status()::Dict`
+
+Get mobile API status.
+
+```julia
+status = api_status()
+```
+
+**Returns:**
+- `Dict` with version, status, services, security
+
+---
+
+## 9. UI Layer - Desktop System Tray
+
+**Module:** `Interfaces.SystemTray`
+
+### Status Monitoring
+
+#### `get_health()::SystemHealth`
+
+Get current system health.
+
+```julia
+health = get_health()
+println(health.brain_health)
+```
+
+**Returns:**
+- `SystemHealth` - Current system health metrics
+
+---
+
+#### `get_status_summary()::Dict{String, Any}`
+
+Get status summary for tray display.
+
+```julia
+summary = get_status_summary()
+```
+
+**Returns:**
+- `Dict` with status_icon, status_text, health, warden_status
+
+---
+
+#### `determine_status_icon(health::SystemHealth)::String`
+
+Determine status icon based on health.
+
+```julia
+icon = determine_status_icon(health)  # Returns 🟢🟡🔴🛑
+```
+
+**Returns:**
+- `String` - Status emoji icon
+
+---
+
+### Controls
+
+#### `set_poll_interval(interval::Float64)`
+
+Set tray poll interval in seconds.
+
+```julia
+set_poll_interval(2.0)  # Poll every 2 seconds
+```
+
+---
+
+#### `enable_notifications(enabled::Bool)`
+
+Enable or disable desktop notifications.
+
+```julia
+enable_notifications(true)
+```
+
+---
+
+#### `show_notification(message::String; priority::Symbol=:normal)`
+
+Show desktop notification.
+
+```julia
+show_notification("System health changed!"; priority=:critical)
+```
+
+---
+
+## 10. Security - Rate Limiter
+
+**Module:** `AdaptiveKernel.RateLimiter`
+
+### Rate Limiting
+
+#### `check_rate_limit(client_key::String; requests_per_window::Int=60, window_seconds::Float64=60.0, burst_allowance::Int=10)::RateLimitResult`
+
+Check if request is within rate limit (fail-closed).
+
+```julia
+result = check_rate_limit("client123")
+if result.status == ALLOWED
+    # Process request
+end
+```
+
+**Parameters:**
+- `client_key::String` - Client identifier
+- `requests_per_window::Int` - Max requests per window (default: 60)
+- `window_seconds::Float64` - Window duration (default: 60.0)
+- `burst_allowance::Int` - Burst requests allowed (default: 10)
+
+**Returns:**
+- `RateLimitResult` with status (ALLOWED/RATE_LIMITED/BLOCKED), remaining, reset_time
+
+---
+
+#### `check_rate_limit!(client_key::String; kwargs...)::Bool`
+
+Check rate limit and return boolean (fail-closed).
+
+```julia
+if check_rate_limit!("client123")
+    # Process request
+end
+```
+
+**Returns:**
+- `Bool` - true if allowed, false if rate limited (fail-closed)
+
+---
+
+#### `is_rate_limited(client_key::String)::Bool`
+
+Quick check if client is currently rate limited.
+
+```julia
+if is_rate_limited("client123")
+    println("Too many requests!")
+end
+```
+
+---
+
+#### `reset_rate_limits()`
+
+Reset all rate limiters (admin/testing).
+
+```julia
+reset_rate_limits()
+```
+
+---
+
+### Configuration
+
+#### `configure_rate_limit(endpoint::String, config::RateLimitConfig)`
+
+Configure endpoint-specific rate limiting.
+
+```julia
+config = RateLimitConfig(requests_per_window=10, window_seconds=60.0, burst_allowance=2)
+configure_rate_limit("/api/mobile/approve", config)
+```
+
+---
+
+#### `set_global_limit(requests_per_window::Int, window_seconds::Float64)`
+
+Set global rate limit for all clients.
+
+```julia
+set_global_limit(100, 60.0)
+```
+
+---
+
+### Rate Limit Types
+
+```julia
+@enum RateLimitStatus ALLOWED RATE_LIMITED BLOCKED
+
+struct RateLimitConfig
+    requests_per_window::Int
+    window_seconds::Float64
+    burst_allowance::Int
+    enabled::Bool
+end
+
+struct RateLimitResult
+    status::RateLimitStatus
+    remaining::Int
+    reset_time::Float64
+    retry_after::Float64
+end
+```
+
+---
+
+## 11. Security - Integration
+
+**Module:** `AdaptiveKernel.SecurityIntegration`
+
+### Unified Security Boundary
+
+#### `secure_input(input::String; context_kwargs...)::Tuple{Bool, String, SanitizationResult}`
+
+Apply full security pipeline to input (fail-closed).
+
+```julia
+allowed, message, result = secure_input(user_input; client_key="user123", energy_level=0.8)
+if !allowed
+    println("Blocked: $message")
+end
+```
+
+**Security Pipeline:**
+1. Input Sanitization - detect prompt injection
+2. Rate Limiting - check client rate limits
+3. Metabolic Protection - block if energy critical
+
+**Returns:**
+- `Tuple{Bool, String, SanitizationResult}` - (allowed, message, result)
+
+---
+
+#### `secure_api_request(input::String, context::SecurityContext)::Dict`
+
+Secure API request with full pipeline.
+
+```julia
+context = SecurityContext(client_key="api_client", client_ip="192.168.1.1")
+result = secure_api_request(request_body, context)
+```
+
+**Returns:**
+- `Dict` with allowed, sanitized_input, rate_limit_result, security_context
+
+---
+
+#### `secure_capability_call(capability_id::String, params::Dict, context::SecurityContext)::Dict`
+
+Secure capability execution.
+
+```julia
+result = secure_capability_call("safe_shell", Dict("command" => "ls"), context)
+```
+
+---
+
+#### `get_security_status()::Dict`
+
+Get current security system status.
+
+```julia
+status = get_security_status()
+println(status["sanitizer"]["threats_blocked"])
+```
+
+**Returns:**
+- `Dict` with sanitizer, rate_limiter, crypto, metabolic_protection status
+
+---
+
+### Security Context
+
+```julia
+mutable struct SecurityContext
+    client_key::String
+    client_ip::Union{String, Nothing}
+    session_token::Union{String, Nothing}
+    user_id::Union{String, Nothing}
+    energy_level::Float32
+    request_id::String
+    timestamp::DateTime
+end
+
+struct SecureRequest
+    original_input::Any
+    sanitized_input::Any
+    context::SecurityContext
+    security_result::SanitizationResult
+    rate_limit_result::RateLimitResult
+end
+```
+
+---
+
+## 12. Type Definitions
 
 ### Trust Levels
 
@@ -613,6 +1052,38 @@ end
 end
 ```
 
+### Mobile Token Types
+
+```julia
+@enum TokenType ACCESS REFRESH
+
+@enum UserRole ADMIN USER READONLY SERVICE
+
+struct MobileClaims
+    subject::String
+    roles::Vector{UserRole}
+    issued_at::Int64
+    expires_at::Int64
+    jwt_id::String
+end
+
+struct ApprovalRequest
+    proposal_id::String
+    capability_id::String
+    params::Dict{String, Any}
+    priority::Float64
+    risk::Float64
+    reward::Float64
+end
+
+struct ApprovalResponse
+    approved::Bool
+    token::Union{String, Nothing}
+    veto_score::Float64
+    expires_at::Int64
+end
+```
+
 ---
 
 ## File Locations
@@ -627,7 +1098,13 @@ end
 | VectorMemory | [`jarvis/src/memory/VectorMemory.jl`](jarvis/src/memory/VectorMemory.jl) |
 | InputSanitizer | [`adaptive-kernel/cognition/security/InputSanitizer.jl`](adaptive-kernel/cognition/security/InputSanitizer.jl) |
 | Trust | [`adaptive-kernel/kernel/trust/Trust.jl`](adaptive-kernel/kernel/trust/Trust.jl) |
+| Web Dashboard | [`interfaces/web/Dashboard.jl`](interfaces/web/Dashboard.jl) |
+| Mobile API | [`interfaces/mobile/MobileAPI.jl`](interfaces/mobile/MobileAPI.jl) |
+| System Tray | [`interfaces/desktop/SystemTray.jl`](interfaces/desktop/SystemTray.jl) |
+| Unified Bridge | [`interfaces/UnifiedBridge.jl`](interfaces/UnifiedBridge.jl) |
+| RateLimiter | [`adaptive-kernel/kernel/security/RateLimiter.jl`](adaptive-kernel/kernel/security/RateLimiter.jl) |
+| SecurityIntegration | [`adaptive-kernel/kernel/security/SecurityIntegration.jl`](adaptive-kernel/kernel/security/SecurityIntegration.jl) |
 
 ---
 
-*Last Updated: 2026-02-28*
+*Last Updated: 2026-03-13*

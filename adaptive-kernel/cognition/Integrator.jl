@@ -75,9 +75,17 @@ using .Persistence
 include(joinpath(@__DIR__, "consolidation", "Sleep.jl"))
 using .Sleep
 
+# Import oneiric controller (Phase 4 - Dream State)
+include(joinpath(@__DIR__, "oneiric", "OneiricController.jl"))
+using .OneiricController
+
 # Import brain
 include(joinpath(@__DIR__, "..", "brain", "Brain.jl"))
 using .Brain
+
+# Import context module (Stage 2: Multi-turn context maintenance)
+include(joinpath(@__DIR__, "context", "Context.jl"))
+using .Context
 
 # Import IPC
 include(joinpath(@__DIR__, "..", "kernel", "ipc", "IPC.jl"))
@@ -86,6 +94,10 @@ using .IPC
 # Import shared types
 include(joinpath(@__DIR__, "..", "types.jl"))
 using ..SharedTypes
+
+# Import Input Sanitizer - SECURITY BOUNDARY for LLM interaction paths
+include(joinpath(@__DIR__, "security", "InputSanitizer.jl"))
+using .InputSanitizer
 
 # ============================================================================
 # COGNITIVE INTEGRATOR STATE
@@ -121,7 +133,9 @@ mutable struct CognitiveIntegrator
     self_model::SelfModelState
     planner_state::AutonomousPlannerState
     memory_state::MemoryState
-    sleep_state::SleepState
+    
+    # Oneiric (Dream) state - Phase 4 integration
+    oneiric_state::OneiricState
     
     # IPC
     ipc_channel::Union{IPCChannel, Nothing}
@@ -147,7 +161,7 @@ mutable struct CognitiveIntegrator
             SelfModelState(),                     # self_model
             AutonomousPlannerState(),             # planner_state
             MemoryState(),                        # memory_state
-            SleepState(),                         # sleep_state
+            OneiricState(),                       # oneiric_state (Phase 4)
             nothing,                              # ipc_channel
             0,                                    # total_cycles
             now(),                                # last_state_transition
@@ -229,12 +243,24 @@ function integrate_cognitive_cycle(
     ))
     new_mode = update_metabolism!(integrator.metabolic_state, operations)
     
-    # === STEP 3: Handle mode transitions ===
+    # === STEP 3: Check for Oneiric (dream) state transition ===
+    # Phase 4: Dreaming triggered at energy < 20%
+    energy_level = integrator.metabolic_state.energy
+    
+    # Check if we should enter dreaming mode based on energy
+    if energy_level < DREAMING_THRESHOLD && integrator.cognitive_state.mode != :dreaming
+        # Check OneiricController for additional conditions
+        if should_enter_dream(integrator.oneiric_state; energy_level=energy_level, is_idle=false, idle_duration=0.0)
+            new_mode = MODE_DREAMING
+        end
+    end
+    
+    # === STEP 4: Handle mode transitions ===
     if new_mode != integrator.cognitive_state.mode
         handle_mode_transition!(integrator, new_mode)
     end
     
-    # === STEP 4: Process based on current mode ===
+    # === STEP 5: Process based on current mode ===
     if integrator.cognitive_state.mode == MODE_DREAMING
         return run_dreaming_cycle!(integrator, raw_input)
     elseif integrator.cognitive_state.mode == MODE_CRITICAL
@@ -323,19 +349,38 @@ function run_active_cycle!(
 end
 
 """
-    run_dreaming_cycle - Run dreaming/consolidation cycle
+    run_dreaming_cycle - Run dreaming/consolidation cycle using full OneiricController
 """
 function run_dreaming_cycle!(
     integrator::CognitiveIntegrator,
     raw_input::Dict
 )::ActionProposal
-    # In dreaming mode, we consolidate memories and run self-reflection
+    # Use full OneiricController pipeline for dreaming
+    oneiric_state = integrator.oneiric_state
     
-    # Memory consolidation
-    consolidate_dreams!(integrator)
+    # Check if we should enter dream state
+    if oneiric_state.phase == :idle
+        enter_dream_state!(oneiric_state)
+    end
     
-    # Self-model update
-    update_self_model_dreams!(integrator)
+    # Process one dream cycle with all subsystems
+    dream_results = process_dream_cycle!(oneiric_state)
+    
+    # Memory consolidation via OneiricController
+    # (Handled internally by process_dream_cycle!)
+    
+    # Hallucination training via OneiricController
+    # (Handled internally by process_dream_cycle!)
+    
+    # Synaptic homeostasis via OneiricController
+    # (Handled internally by process_dream_cycle!)
+    
+    # Check if we should exit dream state
+    if oneiric_state.phase == :exiting || dream_results["status"] == "dream_complete"
+        exit_dream_state!(oneiric_state)
+        # Transition back to active mode
+        integrator.cognitive_state.mode = :active
+    end
     
     # Generate minimal proposal (dreaming doesn't produce actions)
     return ActionProposal(
@@ -344,7 +389,7 @@ function run_dreaming_cycle!(
         0.0f0,
         0.0f0,
         0.0f0,
-        "Dreaming consolidation mode"
+        "Dreaming consolidation mode - Phase 4 OneiricController active"
     )
 end
 
@@ -379,10 +424,68 @@ end
 
 """
     process_raw_input - Process raw sensory input
+    SECURITY: Sanitizes all text inputs using InputSanitizer before processing
 """
 function process_raw_input(integrator::CognitiveIntegrator, raw_input::Dict)::ProcessedSensory
+    # SECURITY: Sanitize text fields in raw_input before processing
+    # This is the first defense against prompt injection
+    sanitized_input = _sanitize_raw_input(raw_input)
+    
     # Use sensory processing module
-    return process_sensory_input(integrator.sensory_buffer, raw_input)
+    return process_sensory_input(integrator.sensory_buffer, sanitized_input)
+end
+
+"""
+    _sanitize_raw_input - Internal function to sanitize raw input Dict
+"""
+function _sanitize_raw_input(raw_input::Dict)::Dict
+    sanitized = Dict{Any, Any}()
+    
+    for (key, value) in raw_input
+        if value isa String
+            # Sanitize string inputs
+            result = sanitize_input(value)
+            if result.level == MALICIOUS
+                @error "Malicious input detected in raw_input" key=key
+                sanitized[key] = "[BLOCKED] Content filtered by security policy"
+            elseif result.level == SUSPICIOUS
+                @warn "Suspicious input detected and sanitized" key=key
+                sanitized[key] = result.sanitized !== nothing ? result.sanitized : value
+            else
+                sanitized[key] = result.sanitized !== nothing ? result.sanitized : value
+            end
+        elseif value isa Dict
+            # Recursively sanitize nested dicts
+            sanitized[key] = _sanitize_raw_input(value)
+        elseif value isa Vector
+            # Sanitize vector of strings
+            sanitized[key] = _sanitize_vector(value)
+        else
+            sanitized[key] = value
+        end
+    end
+    
+    return sanitized
+end
+
+"""
+    _sanitize_vector - Sanitize vector of values
+"""
+function _sanitize_vector(vec::Vector)::Vector
+    sanitized_vec = Any[]
+    for item in vec
+        if item isa String
+            result = sanitize_input(item)
+            if result.level == MALICIOUS
+                push!(sanitized_vec, "[BLOCKED]")
+            else
+                push!(sanitized_vec, result.sanitized !== nothing ? result.sanitized : item)
+            end
+        else
+            push!(sanitized_vec, item)
+        end
+    end
+    return sanitized_vec
 end
 
 """
@@ -670,11 +773,15 @@ end
 # ============================================================================
 
 """
-    consolidate_dreams! - Consolidate memories during dreaming
+    consolidate_dreams! - Consolidate memories during dreaming using OneiricController
 """
 function consolidate_dreams!(integrator::CognitiveIntegrator)
-    # Use sleep consolidation
-    run_consolidation(integrator.sleep_state, integrator.memory_state)
+    # Use OneiricController for memory consolidation
+    oneiric_state = integrator.oneiric_state
+    
+    if oneiric_state.phase in [:entering, :replay]
+        process_dream_cycle!(oneiric_state)
+    end
 end
 
 """
@@ -717,8 +824,8 @@ function handle_mode_transition!(integrator::CognitiveIntegrator, new_mode::Cogn
 end
 
 function on_enter_dreaming!(integrator::CognitiveIntegrator)
-    # Prepare for consolidation
-    prepare_for_sleep(integrator.sleep_state)
+    # Use OneiricController to enter dream state
+    enter_dream_state!(integrator.oneiric_state)
 end
 
 function on_enter_critical!(integrator::CognitiveIntegrator)

@@ -2,10 +2,14 @@
 # SECURITY HARDENED: Blocked dangerous characters, null bytes, newlines, globbing
 # PATH TRAVERSAL FIX: Added canonicalization, whitelist directories, explicit errors
 # SHELL INJECTION FIX: Enhanced with comprehensive pattern matching
+# FAIL-CLOSED: Requires Rust kernel approval before execution
 
 module SafeShell
 
 export meta, execute
+
+# Import RustIPC for fail-closed brain availability check
+using ..RustIPC
 
 # ============================================================================
 # SECURITY CONFIGURATION - FAIL CLOSED
@@ -288,6 +292,9 @@ function validate_command(command::String)::Tuple{Bool, String}
 end
 
 function execute(params::Dict)::Dict{String, Any}
+    # MANDATORY: Fail-closed - require Warden approval before any shell execution
+    require_rust_brain("safe_shell")
+    
     command = get(params, "command", "echo safe")
     
     # SECURITY: Comprehensive validation

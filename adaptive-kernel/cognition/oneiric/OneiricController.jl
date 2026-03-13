@@ -68,7 +68,7 @@ export
 - `nightly_hour::Int`: Hour of day for nightly dreams (default: 2 = 2 AM)
 """
 @with_kw mutable struct OneiricConfig
-    min_energy_for_dream::Float32 = 0.35f0
+    min_energy_for_dream::Float32 = 0.20f0  # Phase 4: Dreaming triggered at 20% (was 35%)
     dream_duration_min::Float64 = 300.0  # 5 minutes
     dream_duration_max::Float64 = 1800.0  # 30 minutes
     cycle_interval::Float64 = 60.0  # 1 minute

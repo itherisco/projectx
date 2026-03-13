@@ -20,6 +20,7 @@ const ENERGY_DEATH = 0.05f0       # Death threshold - system shutdown
 const ENERGY_CRITICAL = 0.15f0    # Critical - emergency mode
 const ENERGY_LOW = 0.30f0         # Low - recovery mode
 const ENERGY_SUSTAINED = 0.50f0   # Normal operation
+const DREAMING_THRESHOLD = 0.20f0  # Phase 4: Dreaming triggered at 20%
 const ENERGY_RECOVERY = 0.70f0    # Recovery - can do heavy processing
 const ENERGY_FULL = 0.90f0        # Full capacity
 
@@ -502,7 +503,8 @@ export
     ENERGY_DEATH,
     ENERGY_CRITICAL,
     ENERGY_LOW,
-    ENERGY_RECOVERY
+    ENERGY_RECOVERY,
+    DREAMING_THRESHOLD  # Phase 4: Dreaming threshold
 
 # Cycle duration constant (imported from CognitiveLoop)
 const CYCLE_DURATION_MS = 7.35f0

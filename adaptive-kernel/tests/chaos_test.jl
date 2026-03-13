@@ -838,6 +838,188 @@ println("\n[13] Testing Edge Cases...")
 end
 
 # ============================================================================
+# TEST CATEGORY 14: NETWORK DEGRADATION / PACKET LOSS TESTS
+# ============================================================================
+
+println("\n[14] Testing Network Degradation (Packet Loss)...")
+
+@testset "Network Degradation / Packet Loss" begin
+    
+    # Test 14.1: PacketLossConfig creation
+    @testset "PacketLossConfig Creation" begin
+        config = PacketLossConfig()
+        @test config.loss_rate == 0.1
+        @test config.corruption_rate == 0.05
+        @test config.duplication_rate == 0.01
+        @test config.reorder_probability == 0.05
+        
+        # Custom config
+        custom_config = PacketLossConfig(loss_rate=0.5, corruption_rate=0.3)
+        @test custom_config.loss_rate == 0.5
+        @test custom_config.corruption_rate == 0.3
+    end
+    
+    # Test 14.2: should_drop_packet
+    @testset "Packet Drop Probability" begin
+        # With 0.0 loss rate, should never drop
+        config = PacketLossConfig(loss_rate=0.0)
+        drops = [should_drop_packet(config) for _ in 1:100]
+        @test !any(drops)
+        
+        # With 1.0 loss rate, should always drop
+        config = PacketLossConfig(loss_rate=1.0)
+        drops = [should_drop_packet(config) for _ in 1:100]
+        @test all(drops)
+    end
+    
+    # Test 14.3: should_corrupt_packet
+    @testset "Packet Corruption Probability" begin
+        config = PacketLossConfig(corruption_rate=0.0)
+        corruptions = [should_corrupt_packet(config) for _ in 1:100]
+        @test !any(corruptions)
+        
+        config = PacketLossConfig(corruption_rate=1.0)
+        corruptions = [should_corrupt_packet(config) for _ in 1:100]
+        @test all(corruptions)
+    end
+    
+    # Test 14.4: should_duplicate_packet
+    @testset "Packet Duplication Probability" begin
+        config = PacketLossConfig(duplication_rate=0.0)
+        duplicates = [should_duplicate_packet(config) for _ in 1:100]
+        @test !any(duplicates)
+        
+        config = PacketLossConfig(duplication_rate=1.0)
+        duplicates = [should_duplicate_packet(config) for _ in 1:100]
+        @test all(duplicates)
+    end
+    
+    # Test 14.5: simulate_packet_loss with bytes
+    @testset "Packet Loss on Bytes" begin
+        data = UInt8[1, 2, 3, 4, 5]
+        
+        # No loss
+        config = PacketLossConfig(loss_rate=0.0)
+        result = simulate_packet_loss(data; config=config)
+        @test result == data
+        
+        # Always lose
+        config = PacketLossConfig(loss_rate=1.0)
+        result = simulate_packet_loss(data; config=config)
+        @test result === nothing
+    end
+    
+    # Test 14.6: simulate_packet_loss with string
+    @testset "Packet Loss on String" begin
+        data = "hello world"
+        
+        # No loss
+        config = PacketLossConfig(loss_rate=0.0)
+        result = simulate_packet_loss(data; config=config)
+        @test result == data
+        
+        # Always lose
+        config = PacketLossConfig(loss_rate=1.0)
+        result = simulate_packet_loss(data; config=config)
+        @test result === nothing
+    end
+    
+    # Test 14.7: simulate_packet_duplication
+    @testset "Packet Duplication" begin
+        data = UInt8[1, 2, 3]
+        
+        # No duplication
+        config = PacketLossConfig(duplication_rate=0.0)
+        result = simulate_packet_duplication(data; config=config)
+        @test length(result) == 1
+        @test result[1] == data
+        
+        # Always duplicate
+        config = PacketLossConfig(duplication_rate=1.0)
+        result = simulate_packet_duplication(data; config=config)
+        @test length(result) == 2
+        @test result[1] == data
+        @test result[2] == data
+    end
+    
+    # Test 14.8: NetworkDegradationError
+    @testset "NetworkDegradationError" begin
+        err = NetworkDegradationError("test error", :packet_loss)
+        @test err.message == "test error"
+        @test err.degradation_type == :packet_loss
+        
+        err2 = NetworkDegradationError("corruption", :corruption)
+        @test err2.degradation_type == :corruption
+    end
+    
+    # Test 14.9: simulate_network_degradation - no injection
+    @testset "Network Degradation Disabled" begin
+        config = ChaosConfig(enabled=false)
+        result = simulate_network_degradation(() -> "success"; config=config)
+        @test result == "success"
+    end
+    
+    # Test 14.10: simulate_network_degradation - success case
+    @testset "Network Degradation No Injection" begin
+        # Very low rates so no injection
+        config = ChaosConfig(enabled=true, latency_probability=0.0, timeout_probability=0.0)
+        result = simulate_network_degradation(() -> "success"; 
+                                                 loss_rate=0.0, 
+                                                 corruption_rate=0.0, 
+                                                 timeout_rate=0.0,
+                                                 config=config)
+        @test result == "success"
+    end
+    
+    # Test 14.11: simulate_network_degradation - packet loss
+    @testset "Network Degradation Packet Loss" begin
+        config = ChaosConfig(enabled=true, log_injections=false)
+        
+        # Always trigger packet loss
+        @test_throws NetworkDegradationError simulate_network_degradation(
+            () -> "success"; 
+            loss_rate=1.0, 
+            corruption_rate=0.0, 
+            timeout_rate=0.0,
+            config=config)
+    end
+    
+    # Test 14.12: simulate_network_degradation - corruption
+    @testset "Network Degradation Corruption" begin
+        config = ChaosConfig(enabled=true, log_injections=false)
+        
+        # Always trigger corruption
+        @test_throws NetworkDegradationError simulate_network_degradation(
+            () -> "success"; 
+            loss_rate=0.0, 
+            corruption_rate=1.0, 
+            timeout_rate=0.0,
+            config=config)
+    end
+    
+    # Test 14.13: simulate_network_degradation - timeout
+    @testset "Network Degradation Timeout" begin
+        config = ChaosConfig(enabled=true, log_injections=false)
+        
+        # Always trigger timeout
+        @test_throws NetworkDegradationError simulate_network_degradation(
+            () -> "success"; 
+            loss_rate=0.0, 
+            corruption_rate=0.0, 
+            timeout_rate=1.0,
+            config=config)
+    end
+    
+    # Test 14.14: Empty data packet loss
+    @testset "Empty Data Packet Loss" begin
+        data = UInt8[]
+        config = PacketLossConfig(loss_rate=0.0)
+        result = simulate_packet_loss(data; config=config)
+        @test result == data
+    end
+end
+
+# ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 
@@ -858,6 +1040,7 @@ println("  ✓ Decorator Pattern Tests")
 println("  ✓ Circuit Breaker Integration Tests")
 println("  ✓ Stress Tests")
 println("  ✓ Edge Case Tests")
+println("  ✓ Network Degradation / Packet Loss Tests")
 println("="^70)
 
 # Cleanup any remaining memory allocations

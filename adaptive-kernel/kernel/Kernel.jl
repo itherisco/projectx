@@ -40,8 +40,8 @@ include("trust/FlowIntegrity.jl")
 using .FlowIntegrity
 
 # Import SecureConfirmationGate for user confirmation (P0 C4 - confirmation bypass fix)
+# Note: SecureConfirmationGate.jl is included directly, not as a module
 include(joinpath(@__DIR__, "trust", "SecureConfirmationGate.jl"))
-using .SecureConfirmationGate
 
 # Import Resilience module for circuit breaker protection
 include(joinpath(@__DIR__, "..", "resilience", "Resilience.jl"))

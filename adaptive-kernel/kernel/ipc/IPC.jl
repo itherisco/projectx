@@ -1,10 +1,17 @@
-# IPC.jl - Production-grade Julia IPC Channel for Rust Communication
+# IPC.jl - TCP Fallback IPC Channel (DEPRECATED)
 #
-# This module implements the Julia side of the IPC bridge to communicate
-# with the Rust kernel via shared memory ring buffers.
+# ⚠️ DEPRECATION NOTICE ⚠️
+# This module is DEPRECATED. Use RustIPC.jl for native shared-memory IPC.
 #
-# Requirements:
-# - Connect to Rust ring buffer via shared memory or TCP
+# This module was previously used as a TCP fallback when shared memory
+# was unavailable. The system now uses fail-closed security which requires
+# the Rust kernel to be available via shared memory.
+#
+# This module is retained for emergency debugging only and should NOT be
+# used in production. The system will halt if Rust kernel is unavailable.
+#
+# Requirements (for legacy compatibility):
+# - Connect to Rust ring buffer via TCP (deprecated)
 # - Handle disconnections gracefully (enter SAFE_MODE)
 # - Async message processing with proper error handling
 # - Timeout handling (1 second max wait)

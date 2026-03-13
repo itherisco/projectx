@@ -1,8 +1,12 @@
 # capabilities/write_file.jl - Write to sandbox
+# FAIL-CLOSED: Requires Rust kernel approval before file writes
 
 module WriteFile
 
 export meta, execute
+
+# Import RustIPC for fail-closed brain availability check
+using ..RustIPC
 
 function meta()::Dict{String, Any}
     return Dict(
@@ -18,6 +22,9 @@ function meta()::Dict{String, Any}
 end
 
 function execute(params::Dict)::Dict{String, Any}
+    # MANDATORY: Fail-closed - require Warden approval before any file write
+    require_rust_brain("write_file")
+    
     content = get(params, "content", "Logged output")
     
     # Safety: all writes confined to sandbox/

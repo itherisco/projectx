@@ -6,6 +6,9 @@ using URIs
 # Import circuit breaker for resilience
 const _circuit_breaker_enabled = Ref(false)
 
+# Import RustIPC for fail-closed brain availability check
+using ..RustIPC
+
 """
     Enable or disable circuit breaker protection for HTTP requests
 """
@@ -192,6 +195,9 @@ function is_content_allowed(content_type::String)::Bool
 end
 
 function execute(params::Dict{String,Any})::Dict{String,Any}
+    # MANDATORY: Fail-closed - require Warden approval before any HTTP request
+    require_rust_brain("safe_http_request")
+    
     # Parse parameters with defaults
     url = get(params, "url", "https://example.com")
     max_size = get(params, "max_response_size", DEFAULT_MAX_SIZE)

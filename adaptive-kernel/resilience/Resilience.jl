@@ -23,6 +23,9 @@ include("HealthMonitor.jl")
 # Circuit Breaker - Core Implementation
 # ============================================================================
 
+# Include ChaosInjector for comprehensive resilience testing
+include("ChaosInjector.jl")
+
 # Circuit Breaker State
 @enum CircuitState CB_CLOSED CB_OPEN CB_HALF_OPEN
 
@@ -240,5 +243,24 @@ export HealthMonitor, ComponentHealth, HealthStatus,
 export GlobalCircuitBreakerManager,
        get_global_circuit_breaker_manager, get_system_resilience_status,
        initialize_resilience, get_resilience_summary
+
+# ChaosInjector exports (re-export from ChaosInjector)
+export ChaosInjector, ChaosConfig, ChaosExperiment,
+       inject_latency, inject_random_latency, with_latency_injection,
+       inject_memory_pressure, release_memory_pressure, get_memory_pressure_level,
+       should_inject_timeout, inject_random_timeout, TimeoutError,
+       simulate_partial_write, simulate_partial_write_with_failure,
+       inject_corruption, inject_corrupted_json, CorruptionType,
+       NULL_BYTE, TRUNCATION, GARBAGE, ENCODING, JSON_MALFORMED,
+       simulate_network_partition, with_network_partition, NetworkPartitionError,
+       PacketLossConfig, should_drop_packet, should_corrupt_packet,
+       should_duplicate_packet, simulate_packet_loss, simulate_packet_duplication,
+       simulate_network_degradation, NetworkDegradationError,
+       inject_cpu_pressure,
+       simulate_service_crash, should_crash, ServiceCrashError, CrashType,
+       IMMEDIATE, DELAYED, INTERMITTENT, GRACEFUL,
+       default_config, set_default_config, create_experiment,
+       record_injection!, complete_experiment!, get_experiment_summary,
+       with_chaos, wrap_with_chaos, inject_with_circuit_breaker
 
 end  # module

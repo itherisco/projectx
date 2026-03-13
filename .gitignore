@@ -1,0 +1,25 @@
+# Build artifacts
+target/
+*.o
+*.so
+*.a
+*.rlib
+*.rmeta
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+deps/deps.jl
+
+# Logs
+*.log

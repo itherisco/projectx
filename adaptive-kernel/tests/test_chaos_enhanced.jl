@@ -19,8 +19,9 @@ push!(LOAD_PATH, joinpath(@__DIR__, ".."))
 include("../resilience/ChaosInjector.jl")
 using ..ChaosInjector
 
-include("../resilience/CircuitBreaker.jl")
-using ..CircuitBreaker
+# CircuitBreaker is part of the Resilience module, not a separate module
+include("../resilience/Resilience.jl")
+using ..Resilience
 
 println("=" ^ 70)
 println("  ENHANCED CHAOS TESTING SUITE")

@@ -39,6 +39,14 @@ using .Emotions
 include(joinpath(@__DIR__, "learning", "OnlineLearning.jl"))
 using .OnlineLearning
 
+# Import metabolic controller (for integration)
+include(joinpath(@__DIR__, "metabolic", "MetabolicController.jl"))
+using .MetabolicController
+
+# Import context module for multi-turn context (Stage 2)
+include(joinpath(@__DIR__, "context", "Context.jl"))
+using .Context
+
 # Import goals
 include(joinpath(@__DIR__, "goals", "GoalSystem.jl"))
 using .GoalSystem
@@ -88,6 +96,11 @@ const ENERGY_RECOVERY = 0.70f0
 - `active_goals::Vector{Goal}`: Currently active goals
 - `world_model::WorldModelState`: Internal world model
 - `sensory_buffer::SensoryBuffer`: Input sensory buffer
+
+# Stage 2 - Multi-turn Context (NEW):
+- `conversation_context::ConversationContext`: Multi-turn conversation history
+- `working_memory::WorkingMemoryBuffer`: Short-term working memory
+- `context_window::ContextWindow`: Context window optimization
 """
 mutable struct CognitiveState
     # Core state
@@ -103,6 +116,7 @@ mutable struct CognitiveState
     # Cognitive modules
     affective_state::AffectiveState
     learning_state::LearningState
+    metabolic_state::MetabolicState  # Integrated metabolic controller
     attention_focus::Vector{String}
     
     # Goals and planning
@@ -123,6 +137,11 @@ mutable struct CognitiveState
     brain_input::Union{BrainInput, Nothing}
     brain_output::Union{BrainOutput, Nothing}
     
+    # === STAGE 2: Multi-turn Context ===
+    conversation_context::ConversationContext  # Conversation history
+    working_memory::WorkingMemoryBuffer       # Short-term working memory
+    context_window::ContextWindow              # Context window optimization
+    
     function CognitiveState()
         new(
             1.0f0,                          # energy
@@ -133,6 +152,7 @@ mutable struct CognitiveState
             SensoryBuffer(),               # sensory_buffer
             AffectiveState(),              # affective_state
             LearningState(),               # learning_state
+            initialize_metabolism(),       # metabolic_state (integrated)
             String[],                      # attention_focus
             Goal[],                        # active_goals
             zeros(Float32, 8),             # goal_context
@@ -141,7 +161,11 @@ mutable struct CognitiveState
             0.0f0,                         # max_cycle_time_ms
             nothing,                       # ipc_channel
             nothing,                        # brain_input
-            nothing                         # brain_output
+            nothing,                         # brain_output
+            # Stage 2: Multi-turn context
+            ConversationContext(),         # conversation_context
+            WorkingMemoryBuffer(),         # working_memory
+            ContextWindow()                # context_window
         )
     end
 end
@@ -162,6 +186,48 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     # Update cycle count
     state.cycle_count += 1
     
+    # === STEP 0: METABOLIC TICK (136.1 Hz) ===
+    # Update metabolic state at the start of each cognitive cycle
+    # This applies energy constraints to all subsequent operations
+    operations = apply_metabolic_constraints(state.metabolic_state)
+    
+    # Sync cognitive state energy with metabolic state
+    state.energy = state.metabolic_state.energy
+    
+    # Update cognitive mode based on metabolic mode
+    if state.metabolic_state.mode == MODE_DREAMING
+        state.mode = :dreaming
+    elseif state.metabolic_state.mode == MODE_CRITICAL
+        state.mode = :critical
+    elseif state.metabolic_state.mode == MODE_RECOVERY
+        state.mode = :recovery
+    elseif state.metabolic_state.energy >= ENERGY_RECOVERY
+        state.mode = :active
+    else
+        state.mode = :idle
+    end
+    
+    # === STEP 0.5: STAGE 2 - MULTI-TURN CONTEXT PROCESSING ===
+    # Extract user message from raw_input and add to conversation context
+    if haskey(raw_input, "user_message") || haskey(raw_input, "message")
+        user_msg = get(raw_input, "user_message", get(raw_input, "message", ""))
+        if !isempty(user_msg)
+            add_user_message!(state.conversation_context, user_msg)
+            @debug "Added user message to conversation context" turn=state.conversation_context.turn_count
+        end
+    elseif haskey(raw_input, "input")
+        # Alternative key for user input
+        user_input = raw_input["input"]
+        if user_input isa String && !isempty(user_input)
+            add_user_message!(state.conversation_context, user_input)
+        end
+    end
+    
+    # Optimize context window periodically
+    if state.cycle_count % 10 == 0
+        update_summary!(state.conversation_context, state.context_window)
+    end
+    
     # === STEP 1: Sensory Processing ===
     processed_sensory = process_sensory_input(state.sensory_buffer, raw_input)
     
@@ -169,11 +235,27 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     update_perception!(state.perception, processed_sensory)
     
     # === STEP 3: Emotional Modulation (Connect Emotions to main loop) ===
-    # Update affective state based on current perception
-    update_affective_state!(state.affective_state, state.perception)
+    # Update affective state based on current perception and metabolic state
+    # Trigger emotional responses based on system state
+    if state.energy < ENERGY_CRITICAL
+        # Critical energy - fear response
+        update_emotion!(state.affective_state, :threat, Float32(0.8))
+    elseif state.energy < ENERGY_LOW
+        # Low energy - concern
+        update_emotion!(state.affective_state, :threat, Float32(0.4))
+    elseif state.perception.confidence > 0.8f0
+        # High confidence - satisfaction
+        update_emotion!(state.affective_state, :goal_achieved, state.perception.confidence)
+    else
+        # Normal state - curiosity
+        update_emotion!(state.affective_state, :novelty, Float32(0.3))
+    end
     
-    # Apply emotional modulation to perception confidence
-    emotional_modulation = apply_emotional_modulation(state.affective_state, state.perception.confidence)
+    # Apply emotional modulation to perception confidence (bounded to max 30%)
+    emotional_modulation = apply_emotional_modulation(state.perception.confidence, state.affective_state)
+    
+    # Decay emotions over time
+    decay_emotions!(state.affective_state)
     
     # === STEP 4: Attention Selection ===
     attention_weights = compute_attention(state.perception, state.affective_state)
@@ -188,9 +270,15 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     state.goal_context = build_goal_context(state.active_goals)
     
     # === STEP 7: Brain Inference ===
-    # Prepare brain input with emotional modulation
+    # Prepare brain input with emotional modulation AND multi-turn context
+    # STAGE 2: Include context vector from conversation history
+    context_vector = build_context_vector(state.conversation_context, state.working_memory)
+    
+    # Combine perception vector with context vector
+    full_perception = vcat(perception_vector, context_vector)
+    
     brain_input = BrainInput(
-        perception_vector;
+        full_perception;
         goal_context=state.goal_context,
         recent_rewards=get_recent_rewards(state.perception),
         time_budget_ms=Float32(CYCLE_DURATION_MS * 0.5)  # Use half the cycle for thinking
@@ -207,10 +295,20 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     emotional_weight = compute_emotional_weight(state.affective_state)
     
     # === STEP 9: Online Learning Integration (Connect OnlineLearning to main loop) ===
-    # Update learning state based on outcomes
-    experience = build_experience(state.perception, brain_output)
-    if state.energy > ENERGY_LOW
-        incremental_update!(nothing, experience, state.learning_state)  # brain would be passed here
+    # Update learning state based on outcomes and metabolic state
+    # Learning is gated by metabolic state (apply_metabolic_gating! is called internally)
+    experience = build_learning_experience(state.perception, brain_output, state.affective_state)
+    
+    # Only attempt learning if energy is sufficient and we have valid experience
+    if state.energy > ENERGY_LOW && haskey(experience, :input) && haskey(experience, :target)
+        learning_success = incremental_update!(nothing, experience, state.learning_state)
+        
+        # Process metabolic feedback based on learning outcome
+        if learning_success
+            process_metabolic_feedback!(state.metabolic_state, true, state.learning_state.confidence)
+        else
+            process_metabolic_feedback!(state.metabolic_state, false, 0.0f0)
+        end
     end
     
     # === STEP 10: Action Proposal Generation ===
@@ -221,7 +319,29 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
         state.cycle_count
     )
     
-    # === STEP 11: Send to Rust Kernel for Approval ===
+    # === STAGE 2: Store proposal in working memory for context across cycles ===
+    store_working!(
+        state.working_memory,
+        "last_proposal",
+        Dict(
+            "capability" => proposal.capability_id,
+            "confidence" => proposal.confidence,
+            "reasoning" => proposal.reasoning,
+            "cycle" => state.cycle_count
+        );
+        priority=0.7f0  # Higher priority for recent proposals
+    )
+    
+    # Add system response to conversation context
+    response_content = "[Action: $(proposal.capability_id)] $(proposal.reasoning)"
+    add_system_message!(state.conversation_context, response_content; metadata=Dict(:confidence => proposal.confidence))
+    
+    # === STEP 11: METABOLIC UPDATE (136.1 Hz tick) ===
+    # Update metabolic state based on operations performed this cycle
+    # This tracks energy consumption and recovery
+    update_metabolism!(state.metabolic_state, operations)
+    
+    # === STEP 12: Send to Rust Kernel for Approval ===
     if state.ipc_channel !== nothing
         send_to_kernel(state.ipc_channel, proposal)
     end
@@ -295,91 +415,6 @@ function update_perception!(perception::Perception, processed::ProcessedSensory)
 end
 
 """
-    update_affective_state! - Update emotional state based on perception
-"""
-function update_affective_state!(affective::AffectiveState, perception::Perception)
-    # Update emotions based on current state
-    # This triggers emotional responses to current situation
-    
-    # Check energy level and update valence
-    if perception.energy_level < ENERGY_CRITICAL
-        # Critical energy - fear response
-        update_emotion!(affective, Fear, 0.8f0)
-    elseif perception.energy_level < ENERGY_LOW
-        # Low energy - concern
-        update_emotion!(affective, Fear, 0.4f0)
-    elseif perception.confidence > 0.8f0
-        # High confidence - satisfaction
-        update_emotion!(affective, Satisfaction, perception.confidence)
-    else
-        # Normal state - curiosity
-        update_emotion!(affective, Curiosity, 0.3f0)
-    end
-end
-
-"""
-    build_perception_vector - Build 12D perception vector for brain input
-"""
-function build_perception_vector(perception::Perception)::Vector{Float32}
-    # Build 12D perception vector from perception state
-    vec = zeros(Float32, 12)
-    
-    # Energy (1)
-    vec[1] = perception.energy_level
-    
-    # Confidence (2)
-    vec[2] = perception.confidence
-    
-    # Threat level (3)
-    vec[3] = perception.threat_level
-    
-    # Recent outcomes (4-7)
-    n_outcomes = min(length(perception.recent_outcomes), 4)
-    for i in 1:n_outcomes
-        vec[3 + i] = perception.recent_outcomes[i] ? 1.0f0 : 0.0f0
-    end
-    
-    # Active goals count (8)
-    vec[8] = Float32(length(perception.active_goals)) / 10.0f0
-    
-    # System state summary (9-12)
-    state_keys = ["cpu", "memory", "disk", "network"]
-    for (i, key) in enumerate(state_keys)
-        vec[8 + i] = get(perception.system_state, key, 0.5f0)
-    end
-    
-    return vec
-end
-
-"""
-    build_goal_context - Build goal context vector for brain input
-"""
-function build_goal_context(goals::Vector{Goal})::Vector{Float32}
-    context = zeros(Float32, 8)
-    
-    for (i, goal) in enumerate(goals)
-        if i >= 8 break end
-        context[i] = goal.priority
-    end
-    
-    return context
-end
-
-"""
-    get_recent_rewards - Get recent reward signals for brain input
-"""
-function get_recent_rewards(perception::Perception)::Vector{Float32}
-    rewards = zeros(Float32, 10)
-    
-    n = length(perception.recent_outcomes)
-    for i in 1:min(n, 10)
-        rewards[i] = perception.recent_outcomes[i] ? 1.0f0 : -0.5f0
-    end
-    
-    return rewards
-end
-
-"""
     compute_emotional_weight - Compute emotional influence on decision making
 """
 function compute_emotional_weight(affective::AffectiveState)::Float32
@@ -391,6 +426,39 @@ function compute_emotional_weight(affective::AffectiveState)::Float32
     arousal_effect = affective.arousal * 0.05f0
     
     return clamp(base_weight + valence_effect + arousal_effect, 0.0f0, 0.3f0)
+end
+
+"""
+    build_learning_experience - Build learning experience from current cycle with proper format
+    for incremental_update! function
+"""
+function build_learning_experience(
+    perception::Perception, 
+    brain_output::BrainOutput,
+    affective_state::AffectiveState
+)::Dict
+    # Build perception vector as input
+    input = build_perception_vector(perception)
+    
+    # Use brain output action as target (one-hot encoded would be ideal)
+    action_idx = 1
+    if length(brain_output.proposed_actions) > 0
+        action_idx = parse(Int, split(string(brain_output.proposed_actions[1]), "")[1]) + 1
+    end
+    target = Float32[action_idx]
+    
+    # Calculate reward from brain output
+    reward = brain_output.value_estimate
+    
+    return Dict(
+        :input => input,
+        :target => target,
+        :reward => reward,
+        :done => false,
+        :confidence => brain_output.confidence,
+        :emotional_influence => compute_value_modulation(affective_state),
+        :timestamp => time_ns()
+    )
 end
 
 """
@@ -563,6 +631,9 @@ function reset_cognitive_state!(state::CognitiveState)
     state.max_cycle_time_ms = 0.0f0
     state.attention_focus = String[]
     state.active_goals = Goal[]
+    
+    # Reset metabolic state
+    state.metabolic_state = initialize_metabolism()
 end
 
 """
@@ -577,7 +648,8 @@ function get_cognitive_summary(state::CognitiveState)::Dict
         "max_cycle_time_ms" => state.max_cycle_time_ms,
         "attention_focus" => state.attention_focus,
         "active_goals" => length(state.active_goals),
-        "affective_state" => get_affective_summary(state.affective_state)
+        "affective_state" => get_affective_summary(state.affective_state),
+        "metabolic_state" => get_metabolic_summary(state.metabolic_state)
     )
 end
 
@@ -592,6 +664,7 @@ export
     create_cognitive_state,
     reset_cognitive_state!,
     get_cognitive_summary,
+    build_learning_experience,
     COGNITIVE_FREQUENCY_HZ,
     CYCLE_DURATION_MS,
     ENERGY_CRITICAL,

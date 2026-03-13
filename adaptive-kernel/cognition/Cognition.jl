@@ -71,6 +71,17 @@ export
     CognitiveEngine,
     run_sovereign_cycle,
     
+    # Integrator - Phase 2 & 4 cognitive integration
+    Integrator,
+    CognitiveIntegrator,
+    IntegratorConfig,
+    integrate_cognitive_cycle,
+    create_integrator,
+    get_integrator_summary,
+    run_active_cycle!,
+    run_dreaming_cycle!,
+    run_critical_cycle!,
+    
     # Kernel integration (Phase 4 - Flow Integrity)
     require_kernel_approval,
     ApprovalToken,
@@ -110,7 +121,21 @@ export
     plan_to_goal,
     record_experience!,
     reset_model!,
-    get_model_confidence
+    get_model_confidence,
+    
+    # Context - Stage 2: Multi-turn context maintenance
+    ConversationContext,
+    ConversationMessage,
+    WorkingMemoryBuffer,
+    ContextWindow,
+    add_user_message!,
+    add_system_message!,
+    store_working!,
+    retrieve_working,
+    build_context_vector,
+    summarize_context,
+    update_topic!,
+    update_summary!
 
 # Submodules
 include("types.jl")
@@ -164,6 +189,18 @@ using .Brain
 # Emotions module for affective state integration (VERIFIED CAUSAL INTEGRATION)
 include(joinpath(@__DIR__, "feedback", "Emotions.jl"))
 using .Emotions
+
+# Integrator - Main cognitive integration module (Phase 2 & 4)
+include(joinpath(@__DIR__, "Integrator.jl"))
+using .Integrator
+
+# Input Sanitizer - SECURITY BOUNDARY for LLM interaction paths
+include(joinpath(@__DIR__, "security", "InputSanitizer.jl"))
+using .InputSanitizer
+
+# Context - Stage 2: Multi-turn context maintenance
+include(joinpath(@__DIR__, "context", "Context.jl"))
+using .Context
 
 # ============================================================================
 # FLOW INTEGRITY - Cryptographic Approval Tokens (Phase 4)
