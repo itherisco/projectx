@@ -242,29 +242,25 @@ pub fn register_panic_handler() -> Result<(), String> {
     log::info!("🛡️ Registering panic handler...");
     
     // Register the panic hook
-    let panic_hook = Box::new(|info| {
+    std::panic::set_hook(Box::new(|info| {
         panic_handler_impl(info);
-    });
-    
-    std::panic::set_hook(panic_hook);
+    }));
     
     // Register signal handlers (Unix only)
     #[cfg(unix)]
     {
-        use std::mem::transmute;
-        
         unsafe {
             // Setup SIGSEGV handler
-            let sigsegv_handler: libc::sighandler_t = transmute(signal_handler::<libc::SIGSEGV> as *const ());
-            libc::signal(libc::SIGSEGV, sigsegv_handler);
+            let sigsegv_handler: usize = std::mem::transmute(signal_handler::<{libc::SIGSEGV}> as *const ());
+            libc::signal(libc::SIGSEGV, sigsegv_handler as libc::sighandler_t);
             
             // Setup SIGBUS handler
-            let sigbus_handler: libc::sighandler_t = transmute(signal_handler::<libc::SIGBUS> as *const ());
-            libc::signal(libc::SIGBUS, sigbus_handler);
+            let sigbus_handler: usize = std::mem::transmute(signal_handler::<{libc::SIGBUS}> as *const ());
+            libc::signal(libc::SIGBUS, sigbus_handler as libc::sighandler_t);
             
             // Setup SIGFPE handler
-            let sigfpe_handler: libc::sighandler_t = transmute(signal_handler::<libc::SIGFPE> as *const ());
-            libc::signal(libc::SIGFPE, sigfpe_handler);
+            let sigfpe_handler: usize = std::mem::transmute(signal_handler::<{libc::SIGFPE}> as *const ());
+            libc::signal(libc::SIGFPE, sigfpe_handler as libc::sighandler_t);
         }
     }
     
@@ -276,7 +272,7 @@ pub fn register_panic_handler() -> Result<(), String> {
 
 /// Signal handler for critical signals
 #[cfg(unix)]
-unsafe fn signal_handler<const SIG: libc::c_int>(signum: libc::c_int) {
+unsafe extern "C" fn signal_handler<const SIG: i32>(_signum: i32) {
     // Create crash info from signal
     let signal_name = match SIG {
         libc::SIGSEGV => "SIGSEGV",
@@ -304,7 +300,7 @@ unsafe fn signal_handler<const SIG: libc::c_int>(signum: libc::c_int) {
     std::thread::sleep(std::time::Duration::from_millis(100));
     
     // Exit with error code
-    libc::exit(1);
+    std::process::exit(1);
 }
 
 /// Check if panic handler is registered

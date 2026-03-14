@@ -3,32 +3,24 @@
 //! Manages the Julia brain with embedded jlrs runtime,
 //! crash recovery with watchdog timers, and systemd service support.
 
-mod kernel;
-mod secure_boot;
-mod shared_memory;
-mod ffi;
-mod julia_runtime;
-mod types;
-mod isolation;
-mod warden;
-mod hardware;
-mod grpc;
 
 use chrono::Utc;
-use grpc::{start_grpc_server, WardenServiceState};
+use itheris_daemon::grpc::{start_grpc_server, WardenServiceState};
+use itheris_daemon::hardware;
+use itheris_daemon::kernel;
+use itheris_daemon::julia_runtime;
+use itheris_daemon::secure_boot;
 use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
-use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
+use kernel::{ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
 use secure_boot::{BootStageResult, SecureBootManager};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use uuid::Uuid;
 
 /// Daemon configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +179,7 @@ impl ItherisDaemon {
     }
     
     /// Spawn Julia brain subprocess
+    #[allow(dead_code)]
     async fn spawn_julia_brain(&self) -> Result<(), String> {
         log::info!("🧠 Spawning Julia brain...");
         
@@ -198,17 +191,16 @@ impl ItherisDaemon {
             return Err(format!("Julia brain not found at: {}", run_path));
         }
         
-        let mut child = Command::new(&self.config.julia_path)
+        let child = Command::new(&self.config.julia_path)
             .arg("--project=".to_string() + kernel_path)
             .arg(&run_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("Failed to spawn Julia: {}", e))?;
         
-        let pid = child.id().unwrap_or(0);
-        log::info!("   ✓ Julia brain started (PID: {})", pid);
+        let _pid = child.id();
+        log::info!("   ✓ Julia brain started (PID: {})", _pid);
         
         // Store the process
         *self.julia_process.write().await = Some(child);
@@ -246,13 +238,24 @@ impl ItherisDaemon {
         
         let mut ticker = interval(Duration::from_secs(self.config.health_check_interval_secs));
         
-        // Hardware watchdog kick ticker (every 500ms)
+        // Hardware watchdog kick ticker (every 500ms) - ALIGNED WITH WDT TIMEOUT
         let mut hw_kick_ticker = interval(Duration::from_millis(500));
         
         loop {
             // Handle hardware watchdog kick every 500ms
             tokio::select! {
                 _ = hw_kick_ticker.tick() => {
+                    // FAIL-CLOSED: If Warden is unhealthy, STOP kicking hardware watchdog
+                    // This will cause the hardware WDT to fire and reset/halt the system
+                    if !self.kernel.is_warden_healthy().await {
+                        log::error!("FATAL SECURITY FAILURE: Warden is unhealthy. Halting watchdog kicks.");
+                        unsafe {
+                            hardware::kill_chain::execute_kill_chain();
+                        }
+                        // kill_chain never returns, but for safety:
+                        break;
+                    }
+
                     // Kick the hardware watchdog
                     if let Some(ref guard) = *self.hardware_guard.read().await {
                         guard.kick_watchdog();
@@ -290,6 +293,10 @@ impl ItherisDaemon {
                             // Attempt recovery by reinitializing
                             if let Err(e) = self.init_julia_embedded().await {
                                 log::error!("Recovery failed: {}", e);
+                                // FATAL: Recovery failed, initiate hardware kill chain
+                                unsafe {
+                                    hardware::kill_chain::execute_kill_chain();
+                                }
                             } else {
                                 self.kernel.set_warden_status(true).await;
                                 *self.health_check_failures.write().await = 0;
@@ -443,7 +450,7 @@ async fn main() -> Result<(), String> {
     
     // Start gRPC server for frontend communication
     let grpc_state = Arc::new(WardenServiceState::new());
-    let daemon_for_grpc = daemon.clone();
+    let _daemon_for_grpc = daemon.clone();
     tokio::spawn(async move {
         if let Err(e) = start_grpc_server(grpc_state.clone(), config.grpc_port).await {
             log::error!("❌ gRPC server error: {}", e);

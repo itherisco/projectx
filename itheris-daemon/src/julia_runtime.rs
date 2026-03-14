@@ -262,8 +262,7 @@ impl JuliaRuntime {
             })
             .map_err(|e| JuliaError::CallError(e.to_string()))
     }
-    
-Error(e.to_string    /// Call the ITHERISCore.infer() function for cognitive inference
+    /// Call the ITHERISCore.infer() function for cognitive inference
     pub fn infer(&self, input_data: &str) -> JuliaResult<String> {
         self.call_function("ITHERISCore", "infer", &[input_data.to_string()])
     }

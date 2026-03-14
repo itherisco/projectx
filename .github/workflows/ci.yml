@@ -43,7 +43,7 @@ jobs:
         sudo apt-get install -y libzmq3-dev pkg-config libssl-dev
     
     - name: Setup Rust ${{ matrix.rust }}
-      uses: dtolnay/rust-action@stable
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
     
@@ -117,14 +117,18 @@ jobs:
         using Pkg
         println("Compiling Julia modules...")
         
-        # Load and compile main modules
-        using Kernel
-        using Brain
-        using Cognition
-        using Memory
-        using Resilience
-        
-        println("All modules compiled successfully!")
+        # Include local modules directly
+        try
+            include("kernel/Kernel.jl")
+            include("brain/Brain.jl")
+            include("cognition/Cognition.jl")
+            include("memory/Memory.jl")
+            include("resilience/Resilience.jl")
+            println("All modules compiled successfully!")
+        catch e
+            println("Module compilation failed: ", e)
+            exit(1)
+        end
         '
     
     - name: Upload Julia artifacts
@@ -241,7 +245,7 @@ jobs:
     - name: Run CodeQL analysis
       uses: github/codeql-action/init@v3
       with:
-        languages: julia
+        languages: python, rust
         queries: +security-and-quality
     
     - name: Upload static analysis results

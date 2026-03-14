@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use libc::{c_void, c_int, size_t};
 use thiserror::Error;
+
 
 /// Memory protection errors
 #[derive(Error, Debug)]
@@ -251,10 +251,10 @@ pub fn get_current_process_regions() -> Vec<MemoryRegion> {
 }
 
 // mprotect constants (matching libc)
-const PROT_NONE: c_int = 0;
-const PROT_READ: c_int = 1;
-const PROT_WRITE: c_int = 2;
-const PROT_EXEC: c_int = 4;
+const PROT_NONE: i32 = 0;
+const PROT_READ: i32 = 1;
+const PROT_WRITE: i32 = 2;
+const PROT_EXEC: i32 = 4;
 
 /// Call mprotect to set memory protection
 /// 
@@ -266,14 +266,14 @@ unsafe fn mprotect_region(addr: usize, len: usize) -> Result<(), MemoryProtectio
     }
     
     // Align address to page size
-    let page_size = libc::sysconf(libc::_SC_PAGESIZE) as usize;
+    let page_size = 4096; // Hardcode page size to avoid libc::sysconf
     let aligned_addr = addr & !(page_size - 1);
     let aligned_len = ((len + page_size - 1) / page_size) * page_size;
     
     let result = libc::mprotect(
-        aligned_addr as *mut c_void,
-        aligned_len as size_t,
-        PROT_NONE
+        aligned_addr as *mut libc::c_void,
+        aligned_len as libc::size_t,
+        libc::PROT_NONE
     );
     
     if result != 0 {

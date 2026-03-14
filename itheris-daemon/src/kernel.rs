@@ -326,8 +326,118 @@ impl ItherisDaemonKernel {
             }
         }
         
-        // STEP 4: Approve the action
-        log::info!("✅ [{}] ACTION APPROVED - {} for {}", action_id, action.action_type.as_str(), action.requested_by);
+        // STEP 4: LEP Veto Equation Integration
+        // score = priority * (reward - risk)
+        // Hardcoded LEP Gate Mandate:
+        // 1. If risk_estimate > 0.01: VETO
+        // 2. If score < 0: VETO
+
+        // Extract priority and estimates from payload if available, or use defaults
+        let mut priority = 1.0;
+        let mut reward = 0.5;
+        let mut risk = 0.0;
+        let mut hallucination_score = 0.0;
+        let mut gradient_norm = 0.0;
+
+        if let Some(ref p) = action.payload {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(p) {
+                priority = json["priority"].as_f64().or_else(|| json["priority_estimate"].as_f64()).unwrap_or(1.0);
+                reward = json["reward_estimate"].as_f64().unwrap_or(0.5);
+                risk = json["risk_estimate"].as_f64().unwrap_or(0.0);
+                hallucination_score = json["hallucination_score"].as_f64().unwrap_or(0.0);
+                gradient_norm = json["gradient_norm"].as_f64().unwrap_or(0.0);
+            }
+        }
+
+        let lep_score = priority * (reward - risk);
+
+        // Hardcoded LEP Gate Mandates:
+
+        // 1. Target scope check
+        const PERMITTED_TARGETS: &[&str] = &["self", "stdout", "network_safe", "fs_temp"];
+        if !PERMITTED_TARGETS.iter().any(|&t| action.target.contains(t)) {
+            log::warn!("🛑 [{}] ACTION VETOED - Target {} outside permitted scope", action_id, action.target);
+            let mut blocked = self.blocked_count.write().await;
+            *blocked += 1;
+            let result = ApprovalResult {
+                action_id: action_id.clone(),
+                approved: false,
+                reason: format!("LEP_VETO: Target {} outside PERMITTED_TARGETS", action.target),
+                warden_signature: None,
+                timestamp,
+            };
+            self.log_decision(result.clone()).await;
+            return result;
+        }
+
+        // 2. Risk threshold
+        if risk > 0.01 {
+            log::warn!("🛑 [{}] ACTION VETOED - LEP Risk {} > 0.01", action_id, risk);
+            let mut blocked = self.blocked_count.write().await;
+            *blocked += 1;
+
+            let result = ApprovalResult {
+                action_id: action_id.clone(),
+                approved: false,
+                reason: format!("LEP_VETO: Risk estimate {} exceeds RISK_BUDGET (0.01)", risk),
+                warden_signature: None,
+                timestamp,
+            };
+            self.log_decision(result.clone()).await;
+            return result;
+        }
+
+        // 3. Hallucination discriminator
+        if hallucination_score > 0.058 {
+            log::warn!("🛑 [{}] ACTION VETOED - Hallucination score {} > 0.058", action_id, hallucination_score);
+            let mut blocked = self.blocked_count.write().await;
+            *blocked += 1;
+            let result = ApprovalResult {
+                action_id: action_id.clone(),
+                approved: false,
+                reason: format!("LEP_VETO: Hallucination score {} > 0.058 threshold", hallucination_score),
+                warden_signature: None,
+                timestamp,
+            };
+            self.log_decision(result.clone()).await;
+            return result;
+        }
+
+        // 4. Gradient instability
+        if gradient_norm > 0.1 {
+            log::warn!("🛑 [{}] ACTION VETOED - Gradient norm {} > 0.1 (Instability)", action_id, gradient_norm);
+            let mut blocked = self.blocked_count.write().await;
+            *blocked += 1;
+            let result = ApprovalResult {
+                action_id: action_id.clone(),
+                approved: false,
+                reason: format!("LEP_VETO: Gradient norm {} > 0.1 - stability reset required", gradient_norm),
+                warden_signature: None,
+                timestamp,
+            };
+            self.log_decision(result.clone()).await;
+            return result;
+        }
+
+        // 5. Veto Equation Score
+        if lep_score < 0.0 {
+            log::warn!("🛑 [{}] ACTION VETOED - LEP Score {} < 0", action_id, lep_score);
+            let mut blocked = self.blocked_count.write().await;
+            *blocked += 1;
+
+            let result = ApprovalResult {
+                action_id: action_id.clone(),
+                approved: false,
+                reason: format!("LEP_VETO: Negative LEP score ({})", lep_score),
+                warden_signature: None,
+                timestamp,
+            };
+            self.log_decision(result.clone()).await;
+            return result;
+        }
+
+        // STEP 5: Approve the action
+        log::info!("✅ [{}] ACTION APPROVED - {} for {} (LEP Score: {})", action_id, action.action_type.as_str(), action.requested_by, lep_score);
         
         let mut approved = self.approved_count.write().await;
         *approved += 1;
@@ -423,7 +533,7 @@ mod tests {
         let action = KernelAction {
             id: "test-2".to_string(),
             action_type: ActionType::Execute,
-            target: "test".to_string(),
+            target: "stdout".to_string(),
             payload: None,
             requested_by: "julia_brain".to_string(),
             risk_level: RiskLevel::Low,

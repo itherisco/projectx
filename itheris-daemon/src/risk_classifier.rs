@@ -236,6 +236,8 @@ impl RiskClassifier {
     /// * `priority` - Priority (1-10)
     /// * `reward` - Expected reward (0-100)
     /// * `risk` - Estimated risk (0-100)
+    /// * `hallucination` - Hallucination score (0-1)
+    /// * `gradient_norm` - Gradient norm (instability metric)
     pub fn classify(
         &mut self,
         capability_id: &str,
@@ -243,20 +245,22 @@ impl RiskClassifier {
         priority: f64,
         reward: f64,
         risk: f64,
+        hallucination: f64,
+        gradient_norm: f64,
     ) -> Result<Classification, RiskError> {
         // Validate parameters
-        if priority < 1.0 || priority > 10.0 {
-            return Err(RiskError::InvalidParams("Priority must be 1-10".to_string()));
+        if priority < 0.0 {
+            return Err(RiskError::InvalidParams("Priority must be non-negative".to_string()));
         }
-        if reward < 0.0 || reward > 100.0 {
-            return Err(RiskError::InvalidParams("Reward must be 0-100".to_string()));
+        if reward < 0.0 || reward > 1.0 {
+            return Err(RiskError::InvalidParams("Reward must be 0.0-1.0".to_string()));
         }
-        if risk < 0.0 || risk > 100.0 {
-            return Err(RiskError::InvalidParams("Risk must be 0-100".to_string()));
+        if risk < 0.0 || risk > 1.0 {
+            return Err(RiskError::InvalidParams("Risk must be 0.0-1.0".to_string()));
         }
 
         let mut risk_factors = Vec::new();
-        let mut reason = String::new();
+        let reason;
 
         // Check always-veto list
         if self.config.always_veto.iter().any(|c| capability_id.contains(c)) {
@@ -294,7 +298,7 @@ impl RiskClassifier {
         
         // Calculate final risk
         let risk_value = base_risk.to_numeric() as f64 * 10.0 + param_risk;
-        let final_risk = (risk_value.min(100.0), 100.0).0;
+        let final_risk: f64 = risk_value.min(100.0);
         
         // Determine risk level
         let risk_level = if final_risk >= 40.0 {
@@ -315,21 +319,43 @@ impl RiskClassifier {
             .copied()
             .unwrap_or(TrustLevel::Full);
 
-        // Calculate LEP score
-        let lep_score = self.calculate_lep_score(priority, reward, risk);
+        // Calculate LEP score: score = priority * (reward - risk)
+        let lep_score = priority * (reward - risk);
 
         // Determine veto
-        let vetoed = lep_score < self.config.veto_threshold;
+        // MANDATE:
+        // 1. risk_estimate > 0.01 results in automatic veto
+        // 2. hallucination > 0.058 results in automatic veto
+        // 3. gradient_norm > 0.1 results in automatic veto
+        let mut vetoed = lep_score < self.config.veto_threshold;
 
-        if vetoed {
+        if risk > 0.01 {
+            vetoed = true;
+            reason = format!(
+                "LEP automatic veto: risk_estimate {} > 0.01 threshold",
+                risk
+            );
+        } else if hallucination > 0.058 {
+            vetoed = true;
+            reason = format!(
+                "LEP automatic veto: hallucination score {} > 0.058 threshold",
+                hallucination
+            );
+        } else if gradient_norm > 0.1 {
+            vetoed = true;
+            reason = format!(
+                "LEP automatic veto: gradient norm {} > 0.1 threshold (instability)",
+                gradient_norm
+            );
+        } else if vetoed {
             reason = format!(
                 "LEP veto: score {} < threshold {}",
                 lep_score, self.config.veto_threshold
             );
         } else {
             reason = format!(
-                "LEP approved: score {} >= threshold {}",
-                lep_score, self.config.veto_threshold
+                "LEP approved: score {} >= threshold {}, risk {} <= 0.01, hallucination {} <= 0.058, gradient {} <= 0.1",
+                lep_score, self.config.veto_threshold, risk, hallucination, gradient_norm
             );
         }
 
@@ -392,7 +418,7 @@ impl RiskClassifier {
             }
         }
 
-        risk.min(100.0)
+        (risk as f64).min(100.0f64)
     }
 
     /// Get trust threshold for a risk level
@@ -440,7 +466,7 @@ static RISK_CLASSIFIER: Lazy<RwLock<RiskClassifier>> = Lazy::new(|| {
 
 /// Initialize global classifier
 pub fn init() {
-    let _ = RISK_CLASSIFIER.read();
+    drop(RISK_CLASSIFIER.read());
 }
 
 /// Classify an action
@@ -450,8 +476,10 @@ pub fn classify(
     priority: f64,
     reward: f64,
     risk: f64,
+    hallucination: f64,
+    gradient_norm: f64,
 ) -> Result<Classification, RiskError> {
-    RISK_CLASSIFIER.write().unwrap().classify(capability_id, params, priority, reward, risk)
+    RISK_CLASSIFIER.write().unwrap().classify(capability_id, params, priority, reward, risk, hallucination, gradient_norm)
 }
 
 /// Simple risk classification
@@ -486,17 +514,41 @@ mod tests {
         let mut classifier = RiskClassifier::new();
         
         // High risk, low reward should veto
-        let result = classifier.classify("safe_shell", r#"{"command": "rm -rf /"}"#, 5.0, 10.0, 90.0)
+        let result = classifier.classify("safe_shell", r#"{"command": "rm -rf /"}"#, 5.0, 0.1, 0.9, 0.0, 0.0)
+            .unwrap();
+
+        assert!(result.vetoed);
+    }
+
+    #[test]
+    fn test_hallucination_veto() {
+        let mut classifier = RiskClassifier::new();
+
+        // High hallucination should veto
+        let result = classifier.classify("read_file", r#"{}"#, 1.0, 0.9, 0.0, 0.06, 0.0)
+            .unwrap();
+
+        assert!(result.vetoed);
+        assert!(result.reason.contains("hallucination score"));
+    }
+
+    #[test]
+    fn test_gradient_veto() {
+        let mut classifier = RiskClassifier::new();
+
+        // High gradient norm should veto
+        let result = classifier.classify("read_file", r#"{}"#, 1.0, 0.9, 0.0, 0.0, 0.15)
             .unwrap();
         
         assert!(result.vetoed);
+        assert!(result.reason.contains("gradient norm"));
     }
 
     #[test]
     fn test_always_veto() {
         let mut classifier = RiskClassifier::new();
         
-        let result = classifier.classify("delete_system", r#"{}"#, 1.0, 100.0, 0.0)
+        let result = classifier.classify("delete_system", r#"{}"#, 1.0, 1.0, 0.0, 0.0, 0.0)
             .unwrap();
         
         assert!(result.vetoed);

@@ -121,18 +121,17 @@ jobs:
       uses: returntocorp/semgrep-action@v1
       with:
         config: 'auto'
-        uploadSarif: true
     
-    - name: Run CodeQL for Julia
+    - name: Run CodeQL
       uses: github/codeql-action/init@v3
       with:
-        languages: julia
+        languages: python, rust
         queries: +security-and-quality
     
     - name: Perform CodeQL analysis
       uses: github/codeql-action/analyze@v3
       with:
-        category: "/language:julia"
+        category: "/language:python-rust"
     
     - name: Run Clippy for Rust
       working-directory: Itheris/Brain

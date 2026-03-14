@@ -79,6 +79,8 @@ pub struct IPCMessageHeader {
     pub timestamp: u64,
     pub payload_size: u32,
     pub checksum: u32,
+    #[serde(with = "serde_big_array::BigArray")]
+    pub signature: [u8; 64], // Ed25519 signature for integrity verification
 }
 
 /// Full IPC message
@@ -107,6 +109,7 @@ impl IPCMessage {
             timestamp,
             payload_size: payload.len() as u32,
             checksum: 0, // Will be calculated
+            signature: [0u8; 64],
         };
         
         // Calculate simple checksum
@@ -140,9 +143,33 @@ impl IPCMessage {
         (hasher.finish() & 0xFFFFFFFF) as u32
     }
     
-    /// Validate message checksum
-    pub fn validate(&self) -> bool {
-        // Create a copy of header with zeroed checksum for validation
+    /// Sign message using Ed25519
+    pub fn sign(&mut self, private_key: &[u8; 32]) -> Result<(), String> {
+        use ed25519_dalek::{Signer, SigningKey};
+
+        let signing_key = SigningKey::from_bytes(private_key);
+
+        // Data to sign: header (except signature) + payload
+        let mut data_to_sign = Vec::new();
+        data_to_sign.extend_from_slice(&self.header.magic.to_le_bytes());
+        data_to_sign.extend_from_slice(&self.header.version.to_le_bytes());
+        data_to_sign.extend_from_slice(&[self.header.entry_type]);
+        data_to_sign.extend_from_slice(&[self.header.flags]);
+        data_to_sign.extend_from_slice(&self.header.sequence.to_le_bytes());
+        data_to_sign.extend_from_slice(&self.header.timestamp.to_le_bytes());
+        data_to_sign.extend_from_slice(&self.header.payload_size.to_le_bytes());
+        data_to_sign.extend_from_slice(&self.header.checksum.to_le_bytes());
+        data_to_sign.extend_from_slice(&self.payload);
+
+        let signature = signing_key.sign(&data_to_sign);
+        self.header.signature = signature.to_bytes();
+
+        Ok(())
+    }
+
+    /// Validate message checksum and signature
+    pub fn validate(&self, public_key: Option<&[u8; 32]>) -> bool {
+        // 1. Validate Checksum
         let checksum = self.header.checksum;
         let header_for_check = IPCMessageHeader {
             magic: self.header.magic,
@@ -153,8 +180,38 @@ impl IPCMessage {
             timestamp: self.header.timestamp,
             payload_size: self.header.payload_size,
             checksum: 0,
+            signature: self.header.signature,
         };
-        Self::calculate_checksum(&header_for_check, &self.payload) == checksum
+
+        if Self::calculate_checksum(&header_for_check, &self.payload) != checksum {
+            return false;
+        }
+
+        // 2. Validate Signature if public key provided
+        if let Some(pk_bytes) = public_key {
+            use ed25519_dalek::{Verifier, VerifyingKey, Signature};
+
+            let verifying_key = match VerifyingKey::from_bytes(pk_bytes) {
+                Ok(k) => k,
+                Err(_) => return false,
+            };
+
+            let mut data_to_verify = Vec::new();
+            data_to_verify.extend_from_slice(&self.header.magic.to_le_bytes());
+            data_to_verify.extend_from_slice(&self.header.version.to_le_bytes());
+            data_to_verify.extend_from_slice(&[self.header.entry_type]);
+            data_to_verify.extend_from_slice(&[self.header.flags]);
+            data_to_verify.extend_from_slice(&self.header.sequence.to_le_bytes());
+            data_to_verify.extend_from_slice(&self.header.timestamp.to_le_bytes());
+            data_to_verify.extend_from_slice(&self.header.payload_size.to_le_bytes());
+            data_to_verify.extend_from_slice(&self.header.checksum.to_le_bytes());
+            data_to_verify.extend_from_slice(&self.payload);
+
+            let signature = Signature::from_bytes(&self.header.signature);
+            return verifying_key.verify(&data_to_verify, &signature).is_ok();
+        }
+
+        true
     }
 }
 
@@ -417,6 +474,7 @@ impl FFI_IPC_Message {
             timestamp: self.timestamp,
             payload_size: self.payload_size,
             checksum: 0,
+            signature: [0u8; 64],
         };
         
         IPCMessage { header, payload }
@@ -524,10 +582,32 @@ mod tests {
         let payload = vec![1u8, 2, 3, 4, 5];
         let msg = IPCMessage::new(IPCEntryType::ThoughtCycle, payload.clone());
         
-        assert_eq!(msg.header.magic, IPC_MAGIC);
-        assert_eq!(msg.header.version, IPC_VERSION);
-        assert_eq!(msg.header.entry_type, IPCEntryType::ThoughtCycle as u8);
+        let magic = msg.header.magic;
+        let version = msg.header.version;
+        let entry_type = msg.header.entry_type;
+
+        assert_eq!(magic, IPC_MAGIC);
+        assert_eq!(version, IPC_VERSION);
+        assert_eq!(entry_type, IPCEntryType::ThoughtCycle as u8);
         assert_eq!(msg.payload, payload);
-        assert!(msg.validate());
+        assert!(msg.validate(None));
+    }
+
+    #[test]
+    fn test_ipc_message_signing() {
+        let payload = vec![1, 2, 3, 4, 5];
+        let mut msg = IPCMessage::new(IPCEntryType::ThoughtCycle, payload);
+
+        let seed = [0u8; 32];
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let public_key = signing_key.verifying_key().to_bytes();
+
+        msg.sign(&seed).unwrap();
+
+        assert!(msg.validate(Some(&public_key)));
+
+        // Tamper with payload
+        msg.payload[0] ^= 1;
+        assert!(!msg.validate(Some(&public_key)));
     }
 }

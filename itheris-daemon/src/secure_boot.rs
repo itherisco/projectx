@@ -160,7 +160,7 @@ impl SecureBootManager {
         let hash = hex::encode(hasher.finalize());
         
         // Extend TPM PCR 0
-        self.tpm.extend_pcr(0, &measurement_data);
+        let _ = self.tpm.extend_pcr(0, &measurement_data);
         
         let result = BootStageResult {
             stage: 1,
@@ -199,7 +199,7 @@ impl SecureBootManager {
         let hash = hex::encode(hasher.finalize());
         
         // Extend TPM PCR 1
-        self.tpm.extend_pcr(1, &kernel_content);
+        let _ = self.tpm.extend_pcr(1, &kernel_content);
         
         // Verify expected functions exist
         let kernel_str = String::from_utf8_lossy(&kernel_content);
@@ -259,7 +259,7 @@ impl SecureBootManager {
         let hash = hex::encode(hasher.finalize());
         
         // Extend TPM PCR 2
-        self.tpm.extend_pcr(2, &measurement_data);
+        let _ = self.tpm.extend_pcr(2, &measurement_data);
         
         let result = BootStageResult {
             stage: 3,
@@ -297,7 +297,7 @@ impl SecureBootManager {
                         let hash = hex::encode(hasher.finalize());
                         
                         // Extend TPM PCR 7 (secure boot PCR)
-                        self.tpm.extend_pcr(7, content.as_bytes());
+                        let _ = self.tpm.extend_pcr(7, content.as_bytes());
                         
                         (true, format!("Registry valid: {}", &hash[..16]))
                     } else {
@@ -308,7 +308,7 @@ impl SecureBootManager {
             }
         } else {
             // Create default capability registry if not exists
-            let default_registry = serde_json::json!({
+            let _default_registry = serde_json::json!({
                 "version": "1.0.0",
                 "capabilities": [
                     "observe_cpu",

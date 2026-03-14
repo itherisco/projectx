@@ -21,6 +21,7 @@ use watchdog::{get_watchdog_status, is_watchdog_available, kick_watchdog, Watchd
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
+use serde::{Serialize, Deserialize};
 
 /// Hardware initialization errors
 #[derive(Error, Debug)]
@@ -36,7 +37,7 @@ pub enum HardwareError {
 }
 
 /// Unified hardware status
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HardwareStatus {
     /// Watchdog status
     pub watchdog: WatchdogStatus,
@@ -106,20 +107,20 @@ pub fn init_hardware() -> Result<HardwareConfig, HardwareError> {
     }
     
     // Initialize heartbeat
-    match heartbeat::init_heartbeat() {
+    let hw_config = match heartbeat::init_heartbeat() {
         Ok(config) => {
             log::info!("   ✓ Heartbeat initialized");
-            Ok(HardwareConfig {
+            HardwareConfig {
                 heartbeat_pin: config.pin,
                 heartbeat_frequency_hz: config.frequency_hz,
                 heartbeat_duty_cycle: config.duty_cycle,
                 ..Default::default()
-            })
+            }
         },
         Err(e) => {
             log::warn!("   ⚠️ Heartbeat initialization warning: {}", e);
             // Continue in software simulation mode
-            Ok(HardwareConfig::default())
+            HardwareConfig::default()
         }
     };
     
@@ -149,6 +150,7 @@ pub fn init_hardware() -> Result<HardwareConfig, HardwareError> {
     }
     
     log::info!("✅ Hardware subsystem initialization complete");
+    Ok(hw_config)
 }
 
 /// Kick the watchdog timer

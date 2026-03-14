@@ -57,7 +57,8 @@ pub unsafe fn execute_kill_chain() {
     // ========================================
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!("cli" : : : "memory" : "volatile");
+        use std::arch::asm;
+        asm!("cli", options(nomem, nostack));
     }
     
     // ========================================
@@ -66,12 +67,13 @@ pub unsafe fn execute_kill_chain() {
     // ========================================
     #[cfg(target_arch = "x86_64")]
     unsafe {
+        use std::arch::asm;
         // Read current CR3, then write it back to flush TLB
-        // Using 0 directly is also valid but preserving original CR3 is cleaner
         asm!(
-            "mov %cr3, %rax",
-            "mov %rax, %cr3",
-            : : : "rax", "memory" : "volatile"
+            "mov rax, cr3",
+            "mov cr3, rax",
+            out("rax") _,
+            options(nomem, nostack)
         );
     }
     
@@ -99,6 +101,7 @@ pub unsafe fn execute_kill_chain() {
     // ========================================
     #[cfg(target_arch = "x86_64")]
     unsafe {
+        use std::arch::asm;
         // Log final message before halting
         let _ = std::io::Write::write_all(
             &mut std::io::stderr(),
@@ -107,7 +110,7 @@ pub unsafe fn execute_kill_chain() {
         
         // Permanent halt - this never returns
         loop {
-            asm!("hlt" : : : "memory" : "volatile");
+            asm!("hlt", options(nomem, nostack));
         }
     }
     

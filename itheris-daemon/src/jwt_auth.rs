@@ -317,27 +317,13 @@ impl JWTAuth {
         // Check rate limit
         self.check_rate_limit("global")?;
 
-        // Check if revoked
-        if let Ok(cache) = self.token_cache.read() {
-            if let Some(claims) = decode::<Claims>(
-                token,
-                &DecodingKey::from_secret(self.config.jwt_secret.as_bytes()),
-                &Validation::new(self.config.algorithm),
-            )
-            .ok()
-            .map(|t| t.claims)
-            {
-                if cache.revoked_tokens.contains_key(&claims.jti) {
-                    return Err(AuthError::InvalidToken("Token revoked".to_string()));
-                }
-            }
-        }
-
         // Decode and validate
+        let mut validation = Validation::new(self.config.algorithm);
+        validation.set_audience(&["itheris-api"]);
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(self.config.jwt_secret.as_bytes()),
-            &Validation::new(self.config.algorithm),
+            &validation,
         )
         .map_err(|e| {
             // Track failed attempt
@@ -346,6 +332,13 @@ impl JWTAuth {
         })?;
 
         let claims = token_data.claims;
+
+        // Check if revoked
+        if let Ok(cache) = self.token_cache.read() {
+            if cache.revoked_tokens.contains_key(&claims.jti) {
+                return Err(AuthError::InvalidToken("Token revoked".to_string()));
+            }
+        }
 
         // Verify not expired
         let now = Utc::now().timestamp();
@@ -419,8 +412,9 @@ impl JWTAuth {
         let claims = self.validate_token(token)?;
         
         if let Ok(mut cache) = self.token_cache.write() {
-            cache.revoked_tokens.insert(claims.jti, claims.exp);
-            cache.valid_tokens.remove(&claims.jti);
+            let jti = claims.jti.clone();
+            cache.revoked_tokens.insert(jti.clone(), claims.exp);
+            cache.valid_tokens.remove(&jti);
         }
         
         Ok(())
@@ -585,7 +579,8 @@ mod tests {
         
         auth.revoke_token(&token).unwrap();
         
+        // Wait for cache consistency
         let result = auth.validate_token(&token);
-        assert!(result.is_err());
+        assert!(result.is_err(), "Token should be revoked");
     }
 }
