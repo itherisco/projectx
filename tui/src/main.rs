@@ -112,8 +112,8 @@ impl App {
 }
 
 /// Render the metabolic panel
-fn render_metabolic_panel<B: ratatui::backend::Backend>(
-    frame: &mut Frame<B>,
+fn render_metabolic_panel(
+    frame: &mut Frame,
     area: Rect,
     data: &TelemetryData,
     selected: bool,
@@ -197,8 +197,8 @@ fn render_metabolic_panel<B: ratatui::backend::Backend>(
 }
 
 /// Render the decision spine panel
-fn render_decision_spine_panel<B: ratatui::backend::Backend>(
-    frame: &mut Frame<B>,
+fn render_decision_spine_panel(
+    frame: &mut Frame,
     area: Rect,
     data: &TelemetryData,
     selected: bool,
@@ -255,8 +255,8 @@ fn render_decision_spine_panel<B: ratatui::backend::Backend>(
 }
 
 /// Render the warden status panel
-fn render_warden_panel<B: ratatui::backend::Backend>(
-    frame: &mut Frame<B>,
+fn render_warden_panel(
+    frame: &mut Frame,
     area: Rect,
     data: &TelemetryData,
     selected: bool,
@@ -313,7 +313,7 @@ fn format_duration(secs: u64) -> String {
 }
 
 /// Main render function
-fn render<B: ratatui::backend::Backend>(frame: &mut Frame<B>, app: &App) {
+fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -321,7 +321,7 @@ fn render<B: ratatui::backend::Backend>(frame: &mut Frame<B>, app: &App) {
             Constraint::Min(10),  // Main content
             Constraint::Length(3), // Footer
         ])
-        .split(frame.area());
+        .split(frame.size());
 
     // Header
     let header = Paragraph::new(vec![

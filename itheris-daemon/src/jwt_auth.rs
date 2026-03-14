@@ -319,10 +319,13 @@ impl JWTAuth {
 
         // Check if revoked
         if let Ok(cache) = self.token_cache.read() {
+            let mut validation = Validation::new(self.config.algorithm);
+            validation.set_audience(&["itheris-api"]);
+
             if let Some(claims) = decode::<Claims>(
                 token,
                 &DecodingKey::from_secret(self.config.jwt_secret.as_bytes()),
-                &Validation::new(self.config.algorithm),
+                &validation,
             )
             .ok()
             .map(|t| t.claims)
@@ -334,10 +337,13 @@ impl JWTAuth {
         }
 
         // Decode and validate
+        let mut validation = Validation::new(self.config.algorithm);
+        validation.set_audience(&["itheris-api"]);
+
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(self.config.jwt_secret.as_bytes()),
-            &Validation::new(self.config.algorithm),
+            &validation,
         )
         .map_err(|e| {
             // Track failed attempt
@@ -419,7 +425,7 @@ impl JWTAuth {
         let claims = self.validate_token(token)?;
         
         if let Ok(mut cache) = self.token_cache.write() {
-            cache.revoked_tokens.insert(claims.jti, claims.exp);
+            cache.revoked_tokens.insert(claims.jti.clone(), claims.exp);
             cache.valid_tokens.remove(&claims.jti);
         }
         

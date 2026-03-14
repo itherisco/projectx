@@ -217,7 +217,7 @@ impl FlowIntegrityGate {
     fn compute_hmac(&self, token_data: &FlowTokenData) -> Result<String, FlowIntegrityError> {
         let key = self.secret_key.ok_or(FlowIntegrityError::SecretNotSet)?;
 
-        let mut mac = HmacSha256::new_from_slice(&key)
+        let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(&key)
             .map_err(|e| FlowIntegrityError::IssuanceFailed(e.to_string()))?;
 
         // Update with all token fields
@@ -286,18 +286,20 @@ impl FlowIntegrityGate {
         let token_id = Self::generate_token_id();
         let params_hash = Self::hash_params(params);
 
-        let token_data = FlowTokenData {
+        let mut token_data = FlowTokenData {
             token_id: token_id.clone(),
             capability_id: capability_id.to_string(),
             params_hash: params_hash.clone(),
             cycle_number: self.cycle,
             created_at: now,
             expires_at: now + self.config.token_ttl,
+            hmac_hex: String::new(),
             risk_level,
         };
 
         // Compute HMAC
         let hmac_hex = self.compute_hmac(&token_data)?;
+        token_data.hmac_hex = hmac_hex.clone();
 
         let token = FlowToken {
             token_id,
@@ -407,14 +409,16 @@ impl FlowIntegrityGate {
         }
 
         // Also cleanup old used tokens (keep for 1 hour for audit)
-        let cutoff = now - 3600;
-        self.used_tokens.retain(|id| {
-            // We can't check the timestamp of used tokens without storing it
-            // So we just limit the size
-            self.used_tokens.len() < 1000
-        });
+        let _cutoff = now - 3600;
+        if self.used_tokens.len() > 1000 {
+            // Very simplified cleanup since we can't borrow self in retain
+            let to_remove: Vec<String> = self.used_tokens.iter().take(self.used_tokens.len() - 1000).cloned().collect();
+            for id in to_remove {
+                self.used_tokens.remove(&id);
+            }
+        }
 
-        self.stats.tokens_expired += expired.len();
+        self.stats.tokens_expired += expired.len() as u64;
         
         expired.len()
     }

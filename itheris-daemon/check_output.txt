@@ -1,0 +1,1041 @@
+   Compiling itheris-daemon v1.0.0 (/app/itheris-daemon)
+warning: itheris-daemon@1.0.0: protoc not found, skipping gRPC code generation. Pre-generated code in src/ will be used if available.
+warning: unused import: `PasswordVerifier`
+  --> src/secrets.rs:24:29
+   |
+24 |     Argon2, PasswordHasher, PasswordVerifier,
+   |                             ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Sha512`
+  --> src/secrets.rs:30:28
+   |
+30 | use sha2::{Digest, Sha256, Sha512};
+   |                            ^^^^^^
+
+warning: unused import: `engine::general_purpose::STANDARD as BASE64`
+  --> src/jwt_auth.rs:18:14
+   |
+18 | use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Sha384`
+  --> src/jwt_auth.rs:26:28
+   |
+26 | use sha2::{Digest, Sha256, Sha384};
+   |                            ^^^^^^
+
+warning: unused import: `Aead`
+  --> src/flow_integrity.rs:18:21
+   |
+18 | use aes_gcm::aead::{Aead, KeyInit, OsRng};
+   |                     ^^^^
+
+warning: unused import: `Duration`
+  --> src/flow_integrity.rs:20:14
+   |
+20 | use chrono::{Duration, Utc};
+   |              ^^^^^^^^
+
+warning: unused imports: `Duration as StdDuration` and `Instant`
+  --> src/flow_integrity.rs:27:17
+   |
+27 | use std::time::{Duration as StdDuration, Instant};
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^
+
+warning: unused import: `Duration`
+  --> src/secure_confirmation.rs:18:14
+   |
+18 | use chrono::{Duration, Utc};
+   |              ^^^^^^^^
+
+warning: unused import: `Duration as StdDuration`
+  --> src/secure_confirmation.rs:25:17
+   |
+25 | use std::time::{Duration as StdDuration, Instant};
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AuthConfig` and `Claims`
+  --> src/task_orchestrator.rs:16:23
+   |
+16 | use crate::jwt_auth::{Claims, Role, JWTAuth, AuthConfig};
+   |                       ^^^^^^                 ^^^^^^^^^^
+
+warning: unused import: `Duration`
+  --> src/task_orchestrator.rs:17:14
+   |
+17 | use chrono::{Duration, Utc};
+   |              ^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+  --> src/task_orchestrator.rs:23:5
+   |
+23 | use uuid::Uuid;
+   |     ^^^^^^^^^^
+
+warning: unused imports: `FFI_IPC_Message`, `IPC_MAGIC`, `IPC_VERSION`, `RING_BUFFER_ENTRIES`, `SHM_PATH`, `SHM_SIZE`, and `SharedMemoryIPCRef`
+  --> src/ffi.rs:13:5
+   |
+13 |     FFI_IPC_Message, IPCEntryType, IPCMessage, IPC_MAGIC, IPC_VERSION,
+   |     ^^^^^^^^^^^^^^^                            ^^^^^^^^^  ^^^^^^^^^^^
+14 |     MAX_PAYLOAD_SIZE, SHM_PATH, SHM_SIZE, RING_BUFFER_ENTRIES,
+   |                       ^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+15 |     SharedMemoryIPCRef, create_shared_memory_ipc,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `OsRng`
+  --> src/ffi.rs:23:17
+   |
+23 | use rand_core::{OsRng, RngCore};
+   |                 ^^^^^
+
+warning: unused import: `crate::task_orchestrator`
+   --> src/ffi.rs:771:5
+    |
+771 | use crate::task_orchestrator;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `OsRng`
+   --> src/ffi.rs:947:31
+    |
+947 |         aead::{Aead, KeyInit, OsRng},
+    |                               ^^^^^
+
+warning: unused import: `std::collections::VecDeque`
+  --> src/shared_memory.rs:14:5
+   |
+14 | use std::collections::VecDeque;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::shared_memory::create_shared_memory_ipc`
+  --> src/lib.rs:50:5
+   |
+50 | use crate::shared_memory::create_shared_memory_ipc;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Digest`
+  --> src/secrets.rs:30:12
+   |
+30 | use sha2::{Digest, Sha256, Sha512};
+   |            ^^^^^^
+
+warning: unused import: `Mac`
+  --> src/jwt_auth.rs:20:18
+   |
+20 | use hmac::{Hmac, Mac};
+   |                  ^^^
+
+warning: unused import: `Digest`
+  --> src/jwt_auth.rs:26:12
+   |
+26 | use sha2::{Digest, Sha256, Sha384};
+   |            ^^^^^^
+
+warning: unused import: `Engine`
+  --> src/jwt_auth.rs:18:59
+   |
+18 | use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+   |                                                           ^^^^^^
+
+warning: unused import: `KeyInit`
+  --> src/flow_integrity.rs:18:27
+   |
+18 | use aes_gcm::aead::{Aead, KeyInit, OsRng};
+   |                           ^^^^^^^
+
+warning: unused variable: `e`
+   --> src/secrets.rs:457:38
+    |
+457 | ...S_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.unlock(pas...
+    |                               ^ help: if this is intentional, prefix it with an underscore: `_e`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `e`
+   --> src/secrets.rs:469:38
+    |
+469 | ...S_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.store(key,...
+    |                               ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `e`
+   --> src/secrets.rs:474:38
+    |
+474 | ...S_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.get(key)
+    |                               ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `key`
+   --> src/flow_integrity.rs:272:13
+    |
+272 |         let key = self.secret_key.ok_or(FlowIntegrityError::SecretNotSe...
+    |             ^^^ help: if this is intentional, prefix it with an underscore: `_key`
+
+warning: value assigned to `reason` is never read
+   --> src/risk_classifier.rs:259:26
+    |
+259 |         let mut reason = String::new();
+    |                          ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `secret`
+   --> src/secure_confirmation.rs:303:13
+    |
+303 |         let secret = self.secret.ok_or(ConfirmationError::GateLocked(
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_secret`
+
+warning: unused variable: `timeout`
+   --> src/safe_shell.rs:277:13
+    |
+277 |         let timeout = Duration::from_secs(self.config.timeout_secs);
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_timeout`
+
+warning: unused variable: `msg_type`
+   --> src/ffi.rs:347:5
+    |
+347 |     msg_type: u8,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_msg_type`
+
+warning: unused variable: `max_payload_size`
+   --> src/ffi.rs:383:5
+    |
+383 |     max_payload_size: usize,
+    |     ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_payload_size`
+
+warning: unused variable: `message`
+   --> src/shared_memory.rs:470:9
+    |
+470 |     let message = IPCMessage::new(entry_type, payload_vec);
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_message`
+
+warning: unused variable: `msg_type`
+   --> src/shared_memory.rs:480:5
+    |
+480 |     msg_type: *mut u8,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_msg_type`
+
+warning: unused variable: `payload`
+   --> src/shared_memory.rs:481:5
+    |
+481 |     payload: *mut u8,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_payload`
+
+warning: unused variable: `max_payload_size`
+   --> src/shared_memory.rs:482:5
+    |
+482 |     max_payload_size: usize,
+    |     ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_max_payload_size`
+
+warning: unused variable: `actual_size`
+   --> src/shared_memory.rs:483:5
+    |
+483 |     actual_size: *mut usize,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_actual_size`
+
+warning: type alias `HmacSha256` is never used
+  --> src/jwt_auth.rs:33:6
+   |
+33 | type HmacSha256 = Hmac<Sha256>;
+   |      ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `generate_secret_helper` is never used
+   --> src/jwt_auth.rs:228:8
+    |
+206 | impl JWTAuth {
+    | ------------ associated function in this implementation
+...
+228 |     fn generate_secret_helper(length: usize) -> String {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `itheris-daemon` (lib) generated 39 warnings (run `cargo fix --lib -p itheris-daemon` to apply 31 suggestions)
+warning: unused import: `std::path::PathBuf`
+  --> src/julia_runtime.rs:16:5
+   |
+16 | use std::path::PathBuf;
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::process::Command`
+  --> src/isolation.rs:27:5
+   |
+27 | use std::process::Command;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::Path`
+ --> src/hardware/watchdog.rs:8:5
+  |
+8 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `Instant`
+  --> src/hardware/heartbeat.rs:12:27
+   |
+12 | use std::time::{Duration, Instant};
+   |                           ^^^^^^^
+
+warning: unused import: `HeartbeatConfig`
+  --> src/hardware/mod.rs:19:17
+   |
+19 | use heartbeat::{HeartbeatConfig, HeartbeatState};
+   |                 ^^^^^^^^^^^^^^^
+
+warning: unused imports: `ActionType` and `RiskLevel`
+  --> src/main.rs:18:14
+   |
+18 | ...::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
+   |       ^^^^^^^^^^                                                                  ^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> src/main.rs:22:5
+   |
+22 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+  --> src/main.rs:29:5
+   |
+29 | use uuid::Uuid;
+   |     ^^^^^^^^^^
+
+warning: use of deprecated type alias `std::panic::PanicInfo`: use `PanicHookInfo` instead
+   --> src/hardware/panic_handler.rs:196:42
+    |
+196 | fn panic_handler_impl(info: &std::panic::PanicInfo) {
+    |                                          ^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated type alias `std::panic::PanicInfo`: use `PanicHookInfo` instead
+  --> src/hardware/panic_handler.rs:51:42
+   |
+51 |     pub fn from_panic(info: &std::panic::PanicInfo) -> Self {
+   |                                          ^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src/main.rs:199:13
+    |
+199 |         let mut child = Command::new(&self.config.julia_path)
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `default_registry`
+   --> src/secure_boot.rs:311:17
+    |
+311 |             let default_registry = serde_json::json!({
+    |                 ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_default_registry`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `config`
+   --> src/isolation.rs:560:9
+    |
+560 |     let config = IsolationConfig {
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `watchdog`
+  --> src/hardware/watchdog.rs:69:13
+   |
+69 |         let watchdog = Watchdog {
+   |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_watchdog`
+
+warning: unused variable: `signum`
+   --> src/hardware/panic_handler.rs:275:50
+    |
+275 | unsafe fn signal_handler<const SIG: libc::c_int>(signum: libc::c_int) {
+    |                                                  ^^^^^^ help: if this is intentional, prefix it with an underscore: `_signum`
+
+warning: unused variable: `daemon_for_grpc`
+   --> src/main.rs:443:9
+    |
+443 |     let daemon_for_grpc = daemon.clone();
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_daemon_for_grpc`
+
+warning: method `spawn_julia_brain` is never used
+   --> src/main.rs:188:14
+    |
+ 98 | impl ItherisDaemon {
+    | ------------------ method in this implementation
+...
+188 |     async fn spawn_julia_brain(&self) -> Result<(), String> {
+    |              ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variants `WardenFailed`, `ActionDenied`, `CapabilityNotFound`, and `SubsystemError` are never constructed
+  --> src/kernel.rs:19:5
+   |
+17 | pub enum KernelError {
+   |          ----------- variants in this enum
+18 |     #[error("Warden validation failed: {0}")]
+19 |     WardenFailed(String),
+   |     ^^^^^^^^^^^^
+...
+22 |     ActionDenied(String),
+   |     ^^^^^^^^^^^^
+...
+25 |     CapabilityNotFound(String),
+   |     ^^^^^^^^^^^^^^^^^^
+...
+28 |     SubsystemError(String),
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `KernelError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `grant_capability` and `revoke_capability` are never used
+   --> src/kernel.rs:186:18
+    |
+119 | impl ItherisDaemonKernel {
+    | ------------------------ methods in this implementation
+...
+186 |     pub async fn grant_capability(&self, identity: &str, actions: Vec<A...
+    |                  ^^^^^^^^^^^^^^^^
+...
+199 |     pub async fn revoke_capability(&self, identity: &str) {
+    |                  ^^^^^^^^^^^^^^^^^
+
+warning: variant `TpmError` is never constructed
+  --> src/secure_boot.rs:24:5
+   |
+19 | pub enum SecureBootError {
+   |          --------------- variant in this enum
+...
+24 |     TpmError(String),
+   |     ^^^^^^^^
+   |
+   = note: `SecureBootError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `get_tpm_state` and `verify_integrity` are never used
+   --> src/secure_boot.rs:347:12
+    |
+103 | impl SecureBootManager {
+    | ---------------------- methods in this implementation
+...
+347 |     pub fn get_tpm_state(&self) -> &SimulatedTpm {
+    |            ^^^^^^^^^^^^^
+...
+352 |     pub async fn verify_integrity(&self) -> Result<bool, SecureBootErro...
+    |                  ^^^^^^^^^^^^^^^^
+
+warning: variants `CallError`, `MemoryLimitExceeded`, `JuliaNotAvailable`, `InitError`, and `ScopeError` are never constructed
+  --> src/julia_runtime.rs:32:5
+   |
+26 | pub enum JuliaError {
+   |          ---------- variants in this enum
+...
+32 |     CallError(String),
+   |     ^^^^^^^^^
+33 |     #[error("Memory limit exceeded")]
+34 |     MemoryLimitExceeded,
+   |     ^^^^^^^^^^^^^^^^^^^
+35 |     #[error("Julia is not available")]
+36 |     JuliaNotAvailable,
+   |     ^^^^^^^^^^^^^^^^^
+37 |     #[error("Failed to initialize Julia: {0}")]
+38 |     InitError(String),
+   |     ^^^^^^^^^
+39 |     #[error("Scope error: {0}")]
+40 |     ScopeError(String),
+   |     ^^^^^^^^^^
+   |
+   = note: `JuliaError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: multiple fields are never read
+  --> src/julia_runtime.rs:73:9
+   |
+71 | pub struct JuliaConfig {
+   |            ----------- fields in this struct
+72 |     /// Number of threads to use
+73 |     pub num_threads: Option<usize>,
+   |         ^^^^^^^^^^^
+74 |     /// Memory limit in MB (0 = no ...
+75 |     pub memory_limit_mb: usize,
+   |         ^^^^^^^^^^^^^^^
+76 |     /// Enable debug mode
+77 |     pub debug: bool,
+   |         ^^^^^
+78 |     /// Julia project path
+79 |     pub project_path: Option<String>,
+   |         ^^^^^^^^^^^^
+80 |     /// Sysimage path (for faster startup)
+81 |     pub sysimage_path: Option<String>,
+   |         ^^^^^^^^^^^^^
+82 |     /// Julia library path (JULIA_DIR)
+83 |     pub julia_dir: Option<String>,
+   |         ^^^^^^^^^
+84 |     /// Enable async runtime for parallel cognitive circuits
+85 |     pub async_runtime: bool,
+   |         ^^^^^^^^^^^^^
+   |
+   = note: `JuliaConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `state` and `is_running` are never read
+   --> src/julia_runtime.rs:112:5
+    |
+110 | struct JuliaRuntimeInner {
+    |        ----------------- fields in this struct
+111 |     // Stub implementation
+112 |     state: JuliaState,
+    |     ^^^^^
+113 |     is_running: AtomicBool,
+    |     ^^^^^^^^^^
+
+warning: fields `inner` and `config` are never read
+   --> src/julia_runtime.rs:121:5
+    |
+117 | pub struct JuliaRuntime {
+    |            ------------ fields in this struct
+...
+121 |     inner: Option<Arc<JuliaRuntimeInner>>,
+    |     ^^^^^
+122 |     config: JuliaConfig,
+    |     ^^^^^^
+
+warning: methods `eval`, `call_function`, `gc_collect`, and `check_memory_limit` are never used
+   --> src/julia_runtime.rs:368:12
+    |
+335 | impl JuliaRuntime {
+    | ----------------- methods in this implementation
+...
+368 |     pub fn eval(&self, _code: &str) -> JuliaResult<String> {
+    |            ^^^^
+...
+374 |     pub fn call_function(&self, module: &str, function: &str, _args: &[...
+    |            ^^^^^^^^^^^^^
+...
+385 |     pub fn gc_collect(&self) -> JuliaResult<()> {
+    |            ^^^^^^^^^^
+...
+390 |     pub fn check_memory_limit(&self) -> JuliaResult<()> {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: function `call_julia_function` is never used
+   --> src/julia_runtime.rs:440:8
+    |
+440 | pub fn call_julia_function(module: &str, function: &str, args: &[String...
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `eval_julia` is never used
+   --> src/julia_runtime.rs:449:8
+    |
+449 | pub fn eval_julia(code: &str) -> JuliaResult<String> {
+    |        ^^^^^^^^^^
+
+warning: function `start_cognitive_loop` is never used
+   --> src/julia_runtime.rs:458:8
+    |
+458 | pub fn start_cognitive_loop() -> JuliaResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `stop_cognitive_loop` is never used
+   --> src/julia_runtime.rs:464:8
+    |
+464 | pub fn stop_cognitive_loop() -> JuliaResult<()> {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `BrainOutput` is never constructed
+  --> src/types.rs:17:12
+   |
+17 | pub struct BrainOutput {
+   |            ^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src/types.rs:40:12
+   |
+38 | impl BrainOutput {
+   | ---------------- associated function in this implementation
+39 |     /// Create a new BrainOutput from raw values
+40 |     pub fn new(
+   |            ^^^
+
+warning: struct `CapabilityRequest` is never constructed
+  --> src/types.rs:66:12
+   |
+66 | pub struct CapabilityRequest {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src/types.rs:83:12
+   |
+81 | impl CapabilityRequest {
+   | ---------------------- associated function in this implementation
+82 |     /// Create a new capability request
+83 |     pub fn new(capability_id: String, parameters: String) -> Self {
+   |            ^^^
+
+warning: struct `EnvironmentObservation` is never constructed
+  --> src/types.rs:99:12
+   |
+99 | pub struct EnvironmentObservation {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `KernelDecision` is never constructed
+   --> src/types.rs:137:12
+    |
+137 | pub struct KernelDecision {
+    |            ^^^^^^^^^^^^^^
+
+warning: associated functions `approved` and `rejected` are never used
+   --> src/types.rs:152:12
+    |
+150 | impl KernelDecision {
+    | ------------------- associated functions in this implementation
+151 |     /// Create an approval decision
+152 |     pub fn approved(conditions: String) -> Self {
+    |            ^^^^^^^^
+...
+163 |     pub fn rejected(reason: String) -> Self {
+    |            ^^^^^^^^
+
+warning: struct `IpcMessage` is never constructed
+   --> src/types.rs:176:12
+    |
+176 | pub struct IpcMessage {
+    |            ^^^^^^^^^^
+
+warning: enum `IpcMessageType` is never used
+   --> src/types.rs:190:10
+    |
+190 | pub enum IpcMessageType {
+    |          ^^^^^^^^^^^^^^
+
+warning: associated items `new`, `from_brain_output`, `to_brain_output`, `from_capability_request`, and `to_capability_request` are never used
+   --> src/types.rs:202:12
+    |
+200 | impl IpcMessage {
+    | --------------- associated items in this implementation
+201 |     /// Create a new IPC message
+202 |     pub fn new(msg_type: IpcMessageType, payload: Vec<u8>) -> Self {
+    |            ^^^
+...
+212 |     pub fn from_brain_output(output: &BrainOutput) -> Self {
+    |            ^^^^^^^^^^^^^^^^^
+...
+218 |     pub fn to_brain_output(&self) -> Option<BrainOutput> {
+    |            ^^^^^^^^^^^^^^^
+...
+226 |     pub fn from_capability_request(request: &CapabilityRequest) -> Self {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+232 |     pub fn to_capability_request(&self) -> Option<CapabilityRequest> {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: static `SEQUENCE_COUNTER` is never used
+   --> src/types.rs:240:8
+    |
+240 | static SEQUENCE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atom...
+    |        ^^^^^^^^^^^^^^^^
+
+warning: variants `SeccompError`, `CgroupError`, `PermissionDenied`, and `NotInitialized` are never constructed
+  --> src/isolation.rs:37:5
+   |
+35 | pub enum IsolationError {
+   |          -------------- variants in this enum
+36 |     #[error("Seccomp error: {0}")]
+37 |     SeccompError(String),
+   |     ^^^^^^^^^^^^
+...
+40 |     CgroupError(String),
+   |     ^^^^^^^^^^^
+...
+46 |     PermissionDenied(String),
+   |     ^^^^^^^^^^^^^^^^
+...
+49 |     NotInitialized,
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `IsolationError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `generate_bpf_rules` and `write_to_file` are never used
+   --> src/isolation.rs:104:12
+    |
+102 | impl SeccompProfile {
+    | ------------------- methods in this implementation
+103 |     /// Generate BPF filter rules (simplified)
+104 |     pub fn generate_bpf_rules(&self) -> Vec<String> {
+    |            ^^^^^^^^^^^^^^^^^^
+...
+138 |     pub fn write_to_file(&self, path: &PathBuf) -> IsolationResult<()> {
+    |            ^^^^^^^^^^^^^
+
+warning: methods `settings`, `create`, and `add_process` are never used
+   --> src/isolation.rs:182:12
+    |
+175 | impl CgroupConfig {
+    | ----------------- methods in this implementation
+...
+182 |     pub fn settings(&self) -> HashMap<String, String> {
+    |            ^^^^^^^^
+...
+211 |     pub fn create(&self) -> IsolationResult<PathBuf> {
+    |            ^^^^^^
+...
+235 |     pub fn add_process(&self, pid: u32) -> IsolationResult<()> {
+    |            ^^^^^^^^^^^
+
+warning: methods `contains` and `contains_range` are never used
+   --> src/isolation.rs:331:12
+    |
+324 | impl MemoryBounds {
+    | ----------------- methods in this implementation
+...
+331 |     pub fn contains(&self, address: u64) -> bool {
+    |            ^^^^^^^^
+...
+336 |     pub fn contains_range(&self, address: u64, size: u64) -> bool {
+    |            ^^^^^^^^^^^^^^
+
+warning: method `asan_options` is never used
+   --> src/isolation.rs:387:12
+    |
+363 | impl MemoryGuardConfig {
+    | ---------------------- method in this implementation
+...
+387 |     pub fn asan_options(&self) -> String {
+    |            ^^^^^^^^^^^^
+
+warning: struct `IsolationManager` is never constructed
+   --> src/isolation.rs:427:12
+    |
+427 | pub struct IsolationManager {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/isolation.rs:435:12
+    |
+433 | impl IsolationManager {
+    | --------------------- associated items in this implementation
+434 |     /// Create new isolation manager
+435 |     pub fn new(config: IsolationConfig) -> Self {
+    |            ^^^
+...
+444 |     pub fn initialize(&mut self) -> IsolationResult<()> {
+    |            ^^^^^^^^^^
+...
+463 |     pub fn apply_to_process(&self, pid: u32) -> IsolationResult<()> {
+    |            ^^^^^^^^^^^^^^^^
+...
+483 |     pub fn validate_memory_access(&self, address: u64, size: u64) -> Is...
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+488 |     pub fn get_cgroup_usage(&self) -> IsolationResult<CgroupUsage> {
+    |            ^^^^^^^^^^^^^^^^
+...
+493 |     pub fn is_within_budget(&self) -> IsolationResult<bool> {
+    |            ^^^^^^^^^^^^^^^^
+...
+499 |     pub fn audit(&self) -> IsolationResult<IsolationAudit> {
+    |            ^^^^^
+
+warning: struct `IsolationAudit` is never constructed
+   --> src/isolation.rs:547:12
+    |
+547 | pub struct IsolationAudit {
+    |            ^^^^^^^^^^^^^^
+
+warning: variants `WatchdogError`, `HeartbeatError`, and `NotAvailable` are never constructed
+  --> src/hardware/mod.rs:30:5
+   |
+28 | pub enum HardwareError {
+   |          ------------- variants in this enum
+29 |     #[error("Watchdog initialization failed: {0}")]
+30 |     WatchdogError(String),
+   |     ^^^^^^^^^^^^^
+...
+33 |     HeartbeatError(String),
+   |     ^^^^^^^^^^^^^^
+...
+36 |     NotAvailable,
+   |     ^^^^^^^^^^^^
+   |
+   = note: `HardwareError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: fields `watchdog_timeout_secs`, `heartbeat_pin`, `heartbeat_frequency_hz`, and `heartbeat_duty_cycle` are never read
+  --> src/hardware/mod.rs:64:9
+   |
+62 | pub struct HardwareConfig {
+   |            -------------- fields in this struct
+63 |     /// Watchdog timeout in seconds
+64 |     pub watchdog_timeout_secs: u32,
+   |         ^^^^^^^^^^^^^^^^^^^^^
+65 |     /// Heartbeat GPIO pin (BCM numbering)
+66 |     pub heartbeat_pin: u32,
+   |         ^^^^^^^^^^^^^
+67 |     /// Heartbeat frequency in Hz
+68 |     pub heartbeat_frequency_hz: f64,
+   |         ^^^^^^^^^^^^^^^^^^^^^^
+69 |     /// Heartbeat duty cycle
+70 |     pub heartbeat_duty_cycle: f64,
+   |         ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `HardwareConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `is_hardware_available` is never used
+   --> src/hardware/mod.rs:174:8
+    |
+174 | pub fn is_hardware_available() -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `status` and `is_available` are never used
+   --> src/hardware/mod.rs:203:12
+    |
+187 | impl HardwareGuard {
+    | ------------------ methods in this implementation
+...
+203 |     pub fn status(&self) -> HardwareStatus {
+    |            ^^^^^^
+...
+209 |     pub fn is_available(&self) -> bool {
+    |            ^^^^^^^^^^^^
+
+warning: variants `OpenError` and `NotAvailable` are never constructed
+  --> src/hardware/watchdog.rs:22:5
+   |
+20 | pub enum WatchdogError {
+   |          ------------- variants in this enum
+21 |     #[error("Failed to open watchdog device: {0}")]
+22 |     OpenError(String),
+   |     ^^^^^^^^^
+...
+31 |     NotAvailable,
+   |     ^^^^^^^^^^^^
+   |
+   = note: `WatchdogError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: variant `ThreadError` is never constructed
+  --> src/hardware/heartbeat.rs:41:5
+   |
+30 | pub enum HeartbeatError {
+   |          -------------- variant in this enum
+...
+41 |     ThreadError(String),
+   |     ^^^^^^^^^^^
+   |
+   = note: `HeartbeatError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `voltage` is never read
+  --> src/hardware/heartbeat.rs:57:9
+   |
+49 | pub struct HeartbeatConfig {
+   |            --------------- field in this struct
+...
+57 |     pub voltage: f32,
+   |         ^^^^^^^
+   |
+   = note: `HeartbeatConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `start_heartbeat` is never used
+   --> src/hardware/heartbeat.rs:335:8
+    |
+335 | pub fn start_heartbeat() -> Result<(), HeartbeatError> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `is_kill_chain_triggered` is never used
+   --> src/hardware/kill_chain.rs:144:8
+    |
+144 | pub fn is_kill_chain_triggered() -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_panic_handler_registered` is never used
+   --> src/hardware/panic_handler.rs:307:8
+    |
+307 | pub fn is_panic_handler_registered() -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_recent_crashes` is never used
+   --> src/hardware/panic_handler.rs:312:8
+    |
+312 | pub fn get_recent_crashes() -> Vec<PathBuf> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: methods `has_read` and `has_exec` are never used
+  --> src/hardware/memory_protector.rs:49:12
+   |
+47 | impl MemoryRegion {
+   | ----------------- methods in this implementation
+48 |     /// Check if this region has read permission
+49 |     pub fn has_read(&self) -> bool {
+   |            ^^^^^^^^
+...
+59 |     pub fn has_exec(&self) -> bool {
+   |            ^^^^^^^^
+
+warning: constant `PROT_READ` is never used
+   --> src/hardware/memory_protector.rs:255:7
+    |
+255 | const PROT_READ: c_int = 1;
+    |       ^^^^^^^^^
+
+warning: constant `PROT_WRITE` is never used
+   --> src/hardware/memory_protector.rs:256:7
+    |
+256 | const PROT_WRITE: c_int = 2;
+    |       ^^^^^^^^^^
+
+warning: constant `PROT_EXEC` is never used
+   --> src/hardware/memory_protector.rs:257:7
+    |
+257 | const PROT_EXEC: c_int = 4;
+    |       ^^^^^^^^^
+
+warning: variant `VerificationFailed` is never constructed
+  --> src/hardware/emergency_gpio.rs:55:5
+   |
+41 | pub enum EmergencyGpioError {
+   |          ------------------ variant in this enum
+...
+55 |     VerificationFailed,
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `EmergencyGpioError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `get_value` and `verify_value` are never used
+   --> src/hardware/emergency_gpio.rs:124:12
+    |
+ 66 | impl EmergencyGpio {
+    | ------------------ methods in this implementation
+...
+124 |     pub fn get_value(&self) -> Result<u8, EmergencyGpioError> {
+    |            ^^^^^^^^^
+...
+141 |     pub fn verify_value(&self, expected: u8) -> Result<bool, EmergencyG...
+    |            ^^^^^^^^^^^^
+
+warning: fields `shutdown_triggered`, `actuators_locked_down`, `power_relay_engaged`, and `network_phy_reset` are never read
+   --> src/hardware/emergency_gpio.rs:156:9
+    |
+154 | pub struct EmergencyState {
+    |            -------------- fields in this struct
+155 |     /// Whether emergency shutdown has been triggered
+156 |     pub shutdown_triggered: bool,
+    |         ^^^^^^^^^^^^^^^^^^
+157 |     /// Whether actuators are locked down
+158 |     pub actuators_locked_down: bool,
+    |         ^^^^^^^^^^^^^^^^^^^^^
+159 |     /// Whether power relay is engaged
+160 |     pub power_relay_engaged: bool,
+    |         ^^^^^^^^^^^^^^^^^^^
+161 |     /// Whether network PHY is reset
+162 |     pub network_phy_reset: bool,
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: `EmergencyState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `cut_power_relay` is never used
+   --> src/hardware/emergency_gpio.rs:276:8
+    |
+276 | pub fn cut_power_relay() {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `reset_network_phy` is never used
+   --> src/hardware/emergency_gpio.rs:297:8
+    |
+297 | pub fn reset_network_phy() {
+    |        ^^^^^^^^^^^^^^^^^
+
+warning: function `verify_lockdown` is never used
+   --> src/hardware/emergency_gpio.rs:319:8
+    |
+319 | pub fn verify_lockdown() -> bool {
+    |        ^^^^^^^^^^^^^^^
+
+warning: function `get_emergency_state` is never used
+   --> src/hardware/emergency_gpio.rs:351:8
+    |
+351 | pub fn get_emergency_state() -> EmergencyState {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: method `update_metrics` is never used
+  --> src/grpc.rs:72:18
+   |
+59 | impl WardenServiceState {
+   | ----------------------- method in this implementation
+...
+72 |     pub async fn update_metrics(&self, metrics: SystemMetrics) {
+   |                  ^^^^^^^^^^^^^^
+
+warning: unused `Result` that must be used
+   --> src/secure_boot.rs:163:9
+    |
+163 |         self.tpm.extend_pcr(0, &measurement_data);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+    |
+163 |         let _ = self.tpm.extend_pcr(0, &measurement_data);
+    |         +++++++
+
+warning: unused `Result` that must be used
+   --> src/secure_boot.rs:202:9
+    |
+202 |         self.tpm.extend_pcr(1, &kernel_content);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+202 |         let _ = self.tpm.extend_pcr(1, &kernel_content);
+    |         +++++++
+
+warning: unused `Result` that must be used
+   --> src/secure_boot.rs:262:9
+    |
+262 |         self.tpm.extend_pcr(2, &measurement_data);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+262 |         let _ = self.tpm.extend_pcr(2, &measurement_data);
+    |         +++++++
+
+warning: unused `Result` that must be used
+   --> src/secure_boot.rs:300:25
+    |
+300 |                         self.tpm.extend_pcr(7, content.as_bytes());
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+300 |                         let _ = self.tpm.extend_pcr(7, content.as_bytes());
+    |                         +++++++
+
+warning: creating a shared reference to mutable static
+   --> src/hardware/watchdog.rs:223:9
+    |
+223 | ...   WATCHDOG.as_ref().map(|wd| wd.is_hardware_available()).unwrap_or(...
+    |       ^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+    = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: creating a shared reference to mutable static
+   --> src/hardware/heartbeat.rs:356:9
+    |
+356 |         HEARTBEAT_GENERATOR.as_ref().map(|g| g.state()).unwrap_or_defau...
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: creating a shared reference to mutable static
+   --> src/hardware/heartbeat.rs:363:9
+    |
+363 |         HEARTBEAT_GENERATOR.as_ref().map(|g| g.state().running).unwrap_...
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+
+warning: `itheris-daemon` (bin "itheris-daemon") generated 79 warnings (run `cargo fix --bin "itheris-daemon" -p itheris-daemon` to apply 14 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.72s

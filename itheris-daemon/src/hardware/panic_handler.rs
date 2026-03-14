@@ -242,11 +242,7 @@ pub fn register_panic_handler() -> Result<(), String> {
     log::info!("🛡️ Registering panic handler...");
     
     // Register the panic hook
-    let panic_hook = Box::new(|info| {
-        panic_handler_impl(info);
-    });
-    
-    std::panic::set_hook(panic_hook);
+    std::panic::set_hook(Box::new(panic_handler_impl));
     
     // Register signal handlers (Unix only)
     #[cfg(unix)]
@@ -255,15 +251,15 @@ pub fn register_panic_handler() -> Result<(), String> {
         
         unsafe {
             // Setup SIGSEGV handler
-            let sigsegv_handler: libc::sighandler_t = transmute(signal_handler::<libc::SIGSEGV> as *const ());
+            let sigsegv_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGSEGV }> as *const ());
             libc::signal(libc::SIGSEGV, sigsegv_handler);
             
             // Setup SIGBUS handler
-            let sigbus_handler: libc::sighandler_t = transmute(signal_handler::<libc::SIGBUS> as *const ());
+            let sigbus_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGBUS }> as *const ());
             libc::signal(libc::SIGBUS, sigbus_handler);
             
             // Setup SIGFPE handler
-            let sigfpe_handler: libc::sighandler_t = transmute(signal_handler::<libc::SIGFPE> as *const ());
+            let sigfpe_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGFPE }> as *const ());
             libc::signal(libc::SIGFPE, sigfpe_handler);
         }
     }

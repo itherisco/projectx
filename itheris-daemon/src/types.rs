@@ -6,12 +6,14 @@
 //! These types prevent memory corruption at the FFI boundary by ensuring
 //! both sides use compatible memory layouts.
 
+#[cfg(feature = "jlrs")]
 use jlrs::prelude::*;
 use serde::{Serialize, Deserialize};
 
 /// Brain output from Julia cognitive processing
 /// Mirrors: IntegrationActionProposal from Julia types.jl
-#[derive(JuliaData, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jlrs", derive(JuliaData))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BrainOutput {
     /// Unique identifier
     pub id: String,
@@ -59,7 +61,8 @@ impl BrainOutput {
 
 /// Request from Rust to Julia for capability execution
 /// Mirrors: CapabilityRequest from Julia
-#[derive(JuliaData, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jlrs", derive(JuliaData))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CapabilityRequest {
     /// Unique request identifier
     pub request_id: String,
@@ -73,6 +76,8 @@ pub struct CapabilityRequest {
     pub timeout_secs: u32,
     /// Whether this is a dry run
     pub dry_run: bool,
+    /// Ed25519 signature of the request
+    pub signature: Option<String>,
 }
 
 impl CapabilityRequest {
@@ -85,13 +90,15 @@ impl CapabilityRequest {
             priority: 0.5,
             timeout_secs: 30,
             dry_run: false,
+            signature: None,
         }
     }
 }
 
 /// Observation from the environment
 /// Mirrors: IntegrationObservation from Julia types.jl
-#[derive(JuliaData, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jlrs", derive(JuliaData))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EnvironmentObservation {
     /// CPU load [0, 1]
     pub cpu_load: f32,
@@ -128,7 +135,8 @@ impl Default for EnvironmentObservation {
 
 /// Kernel decision response
 /// Mirrors: ApprovalResult from Rust kernel.rs
-#[derive(JuliaData, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jlrs", derive(JuliaData))]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct KernelDecision {
     /// Whether the action was approved
     pub approved: bool,
@@ -180,7 +188,7 @@ pub struct IpcMessage {
 }
 
 /// IPC message types
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IpcMessageType {
     BrainOutput = 0,

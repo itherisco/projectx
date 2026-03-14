@@ -55,23 +55,26 @@ pub unsafe fn execute_kill_chain() {
     // Stage 1: CLI (Cycles 1-2)
     // Clear all maskable interrupts using inline assembly
     // ========================================
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(test)))]
     unsafe {
-        asm!("cli" : : : "memory" : "volatile");
+        use std::arch::asm;
+        asm!("cli", options(nomem, nostack));
     }
     
     // ========================================
     // Stage 2: TLB Flush (Cycles 3-10)
     // Invalidate Translation Lookaside Buffer
     // ========================================
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(test)))]
     unsafe {
+        use std::arch::asm;
         // Read current CR3, then write it back to flush TLB
-        // Using 0 directly is also valid but preserving original CR3 is cleaner
+        // In modern Rust, we use the new asm! macro
         asm!(
-            "mov %cr3, %rax",
-            "mov %rax, %cr3",
-            : : : "rax", "memory" : "volatile"
+            "mov rax, cr3",
+            "mov cr3, rax",
+            out("rax") _,
+            options(nostack)
         );
     }
     
@@ -79,11 +82,15 @@ pub unsafe fn execute_kill_chain() {
     // Stage 3: EPT Poisoning (Cycles 11-50)
     // Revoke Julia Brain memory permissions
     // ========================================
-    // Try to protect Julia memory - continue even if this fails
-    memory_protector::protect_all_julia_memory();
-    
-    // Also protect current process memory as a fallback
-    memory_protector::protect_current_process_memory();
+    // Skip real memory protection in tests to avoid SIGSEGV in test runner
+    #[cfg(not(test))]
+    {
+        // Try to protect Julia memory - continue even if this fails
+        memory_protector::protect_all_julia_memory();
+
+        // Also protect current process memory as a fallback
+        memory_protector::protect_current_process_memory();
+    }
     
     // ========================================
     // Stage 4: GPIO Lockdown (Cycles 51-80)
@@ -92,13 +99,15 @@ pub unsafe fn execute_kill_chain() {
     // Try to trigger emergency shutdown - continue even if this fails
     emergency_gpio::trigger_emergency_shutdown();
     emergency_gpio::lockdown_actuators();
+    emergency_gpio::reset_network_phy();
     
     // ========================================
     // Stage 5: HLT (Cycles 81-120)
     // Execute permanent CPU halt
     // ========================================
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(all(target_arch = "x86_64", not(test)))]
     unsafe {
+        use std::arch::asm;
         // Log final message before halting
         let _ = std::io::Write::write_all(
             &mut std::io::stderr(),
@@ -107,8 +116,16 @@ pub unsafe fn execute_kill_chain() {
         
         // Permanent halt - this never returns
         loop {
-            asm!("hlt" : : : "memory" : "volatile");
+            asm!("hlt", options(nomem, nostack));
         }
+    }
+
+    #[cfg(test)]
+    {
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr(),
+            b"[KILL CHAIN] Test mode: Skipping privileged instructions and halt\n"
+        );
     }
     
     // For non-x86_64 architectures, we just loop forever

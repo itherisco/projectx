@@ -229,7 +229,9 @@ impl SecretsManager {
 
         // Clear plaintext cache
         for (_, value) in self.cache.iter_mut() {
-            value.as_bytes_mut().fill(0);
+            unsafe {
+                value.as_bytes_mut().fill(0);
+            }
         }
         self.cache.clear();
 
@@ -402,7 +404,9 @@ impl SecretsManager {
 
         // Clear from cache
         if let Some(mut value) = self.cache.remove(key) {
-            value.as_bytes_mut().fill(0);
+            unsafe {
+                value.as_bytes_mut().fill(0);
+            }
         }
 
         self.last_activity = Instant::now();
@@ -445,32 +449,34 @@ static SECRETS_MANAGER: Lazy<RwLock<SecretsManager>> = Lazy::new(|| RwLock::new(
 /// Initialize the global secrets manager
 pub fn init() {
     // Pre-allocate to avoid runtime allocations
-    let _ = SECRETS_MANAGER.read();
+    drop(SECRETS_MANAGER.read());
 }
 
 /// Unlock the global secrets manager
 pub fn unlock_global(passphrase: &str, salt: Option<&[u8]>) -> Result<String, SecretsError> {
-    SECRETS_MANAGER.write().unlock(passphrase, salt)
+    SECRETS_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.unlock(passphrase, salt)
 }
 
 /// Lock the global secrets manager
 pub fn lock_global() {
-    SECRETS_MANAGER.write().lock();
+    if let Ok(mut manager) = SECRETS_MANAGER.write() {
+        manager.lock();
+    }
 }
 
 /// Store a secret in the global manager
 pub fn store_global(key: &str, value: &str) -> Result<(), SecretsError> {
-    SECRETS_MANAGER.write().store(key, value)
+    SECRETS_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.store(key, value)
 }
 
 /// Get a secret from the global manager
 pub fn get_global(key: &str) -> Result<String, SecretsError> {
-    SECRETS_MANAGER.write().get(key)
+    SECRETS_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.get(key)
 }
 
 /// Check if global manager is unlocked
 pub fn is_unlocked_global() -> bool {
-    SECRETS_MANAGER.read().is_unlocked()
+    SECRETS_MANAGER.read().map(|m| m.is_unlocked()).unwrap_or(false)
 }
 
 /// Generate a cryptographically secure random token
@@ -482,7 +488,7 @@ pub fn generate_token(length: usize) -> String {
 
 /// Compute HMAC-SHA256
 pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
+    let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(key).expect("HMAC can take key of any size");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }

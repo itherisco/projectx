@@ -304,7 +304,7 @@ pub struct CgroupUsage {
 // ============================================================================
 
 /// Memory bounds for IPC ring buffer
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryBounds {
     pub base_address: u64,
     pub size_bytes: u64,

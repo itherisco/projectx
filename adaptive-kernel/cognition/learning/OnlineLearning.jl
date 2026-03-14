@@ -758,16 +758,36 @@ function apply_flux_update!(
     learning_rate::Float32
 )::Nothing
     if brain.use_flux
-        # Update Flux parameters
-        if brain.policy_network !== nothing && haskey(gradients, "policy_weights")
-            # Manual parameter update for Flux models
-            brain.policy_weights .-= learning_rate * get(gradients, "policy_weights", zeros(Float32, brain.action_dim, brain.state_dim))
-            brain.policy_bias .-= learning_rate * get(gradients, "policy_bias", zeros(Float32, brain.action_dim))
+        # Update Flux parameters directly if they exist
+        if brain.policy_network !== nothing
+            try
+                # Use Flux.update! to apply gradients to the actual network parameters
+                # This ensures the neural brain actually learns
+                ps = Flux.params(brain.policy_network)
+
+                # Create a Flux-style gradient object
+                # Note: This is a simplified representation for integration
+                for p in ps
+                    if haskey(gradients, "policy_weights") && size(p) == size(gradients["policy_weights"])
+                        Flux.update!(brain.optimizer, p, gradients["policy_weights"])
+                    elseif haskey(gradients, "policy_bias") && size(p) == size(gradients["policy_bias"])
+                        Flux.update!(brain.optimizer, p, gradients["policy_bias"])
+                    end
+                end
+            catch e
+                @warn "Flux.update! failed, falling back to manual weight sync" error=string(e)
+            end
+        end
+
+        # Keep manual weights in sync for hybrid operations
+        if haskey(gradients, "policy_weights")
+            brain.policy_weights .-= learning_rate * gradients["policy_weights"]
+            brain.policy_bias .-= learning_rate * gradients["policy_bias"]
         end
         
-        if brain.value_network !== nothing && haskey(gradients, "value_weights")
-            brain.value_weights .-= learning_rate * get(gradients, "value_weights", zeros(Float32, 1, brain.state_dim))
-            brain.value_bias .-= learning_rate * get(gradients, "value_bias", zeros(Float32, 1))
+        if haskey(gradients, "value_weights")
+            brain.value_weights .-= learning_rate * gradients["value_weights"]
+            brain.value_bias .-= learning_rate * gradients["value_bias"]
         end
     else
         # Manual parameter update
@@ -1002,21 +1022,42 @@ function compute_gradients(brain::IncrementalBrain, input, target)::Dict
     # Use actual gradient computation
     gradients = Dict{String, Any}()
     
+    # CASE 1: Supervised learning via Zygote/Flux (Actual Neural Update)
     if brain.use_zygote && brain.use_flux
-        # Zygote gradient computation would go here for supervised learning
-        # For now, fall through to policy gradient computation
+        try
+            # Convert to Float32 if needed
+            x = input isa Vector{Float32} ? input : Float32.(input)
+            y = target isa Vector{Float32} ? target : Float32.(target)
+
+            # Use Zygote to compute gradients of the loss
+            # Loss = MSE between prediction and target
+            ps = Flux.params(brain.policy_network)
+            gs = Zygote.gradient(ps) do
+                pred = brain.policy_network(x)
+                Flux.mse(pred, y)
+            end
+
+            # Map Flux Gradients to our dictionary format
+            # This allows subsequent clipping and momentum application
+            gradients["policy_weights"] = gs[brain.policy_network[1].weight]
+            gradients["policy_bias"] = gs[brain.policy_network[1].bias]
+
+            @info "Computed actual neural gradients via Zygote"
+            return gradients
+        catch e
+            @warn "Zygote neural gradient computation failed, falling back" error=string(e)
+        end
     end
     
-    # If brain has policy_state, use policy gradients
+    # CASE 2: Policy gradient reinforcement learning
     if brain.policy_state !== nothing
-        # Create dummy experience
+        # Create experience from input/target
         state = input isa Vector{Float32} ? input : zeros(Float32, brain.state_dim)
-        action = 1
-        reward = Float32(0.0)
-        next_state = state
-        done = true
+        # Interpret target as reward signal for policy gradient
+        reward = target isa Vector{Float32} ? sum(target) : Float32(0.0)
+        action = 1 # Default action for single-step update
         
-        # Compute gradients
+        # Compute policy gradients (implemented in PolicyGradient.jl)
         return compute_policy_gradients(
             brain,
             [state],

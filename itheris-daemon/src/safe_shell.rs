@@ -315,7 +315,7 @@ static SAFE_SHELL: Lazy<RwLock<SafeShell>> = Lazy::new(|| RwLock::new(SafeShell:
 
 /// Initialize global shell
 pub fn init() {
-    let _ = SAFE_SHELL.read();
+    drop(SAFE_SHELL.read());
 }
 
 /// Execute command
