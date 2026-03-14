@@ -99,7 +99,7 @@ impl ItherisDaemon {
             config: config.clone(),
             state: Arc::new(RwLock::new(DaemonState::Starting)),
             kernel: Arc::new(ItherisDaemonKernel::new()),
-            secure_boot: Arc::new(RwLock::new(SecureBootManager::new("./itheris-daemon"))),
+            secure_boot: Arc::new(RwLock::new(SecureBootManager::new("."))),
             start_time: Arc::new(RwLock::new(None)),
             health_check_failures: Arc::new(RwLock::new(0)),
             hardware_guard: Arc::new(RwLock::new(None)),

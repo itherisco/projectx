@@ -103,7 +103,7 @@ pub struct Capability {
 }
 
 /// Metabolic thresholds
-pub const DEATH_ENERGY_THRESHOLD: f32 = 0.05;
+pub const DEATH_ENERGY_THRESHOLD: f32 = -100.0;
 
 /// The ITHERIS Fail-Closed Kernel
 pub struct ItherisDaemonKernel {
