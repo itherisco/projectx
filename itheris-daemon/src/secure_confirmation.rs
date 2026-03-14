@@ -245,12 +245,11 @@ impl SecureConfirmationGate {
         self.secret.is_some()
     }
 
-    /// Generate cryptographically secure token
+    /// Generate cryptographically secure token using high-entropy nonce
     fn generate_token() -> String {
-        let id = Uuid::new_v4();
-        let mut bytes = [0u8; 16];
-        OsRng.fill_bytes(&mut bytes);
-        format!("{}_{}", id, hex::encode(bytes))
+        let mut nonce = [0u8; 32];
+        OsRng.fill_bytes(&mut nonce);
+        hex::encode(nonce)
     }
 
     /// Get timeout for risk level
@@ -366,15 +365,21 @@ impl SecureConfirmationGate {
         }
 
         // Get token
-        let confirmation = self
-            .pending
-            .get_mut(token)
-            .ok_or_else(|| ConfirmationError::TokenNotFound(token.to_string()))?;
+        let (confirmation_token, confirmation_proposal_id, confirmation_capability_id, confirmation_created_at, confirmation_expires_at, confirmation_signature) = {
+            let confirmation = self
+                .pending
+                .get(token)
+                .ok_or_else(|| ConfirmationError::TokenNotFound(token.to_string()))?;
+
+            (confirmation.token.clone(), confirmation.proposal_id.clone(), confirmation.capability_id.clone(), confirmation.created_at, confirmation.expires_at, confirmation.signature.clone())
+        };
 
         // Check expiration
         let now = Utc::now().timestamp() as u64;
-        if confirmation.expires_at < now {
-            confirmation.status = ConfirmationStatus::Expired;
+        if confirmation_expires_at < now {
+            if let Some(c) = self.pending.get_mut(token) {
+                c.status = ConfirmationStatus::Expired;
+            }
             self.stats.expired += 1;
             return Err(ConfirmationError::TokenExpired(
                 "Confirmation timed out".to_string(),
@@ -384,20 +389,21 @@ impl SecureConfirmationGate {
         // Verify signature
         let token_data = format!(
             "{}|{}|{}|{}|{}",
-            confirmation.token,
-            confirmation.proposal_id,
-            confirmation.capability_id,
-            confirmation.created_at,
-            confirmation.expires_at
+            confirmation_token,
+            confirmation_proposal_id,
+            confirmation_capability_id,
+            confirmation_created_at,
+            confirmation_expires_at
         );
 
-        if !self.verify(&token_data, &confirmation.signature) {
+        if !self.verify(&token_data, &confirmation_signature) {
             self.stats.rejected += 1;
             return Err(ConfirmationError::InvalidToken(
                 "Signature verification failed".to_string(),
             ));
         }
 
+        let confirmation = self.pending.get_mut(token).unwrap();
         // Mark as confirmed
         confirmation.status = ConfirmationStatus::Confirmed;
         self.rate_limiter.reset(token);
@@ -442,7 +448,7 @@ impl SecureConfirmationGate {
                 confirmation.status = ConfirmationStatus::Expired;
                 self.stats.expired += 1;
             }
-            Ok(confirmation.status)
+            Ok(confirmation.status.clone())
         } else {
             Err(ConfirmationError::TokenNotFound(token.to_string()))
         }

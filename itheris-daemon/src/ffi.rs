@@ -66,21 +66,7 @@ pub extern "C" fn kernel_init() -> i32 {
     }
     
     // Initialize shared memory
-    let shm = match create_shared_memory_ipc() {
-        Ok(s) => s,
-        Err(e) => {
-            // FATAL: Cannot create shared memory - fail-closed
-            log::error!("[FFI] FATAL: Failed to create shared memory: {}", e);
-            log::error!("[FFI] SECURITY BREACH PREVENTED: Julia must halt immediately");
-            
-            // Set panic state to prevent any unsafe operations
-            PANIC_IN_PROGRESS.store(true, Ordering::Release);
-            KERNEL_RUNNING.store(false, Ordering::Release);
-            
-            // Return FATAL error code - Julia MUST NOT continue
-            return -3;
-        }
-    };
+    let shm = create_shared_memory_ipc();
     
     match shm.initialize() {
         Ok(()) => {
@@ -570,13 +556,7 @@ pub extern "C" fn sign_message(
     // Load the 32-byte private key
     let private_key_bytes = unsafe { std::slice::from_raw_parts(private_key_ptr, SECRET_KEY_LENGTH) };
     
-    let signing_key = match SigningKey::from_bytes(private_key_bytes.try_into().unwrap()) {
-        Ok(key) => key,
-        Err(e) => {
-            log::error!("[FFI] sign_message: invalid private key: {:?}", e);
-            return CryptoError::InvalidKeySize as i32;
-        }
-    };
+    let signing_key = SigningKey::from_bytes(private_key_bytes.try_into().unwrap());
 
     // Read the message
     let message = unsafe { std::slice::from_raw_parts(message_ptr, message_len) };
@@ -587,7 +567,7 @@ pub extern "C" fn sign_message(
     // Write signature to output buffer
     unsafe {
         let sig_slice = std::slice::from_raw_parts_mut(signature_out, SIGNATURE_LENGTH);
-        sig_slice.copy_from_slice(signature.as_bytes());
+        sig_slice.copy_from_slice(&signature.to_bytes());
     }
 
     log::debug!("[FFI] sign_message: signed {} bytes", message_len);
@@ -637,13 +617,7 @@ pub extern "C" fn verify_message(
 
     // Read the signature
     let signature_bytes = unsafe { std::slice::from_raw_parts(signature_ptr, SIGNATURE_LENGTH) };
-    let signature = match Signature::from_bytes(signature_bytes.try_into().unwrap()) {
-        Ok(sig) => sig,
-        Err(e) => {
-            log::error!("[FFI] verify_message: invalid signature: {:?}", e);
-            return CryptoError::InvalidSignatureSize as i32;
-        }
-    };
+    let signature = Signature::from_bytes(signature_bytes.try_into().unwrap());
 
     // Verify the signature
     match verifying_key.verify(message, &signature) {
@@ -707,9 +681,13 @@ pub extern "C" fn generate_keypair(
     }
 
     // Write private key (64 bytes - includes public key)
+    let mut keypair_bytes = [0u8; 64];
+    keypair_bytes[..32].copy_from_slice(&signing_key.to_bytes());
+    keypair_bytes[32..].copy_from_slice(verifying_key.as_bytes());
+
     unsafe {
         let sk_slice = std::slice::from_raw_parts_mut(private_key_out, 64);
-        sk_slice.copy_from_slice(signing_key.to_bytes().as_ref());
+        sk_slice.copy_from_slice(&keypair_bytes);
     }
 
     log::debug!("[FFI] generate_keypair: keypair generated");
@@ -790,13 +768,13 @@ pub extern "C" fn kernel_ready() -> i32 {
 // These provide C ABI entry points that Julia can call
 
 use crate::secrets;
-use crate::jwt_auth::{self, Role};
-use crate::flow_integrity::{self, RiskLevel as FlowRiskLevel};
-use crate::risk_classifier::{self, RiskLevel};
-use crate::secure_confirmation::{self, RiskLevel as ConfirmRiskLevel};
-use crate::task_orchestrator::{self, TaskPriority};
+use crate::jwt_auth;
+use crate::flow_integrity;
+use crate::risk_classifier;
+use crate::secure_confirmation;
+use crate::task_orchestrator;
 use crate::safe_shell;
-use crate::safe_http::{self, HttpMethod};
+use crate::safe_http;
 
 // ============================================================================
 // Secrets Manager FFI
@@ -1342,7 +1320,7 @@ pub extern "C" fn shell_execute(command: *const std::ffi::c_char) -> *mut std::f
             let json = serde_json::to_string(&safe_shell::ShellResult {
                 success: false,
                 stdout: String::new(),
-                stderr: e.to_string(),
+                stderr: format!("{}", e),
                 exit_code: -1,
                 duration_ms: 0,
             }).unwrap_or_default();

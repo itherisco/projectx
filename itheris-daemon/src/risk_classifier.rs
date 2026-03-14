@@ -358,7 +358,7 @@ impl RiskClassifier {
 
     /// Assess risk from parameters
     fn assess_param_risk(&self, params: &str, factors: &mut Vec<String>) -> f64 {
-        let mut risk = 0.0;
+        let mut risk: f64 = 0.0;
         let params_lower = params.to_lowercase();
 
         // Check for sensitive paths
@@ -440,7 +440,7 @@ static RISK_CLASSIFIER: Lazy<RwLock<RiskClassifier>> = Lazy::new(|| {
 
 /// Initialize global classifier
 pub fn init() {
-    let _ = RISK_CLASSIFIER.read();
+    drop(RISK_CLASSIFIER.read());
 }
 
 /// Classify an action

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use serde::{Deserialize, Serialize};
 
 /// GPIO sysfs base path
 const GPIO_SYSFS_PATH: &str = "/sys/class/gpio";
@@ -68,6 +69,7 @@ impl Default for HeartbeatConfig {
 }
 
 /// Heartbeat generator state
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HeartbeatState {
     /// Whether the heartbeat is currently running
     pub running: bool,

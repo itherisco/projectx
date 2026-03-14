@@ -6,6 +6,10 @@ authors = ["ITHERIS Team"]
 description = "ITHERIS Sovereign Runtime Daemon - Manages Julia brain subprocess with fail-closed security"
 license = "PROPRIETARY"
 
+[lib]
+name = "itheris"
+crate-type = ["cdylib", "rlib"]
+
 [[bin]]
 name = "itheris-daemon"
 path = "src/main.rs"
@@ -26,6 +30,7 @@ async-trait = "0.1"
 base64 = "0.22"
 axum = "0.7"
 regex = "1.10"
+libc = "0.2"
 
 # Cryptographic random number generation
 getrandom = "0.2"
@@ -80,6 +85,7 @@ prost = "0.13"
 
 # Tower for gRPC service utilities
 tower = "0.4"
+tokio-stream = { version = "0.1.18", features = ["net"] }
 
 
 # scallop = "0.2"  # For Linux seccomp (optional)
@@ -97,6 +103,8 @@ default = []
 opt-level = 3
 lto = true
 codegen-units = 1
+panic = "abort"
 
 [profile.dev]
 opt-level = 0
+panic = "abort"
