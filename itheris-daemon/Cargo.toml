@@ -56,7 +56,7 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 
 # JWT support
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 
 # HMAC for token authentication
 hmac = "0.12"
