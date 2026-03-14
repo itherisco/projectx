@@ -5,11 +5,11 @@
 
 
 use chrono::Utc;
-use itheris_daemon::grpc::{start_grpc_server, WardenServiceState};
-use itheris_daemon::hardware;
-use itheris_daemon::kernel;
-use itheris_daemon::julia_runtime;
-use itheris_daemon::secure_boot;
+use itheris::grpc::{start_grpc_server, WardenServiceState};
+use itheris::hardware;
+use itheris::kernel;
+use itheris::julia_runtime;
+use itheris::secure_boot;
 use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
@@ -23,7 +23,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use uuid::Uuid;
-use warden::CognitiveMode;
+use itheris::warden::CognitiveMode;
 
 /// Daemon configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,11 +446,11 @@ async fn main() -> Result<(), String> {
     // Background task to monitor cognitive mode and enforce isolation
     let grpc_state_for_isolation = grpc_state.clone();
     tokio::spawn(async move {
-        let mut last_mode = CognitiveMode::Active;
+        let mut last_mode = CognitiveMode::Active as i32;
         loop {
             let current_mode = *grpc_state_for_isolation.cognitive_mode.read().await;
             if current_mode != last_mode {
-                grpc_state_for_isolation.set_cognitive_mode(current_mode).await;
+                log::info!("Cognitive mode changed: {:?} -> {:?}", last_mode, current_mode);
                 last_mode = current_mode;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

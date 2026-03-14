@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
+use crate::shared_memory;
 use chrono::{DateTime, Utc};
 
 /// Secure boot errors
@@ -195,7 +196,7 @@ impl SecureBootManager {
     /// Stage 2: LEP Domain and Ring Buffer Configuration (PCR 12-15)
     async fn verify_stage2_lep_domain(&mut self) -> Result<BootStageResult, SecureBootError> {
         log::info!("📋 Stage 2: LEP/IPC Measurement...");
-        let config_data = format!("SHM_PATH={};SHM_SIZE={}", itheris::shared_memory::SHM_PATH, itheris::shared_memory::SHM_SIZE);
+        let config_data = format!("SHM_PATH={};SHM_SIZE={}", shared_memory::SHM_PATH, shared_memory::SHM_SIZE);
         self.tpm.extend_pcr(12, config_data.as_bytes())?;
 
         Ok(BootStageResult {

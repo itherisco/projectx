@@ -3,8 +3,18 @@
 //! This module implements the mathematical veto equation for the Law Enforcement Point:
 //! `score = priority × (reward - risk)`
 //!
-//! This is the "unbendable" constitutional boundary that ensures the brain's decisions
+//! This is the "UNBENDABLE" constitutional boundary that ensures the brain's decisions
 //! are constrained by constitutional limits before execution.
+//!
+//! ## SECURITY MANDATE - UNBENDABLE VETO
+//!
+//! The following rules CANNOT be bypassed, overridden, or disabled:
+//! 1. LEP Veto Equation: score = priority × (reward - risk)
+//! 2. Hard Limit: Any action with risk > 0.01 (1%) is AUTOMATICALLY VETOED
+//! 3. Score Threshold: Any negative score results in automatic veto
+//! 4. Always-Veto List: Capabilities on this list can NEVER execute
+//!
+//! There is NO bypass mechanism - these rules are hardcoded in the Rust security layer.
 //!
 //! ## LEP Veto Equation
 //!
@@ -16,8 +26,9 @@
 //! ## Security Properties
 //!
 //! - **Fail-Closed**: Negative score = automatic veto
-//! - **Hard Limits**: Certain actions always veto regardless of score
+//! - **Hard Limits**: risk > 0.01 always vetoes regardless of score
 //! - **Audit Trail**: All veto decisions logged
+//! - **UNBENDABLE**: Configuration cannot disable these protections
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

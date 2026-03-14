@@ -47,7 +47,7 @@ pub mod safe_shell;
 pub mod safe_http;
 pub mod ffi; // FFI bridge for Julia interop
 pub mod shared_memory; // Shared memory ring buffer for IPC
-use crate::shared_memory::create_shared_memory_ipc;
+use shared_memory::create_shared_memory_ipc;
 pub mod emergency; // Emergency halt and seal mechanism (Phase 6)
 pub mod kernel;
 pub mod secure_boot;
