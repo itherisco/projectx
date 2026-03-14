@@ -1810,6 +1810,7 @@ function compute_ppo_objective(
     result["loss"] = Float32(0.0)
     result["clip_fraction"] = Float32(0.0)
     return result
+end
 
 # =============================================================================
 # EPISODIC MEMORY - Ring Buffer for Trajectory Collection
@@ -1911,7 +1912,7 @@ High-RPE thoughts are prioritized for Oneiric (dreaming) replay.
 function get_prioritized_batch(
     buffer::EpisodicRingBuffer, 
     batch_size::Int; 
-    priority_weight::Float32=0.6
+    priority_weight::Float32=0.6f0
 )::Dict
     if buffer.size == 0
         return Dict(
