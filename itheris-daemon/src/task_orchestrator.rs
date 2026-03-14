@@ -60,7 +60,7 @@ impl Default for TaskPriority {
 }
 
 /// Task status
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     Pending,
@@ -71,7 +71,7 @@ pub enum TaskStatus {
 }
 
 /// Task definition
-#[derive(Debug, Clone, Serialize, Deserialize, Ord, Eq, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Task {
     /// Unique task ID
     pub id: String,
@@ -215,6 +215,29 @@ pub struct TaskOrchestrator {
     rate_limiter: TaskRateLimiter,
     /// Task counter
     task_counter: u64,
+}
+
+impl Eq for Task {}
+
+impl PartialOrd for Task {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Task {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Higher priority comes first in BinaryHeap
+        match self.priority.cmp(&other.priority) {
+            std::cmp::Ordering::Equal => {
+                match self.created_at.cmp(&other.created_at) {
+                    std::cmp::Ordering::Equal => self.id.cmp(&other.id).reverse(),
+                    ord => ord.reverse(),
+                }
+            }
+            ord => ord,
+        }
+    }
 }
 
 impl TaskOrchestrator {
@@ -452,7 +475,7 @@ mod tests {
         let mut orchestrator = TaskOrchestrator::with_defaults();
         
         // Create auth token
-        let token = orchestrator.auth.create_token("test_user", vec![Role::User])
+        let token = orchestrator.auth.create_token("test_user", vec![Role::User], HashMap::new())
             .unwrap();
         
         let request = TaskRequest {
@@ -472,7 +495,7 @@ mod tests {
     fn test_budget_enforcement() {
         let mut orchestrator = TaskOrchestrator::new(50.0, 3600, 100, 60);
         
-        let token = orchestrator.auth.create_token("test_user", vec![Role::User])
+        let token = orchestrator.auth.create_token("test_user", vec![Role::User], HashMap::new())
             .unwrap();
         
         let request = TaskRequest {

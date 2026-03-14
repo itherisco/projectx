@@ -16,8 +16,9 @@
 //! - **Fail-Closed**: Missing/invalid/expired tokens = DENIED
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::{Aes256Gcm, Nonce};
 use rand_core::RngCore;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -217,7 +218,7 @@ impl FlowIntegrityGate {
     fn compute_hmac(&self, token_data: &FlowTokenData) -> Result<String, FlowIntegrityError> {
         let key = self.secret_key.ok_or(FlowIntegrityError::SecretNotSet)?;
 
-        let mut mac = HmacSha256::new_from_slice(&key)
+        let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(&key)
             .map_err(|e| FlowIntegrityError::IssuanceFailed(e.to_string()))?;
 
         // Update with all token fields
@@ -293,6 +294,7 @@ impl FlowIntegrityGate {
             cycle_number: self.cycle,
             created_at: now,
             expires_at: now + self.config.token_ttl,
+            hmac_hex: String::new(),
             risk_level,
         };
 
@@ -407,14 +409,20 @@ impl FlowIntegrityGate {
         }
 
         // Also cleanup old used tokens (keep for 1 hour for audit)
-        let cutoff = now - 3600;
-        self.used_tokens.retain(|id| {
-            // We can't check the timestamp of used tokens without storing it
-            // So we just limit the size
-            self.used_tokens.len() < 1000
-        });
+        let _cutoff = now - 3600;
+        if self.used_tokens.len() > 1000 {
+            let mut count = self.used_tokens.len();
+            self.used_tokens.retain(|_| {
+                if count > 1000 {
+                    count -= 1;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
 
-        self.stats.tokens_expired += expired.len();
+        self.stats.tokens_expired += expired.len() as u64;
         
         expired.len()
     }
@@ -429,15 +437,49 @@ impl FlowIntegrityGate {
         self.active_tokens.len()
     }
 
-    /// Serialize token for transmission to Julia
-    pub fn serialize_token(token: &FlowToken) -> String {
+    /// Serialize token for transmission to Julia (with AES-256-GCM encryption for hardening)
+    pub fn serialize_token(&self, token: &FlowToken) -> String {
         let data = FlowTokenData::from(token.clone());
-        serde_json::to_string(&data).unwrap_or_default()
+        let json = serde_json::to_string(&data).unwrap_or_default();
+
+        if let Some(key) = self.secret_key {
+            let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+            let mut nonce_bytes = [0u8; 12];
+            OsRng.fill_bytes(&mut nonce_bytes);
+            let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
+
+            if let Ok(ciphertext) = cipher.encrypt(nonce, json.as_bytes()) {
+                let mut combined = nonce_bytes.to_vec();
+                combined.extend_from_slice(&ciphertext);
+                return hex::encode(combined);
+            }
+        }
+
+        // Fallback to JSON if encryption fails or key not set
+        json
     }
 
     /// Deserialize token from Julia
-    pub fn deserialize_token(data: &str) -> Result<FlowToken, FlowIntegrityError> {
-        let token_data: FlowTokenData = serde_json::from_str(data)
+    pub fn deserialize_token(&self, data: &str) -> Result<FlowToken, FlowIntegrityError> {
+        let decrypted_json = if let Ok(combined) = hex::decode(data) {
+            if combined.len() >= 12 && self.secret_key.is_some() {
+                let key = self.secret_key.unwrap();
+                let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+                let (nonce_bytes, ciphertext) = combined.split_at(12);
+                let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
+
+                match cipher.decrypt(nonce, ciphertext) {
+                    Ok(plaintext) => String::from_utf8(plaintext).unwrap_or_else(|_| data.to_string()),
+                    Err(_) => data.to_string(),
+                }
+            } else {
+                data.to_string()
+            }
+        } else {
+            data.to_string()
+        };
+
+        let token_data: FlowTokenData = serde_json::from_str(&decrypted_json)
             .map_err(|e| FlowIntegrityError::VerificationFailed(e.to_string()))?;
 
         Ok(FlowToken {
@@ -487,12 +529,12 @@ pub fn verify_token(token: &FlowToken, capability_id: &str, params: &str) -> (bo
 
 /// Serialize token for Julia
 pub fn serialize_token(token: &FlowToken) -> String {
-    FlowIntegrityGate::serialize_token(token)
+    FLOW_GATE.read().unwrap().serialize_token(token)
 }
 
 /// Deserialize token from Julia
 pub fn deserialize_token(data: &str) -> Result<FlowToken, FlowIntegrityError> {
-    FlowIntegrityGate::deserialize_token(data)
+    FLOW_GATE.read().unwrap().deserialize_token(data)
 }
 
 /// Get statistics

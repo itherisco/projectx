@@ -7,6 +7,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
+use serde::{Serialize, Deserialize};
 
 /// Watchdog device path
 const WATCHDOG_DEVICE: &str = "/dev/watchdog";
@@ -31,7 +32,7 @@ pub enum WatchdogError {
 }
 
 /// Watchdog status information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatchdogStatus {
     /// Whether the watchdog is enabled
     pub enabled: bool,

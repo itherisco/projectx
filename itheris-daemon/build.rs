@@ -4,7 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Only run proto generation if the proto file exists
     let proto_path = std::path::Path::new("../proto/warden.proto");
     
-    if proto_path.exists() {
+    if proto_path.exists() && std::process::Command::new("protoc").arg("--version").output().is_ok() {
         tonic_build::configure()
             .out_dir("src/")
             .compile_protos(

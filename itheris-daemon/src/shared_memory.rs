@@ -524,9 +524,13 @@ mod tests {
         let payload = vec![1u8, 2, 3, 4, 5];
         let msg = IPCMessage::new(IPCEntryType::ThoughtCycle, payload.clone());
         
-        assert_eq!(msg.header.magic, IPC_MAGIC);
-        assert_eq!(msg.header.version, IPC_VERSION);
-        assert_eq!(msg.header.entry_type, IPCEntryType::ThoughtCycle as u8);
+        let magic = msg.header.magic;
+        let version = msg.header.version;
+        let entry_type = msg.header.entry_type;
+
+        assert_eq!(magic, IPC_MAGIC);
+        assert_eq!(version, IPC_VERSION);
+        assert_eq!(entry_type, IPCEntryType::ThoughtCycle as u8);
         assert_eq!(msg.payload, payload);
         assert!(msg.validate());
     }

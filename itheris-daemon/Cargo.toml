@@ -26,6 +26,7 @@ async-trait = "0.1"
 base64 = "0.22"
 axum = "0.7"
 regex = "1.10"
+libc = "0.2"
 
 # Cryptographic random number generation
 getrandom = "0.2"
@@ -77,6 +78,7 @@ tonic = "0.12"
 
 # Protobuf types
 prost = "0.13"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 # Tower for gRPC service utilities
 tower = "0.4"
