@@ -339,7 +339,7 @@ static SAFE_HTTP: Lazy<RwLock<SafeHttp>> = Lazy::new(|| {
 
 /// Initialize global HTTP client
 pub fn init() {
-    let _ = SAFE_HTTP.read();
+    drop(SAFE_HTTP.read());
 }
 
 /// Execute HTTP request

@@ -3,19 +3,13 @@
 //! Manages the Julia brain with embedded jlrs runtime,
 //! crash recovery with watchdog timers, and systemd service support.
 
-mod kernel;
-mod secure_boot;
-mod shared_memory;
-mod ffi;
-mod julia_runtime;
-mod types;
-mod isolation;
-mod warden;
-mod hardware;
-mod grpc;
 
 use chrono::Utc;
-use grpc::{start_grpc_server, WardenServiceState};
+use itheris_daemon::grpc::{start_grpc_server, WardenServiceState};
+use itheris_daemon::hardware;
+use itheris_daemon::kernel;
+use itheris_daemon::julia_runtime;
+use itheris_daemon::secure_boot;
 use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
@@ -187,6 +181,7 @@ impl ItherisDaemon {
     }
     
     /// Spawn Julia brain subprocess
+    #[allow(dead_code)]
     async fn spawn_julia_brain(&self) -> Result<(), String> {
         log::info!("🧠 Spawning Julia brain...");
         
@@ -203,11 +198,10 @@ impl ItherisDaemon {
             .arg(&run_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("Failed to spawn Julia: {}", e))?;
         
-        let pid = child.id().unwrap_or(0);
+        let pid = child.id();
         log::info!("   ✓ Julia brain started (PID: {})", pid);
         
         // Store the process
@@ -443,7 +437,7 @@ async fn main() -> Result<(), String> {
     
     // Start gRPC server for frontend communication
     let grpc_state = Arc::new(WardenServiceState::new());
-    let daemon_for_grpc = daemon.clone();
+    let _daemon_for_grpc = daemon.clone();
     tokio::spawn(async move {
         if let Err(e) = start_grpc_server(grpc_state.clone(), config.grpc_port).await {
             log::error!("❌ gRPC server error: {}", e);

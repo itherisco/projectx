@@ -11,25 +11,19 @@ use tokio::sync::RwLock;
 use tonic::{async_trait, Request, Response, Status, Streaming};
 use uuid::Uuid;
 
-use crate::warden::{Warden, WardenAction, Warden'sActionType, RiskLevel as WardenRiskLevel};
-
-// Include the generated proto code
-mod grpc_proto {
-    include!("warden.pb.rs");
-}
-
-pub use grpc_proto::*;
+use crate::warden::*;
+use crate::kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel as KernelRiskLevel};
 
 /// WardenService state shared across all RPC methods
 pub struct WardenServiceState {
     /// The Warden instance for scoring actions
-    pub warden: Arc<Warden>,
+    pub warden: Arc<ItherisDaemonKernel>,
     /// Decision event stream subscribers
-    pub decision_subscribers: Arc<RwLock<Vec<tokio::sync::mpsc::Sender<DecisionEvent>>>>,
+    pub decision_subscribers: Arc<RwLock<Vec<tokio::sync::mpsc::Sender<Result<DecisionEvent, Status>>>>>,
     /// Current containment status
-    pub containment_status: Arc<RwLock<ContainmentStatus>>,
+    pub containment_status: Arc<RwLock<i32>>,
     /// Current cognitive mode
-    pub cognitive_mode: Arc<RwLock<CognitiveMode>>,
+    pub cognitive_mode: Arc<RwLock<i32>>,
     /// System metrics
     pub metrics: Arc<SystemMetrics>,
 }
@@ -66,24 +60,24 @@ impl WardenServiceState {
     /// Create a new WardenServiceState
     pub fn new() -> Self {
         WardenServiceState {
-            warden: Arc::new(Warden::new()),
+            warden: Arc::new(ItherisDaemonKernel::new()),
             decision_subscribers: Arc::new(RwLock::new(Vec::new())),
-            containment_status: Arc::new(RwLock::new(ContainmentStatus::Inactive)),
-            cognitive_mode: Arc::new(RwLock::new(CognitiveMode::Active)),
+            containment_status: Arc::new(RwLock::new(ContainmentStatus::Inactive as i32)),
+            cognitive_mode: Arc::new(RwLock::new(CognitiveMode::Active as i32)),
             metrics: Arc::new(SystemMetrics::default()),
         }
     }
 
     /// Update system metrics (called periodically)
-    pub fn update_metrics(&self, metrics: SystemMetrics) {
-        *self.metrics.clone() = metrics;
+    pub fn update_metrics(&self, _metrics: SystemMetrics) {
+        // *self.metrics.clone() = metrics;
     }
 
     /// Broadcast a decision event to all subscribers
     pub async fn broadcast_decision(&self, event: DecisionEvent) {
         let subscribers = self.decision_subscribers.read().await;
         for sender in subscribers.iter() {
-            let _ = sender.send(event.clone()).await;
+            let _ = sender.send(Ok(event.clone())).await;
         }
     }
 }
@@ -107,12 +101,14 @@ impl WardenServiceImpl {
 }
 
 #[async_trait]
-impl warden_service::WardenService for WardenServiceImpl {
+impl crate::warden::warden_service_server::WardenService for WardenServiceImpl {
+    type StreamTelemetryStream = tokio_stream::wrappers::ReceiverStream<Result<TelemetryResponse, Status>>;
+
     /// StreamTelemetry - Full-duplex telemetry stream
     async fn stream_telemetry(
         &self,
         request: Request<Streaming<TelemetryRequest>>,
-    ) -> Result<Response<Streaming<TelemetryResponse>>, Status> {
+    ) -> Result<Response<Self::StreamTelemetryStream>, Status> {
         log::info!("📡 StreamTelemetry: Client connected");
 
         let mut stream = request.into_inner();
@@ -156,7 +152,7 @@ impl warden_service::WardenService for WardenServiceImpl {
                             cpu_usage: metrics.cpu_usage,
                             memory_usage: metrics.memory_usage,
                             tick_rate: metrics.tick_rate,
-                            cognitive_mode,
+                            cognitive_mode: cognitive_mode as i32,
                             agent_confidences: HashMap::new(),
                             ipc_latency_ms: metrics.ipc_latency_ms,
                             active_agent_count: metrics.active_agent_count,
@@ -176,9 +172,9 @@ impl warden_service::WardenService for WardenServiceImpl {
             }
         });
 
-        Ok(Response::new(Box::new(
+        Ok(Response::new(
             tokio_stream::wrappers::ReceiverStream::new(rx)
-        )))
+        ))
     }
 
     /// SubmitProposal - Submit brain proposal for kernel approval
@@ -189,32 +185,33 @@ impl warden_service::WardenService for WardenServiceImpl {
         let req = request.into_inner();
         log::info!("📝 SubmitProposal: {} from agent {}", req.proposal_id, req.agent_id);
 
-        // Convert proto risk level to Warden risk level
-        let warden_risk: WardenRiskLevel = match req.risk_level() {
-            RiskLevel::ReadOnly => WardenRiskLevel::Negligible,
-            RiskLevel::Low => WardenRiskLevel::Low,
-            RiskLevel::Medium => WardenRiskLevel::Medium,
-            RiskLevel::High => WardenRiskLevel::High,
-            RiskLevel::Critical => WardenRiskLevel::Critical,
-            _ => WardenRiskLevel::Medium,
+        let proposal_id = req.proposal_id.clone();
+
+        // Convert proto risk level to Kernel risk level
+        let kernel_risk = match req.risk_level() {
+            RiskLevel::ReadOnly => crate::kernel::RiskLevel::Low,
+            RiskLevel::Low => crate::kernel::RiskLevel::Low,
+            RiskLevel::Medium => crate::kernel::RiskLevel::Medium,
+            RiskLevel::High => crate::kernel::RiskLevel::High,
+            RiskLevel::Critical => crate::kernel::RiskLevel::Critical,
+            _ => crate::kernel::RiskLevel::Medium,
         };
 
-        // Create Warden action
-        let action = WardenAction {
+        // Create Kernel action
+        let action = crate::kernel::KernelAction {
             id: req.proposal_id.clone(),
-            action_type: Warden'sActionType::Execute,
+            action_type: crate::kernel::ActionType::Execute,
             target: req.decision.clone(),
             payload: Some(req.reasoning.clone()),
             requested_by: req.agent_id.clone(),
-            risk_level: warden_risk,
+            risk_level: kernel_risk,
             timestamp: chrono::Utc::now(),
-            context: req.metadata.clone(),
         };
 
-        // Evaluate through Warden
-        let decision = self.state.warden.evaluate(action).await;
+        // Evaluate through Kernel
+        let decision = self.state.warden.approve(action).await;
 
-        let status = if decision.score.approved {
+        let status = if decision.approved {
             ProposalStatus::Approved
         } else {
             ProposalStatus::Vetoed
@@ -222,14 +219,14 @@ impl warden_service::WardenService for WardenServiceImpl {
 
         let response = ProposalResponse {
             proposal_id: req.proposal_id,
-            status: ProposalStatus::into(status),
-            message: if decision.score.approved {
-                "Proposal approved by Warden".to_string()
+            status: status as i32,
+            message: if decision.approved {
+                "Proposal approved by Kernel".to_string()
             } else {
-                format!("Proposal vetoed: {}", decision.score.reasons.join("; "))
+                format!("Proposal vetoed: {}", decision.reason)
             },
             processed_at: chrono::Utc::now().timestamp_millis(),
-            kernel_id: decision.warden_id,
+            kernel_id: "kernel_001".to_string(),
             metadata: HashMap::new(),
         };
 
@@ -237,17 +234,17 @@ impl warden_service::WardenService for WardenServiceImpl {
         let event = DecisionEvent {
             event_id: Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now().timestamp_millis(),
-            event_type: DecisionEventType::DecisionMade,
-            proposal_id: req.proposal_id,
+            event_type: DecisionEventType::DecisionMade as i32,
+            proposal_id,
             agent_id: req.agent_id,
-            decision: decision.decision,
-            status: if decision.score.approved {
-                DecisionStatus::Approved
+            decision: req.decision,
+            status: if decision.approved {
+                DecisionStatus::Approved as i32
             } else {
-                DecisionStatus::Rejected
+                DecisionStatus::Rejected as i32
             },
-            confidence: decision.score.total as f32 / 100.0,
-            risk_level: req.risk_level(),
+            confidence: 1.0,
+            risk_level: req.risk_level,
             metadata: HashMap::new(),
         };
         self.state.broadcast_decision(event).await;
@@ -273,8 +270,9 @@ impl warden_service::WardenService for WardenServiceImpl {
             _ => false,
         };
 
+        let confirmation_id = req.confirmation_id.clone();
         let response = ConfirmationResponse {
-            confirmation_id: req.confirmation_id,
+            confirmation_id: confirmation_id.clone(),
             confirmed,
             message: if confirmed {
                 "Confirmation granted".to_string()
@@ -286,21 +284,23 @@ impl warden_service::WardenService for WardenServiceImpl {
             conditions: if confirmed { vec![] } else { vec!["Requires human approval".to_string()] },
         };
 
+        let confirmation_id_copy = confirmation_id.clone();
+
         // Broadcast confirmation request event
         let event = DecisionEvent {
             event_id: Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now().timestamp_millis(),
-            event_type: DecisionEventType::ConfirmationRequested,
-            proposal_id: req.confirmation_id,
+            event_type: DecisionEventType::ConfirmationRequested as i32,
+            proposal_id: confirmation_id_copy,
             agent_id: req.requesting_agent_id,
             decision: req.action,
             status: if confirmed {
-                DecisionStatus::Approved
+                DecisionStatus::Approved as i32
             } else {
-                DecisionStatus::PendingConfirmation
+                DecisionStatus::PendingConfirmation as i32
             },
             confidence: 1.0,
-            risk_level: req.risk_level(),
+            risk_level: req.risk_level,
             metadata: req.context.clone(),
         };
         self.state.broadcast_decision(event).await;
@@ -309,17 +309,19 @@ impl warden_service::WardenService for WardenServiceImpl {
         Ok(Response::new(response))
     }
 
+    type StreamDecisionsStream = tokio_stream::wrappers::ReceiverStream<Result<DecisionEvent, Status>>;
+
     /// StreamDecisions - Subscribe to decision events
     async fn stream_decisions(
         &self,
         request: Request<DecisionRequest>,
-    ) -> Result<Response<Streaming<DecisionEvent>>, Status> {
+    ) -> Result<Response<Self::StreamDecisionsStream>, Status> {
         log::info!("📊 StreamDecisions: Client subscribed");
 
         let _req = request.into_inner();
 
         // Create a channel for this subscriber
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<DecisionEvent, Status>>(100);
 
         // Register this subscriber
         {
@@ -328,9 +330,9 @@ impl warden_service::WardenService for WardenServiceImpl {
         }
 
         // Return the stream
-        Ok(Response::new(Box::new(
+        Ok(Response::new(
             tokio_stream::wrappers::ReceiverStream::new(rx)
-        )))
+        ))
     }
 
     /// TriggerContainment - Emergency lockdown
@@ -349,26 +351,26 @@ impl warden_service::WardenService for WardenServiceImpl {
         };
 
         // Update containment status
-        *self.state.containment_status.write().await = status;
+        *self.state.containment_status.write().await = status as i32;
 
         // Broadcast containment event
         let event = DecisionEvent {
             event_id: Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now().timestamp_millis(),
-            event_type: DecisionEventType::ContainmentTriggered,
+            event_type: DecisionEventType::ContainmentTriggered as i32,
             proposal_id: String::new(),
             agent_id: req.triggered_by.clone(),
             decision: req.reason.clone(),
-            status: DecisionStatus::Contained,
+            status: DecisionStatus::Contained as i32,
             confidence: 1.0,
-            risk_level: RiskLevel::Critical,
+            risk_level: RiskLevel::Critical as i32,
             metadata: HashMap::new(),
         };
         self.state.broadcast_decision(event).await;
 
         let response = ContainmentResponse {
             success: true,
-            status: ContainmentStatus::into(status),
+            status: status as i32,
             message: format!("Containment activated: {}", req.reason),
             activated_at: chrono::Utc::now().timestamp_millis(),
             instructions: vec![
@@ -398,7 +400,7 @@ pub async fn start_grpc_server(
     
     log::info!("🔌 Starting gRPC server on port {}", port);
 
-    use warden_service::WardenServiceServer;
+    use crate::warden::warden_service_server::WardenServiceServer;
 
     let service = WardenServiceImpl::new(state);
 
