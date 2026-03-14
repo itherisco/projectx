@@ -873,6 +873,35 @@ function approve(kernel::KernelState, proposal::ActionProposal, world_state::Dic
         # Still use recalculated value but log the attempt
     end
     
+    # HARDCODED LEP VETO LOGIC (P0 Critical Action)
+    # score = priority * (reward - risk)
+    # Veto if score < 0 or risk > 0.8
+
+    # Evaluate against active goal priorities
+    priority_scores = evaluate_world(kernel)
+    active_idx = findfirst(g -> g.id == kernel.active_goal_id, kernel.goals)
+    active_priority = active_idx !== nothing ? priority_scores[active_idx] : 0.5f0
+
+    # Predicted reward (simplified for LEP scoring)
+    reward_pred = 1.0f0 - proposal.predicted_cost
+
+    # Calculate LEP score
+    lep_score = active_priority * (reward_pred - risk_level)
+
+    # CRITICAL VETO: Score must be non-negative
+    if lep_score < 0.0f0
+        @warn "LEP VETO: Negative score detected" score=lep_score priority=active_priority reward=reward_pred risk=risk_level
+        kernel.last_decision = DENIED
+        return DENIED
+    end
+
+    # CRITICAL VETO: Hard risk limit (0.8)
+    if risk_level > 0.8f0
+        @warn "LEP VETO: Risk level exceeds hard limit" risk=risk_level limit=0.8
+        kernel.last_decision = DENIED
+        return DENIED
+    end
+
     # Evaluate based on self-metrics
     confidence = get(kernel.self_metrics, "confidence", 0.8f0)
     energy = get(kernel.self_metrics, "energy", 1.0f0)
@@ -891,11 +920,6 @@ function approve(kernel::KernelState, proposal::ActionProposal, world_state::Dic
         return DENIED
     end
     
-    # Evaluate against active goal priorities
-    priority_scores = evaluate_world(kernel)
-    active_idx = findfirst(g -> g.id == kernel.active_goal_id, kernel.goals)
-    active_priority = active_idx !== nothing ? priority_scores[active_idx] : 0.5f0
-    
     # Require minimum priority for approval
     if active_priority < 0.1f0
         @warn "Kernel denied: active goal priority too low" priority=active_priority
@@ -903,15 +927,8 @@ function approve(kernel::KernelState, proposal::ActionProposal, world_state::Dic
         return DENIED
     end
     
-    # Check risk threshold - reject if too high
-    if risk_level > 0.8f0
-        @warn "Kernel denied: risk too high" risk=risk_level
-        kernel.last_decision = DENIED
-        return DENIED
-    end
-    
     # All checks passed - approve
-    @debug "Kernel approved" action=proposal.capability_id risk=risk_level confidence=confidence
+    @debug "Kernel approved" action=proposal.capability_id risk=risk_level confidence=confidence score=lep_score
     kernel.last_decision = APPROVED
     return APPROVED
 end

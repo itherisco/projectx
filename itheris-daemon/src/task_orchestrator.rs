@@ -60,7 +60,7 @@ impl Default for TaskPriority {
 }
 
 /// Task status
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     Pending,
@@ -96,11 +96,24 @@ pub struct Task {
     /// Completed at
     pub completed_at: Option<u64>,
     /// Estimated cost
-    pub estimated_cost: f64,
+    #[serde(skip)]
+    pub estimated_cost: OrderedFloat,
     /// Actual cost
-    pub actual_cost: Option<f64>,
+    #[serde(skip)]
+    pub actual_cost: Option<OrderedFloat>,
     /// Error message if failed
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+pub struct OrderedFloat(pub f64);
+
+impl Eq for OrderedFloat {}
+
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
 }
 
 /// Task request
@@ -313,7 +326,7 @@ impl TaskOrchestrator {
             created_at: now,
             started_at: None,
             completed_at: None,
-            estimated_cost: request.estimated_cost,
+            estimated_cost: OrderedFloat(request.estimated_cost),
             actual_cost: None,
             error: None,
         };
@@ -368,7 +381,7 @@ impl TaskOrchestrator {
         };
         
         task.completed_at = Some(Utc::now().timestamp() as u64);
-        task.actual_cost = Some(actual_cost);
+        task.actual_cost = Some(OrderedFloat(actual_cost));
         task.error = error.clone();
 
         Ok(TaskResult {

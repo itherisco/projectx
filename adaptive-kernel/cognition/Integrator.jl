@@ -736,17 +736,17 @@ function generate_integrated_proposal(
     affective::AffectiveState
 )::ActionProposal
     # Adjust confidence with emotional modulation
-    emotional_modulation = apply_emotional_modulation(affective, 0.5f0)
-    adjusted_confidence = decision.confidence * (1.0f0 + emotional_modulation)
+    # CORRECTED: Base value first, then affective state
+    modulated_confidence = apply_emotional_modulation(Float32(decision.confidence), affective)
     
     # Generate proposal
     return ActionProposal(
         decision.action,
-        clamp(adjusted_confidence, 0.0f1, 1.0f0),
+        clamp(modulated_confidence, 0.0f1, 1.0f0),
         decision.predicted_cost,
         decision.predicted_reward,
         decision.risk,
-        "Integrated cognitive cycle: $(decision.reasoning)"
+        "Integrated cognitive cycle: $(decision.reasoning) [affective_valence=$(round(affective.valence, digits=2))]"
     )
 end
 

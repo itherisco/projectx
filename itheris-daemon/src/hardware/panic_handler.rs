@@ -251,16 +251,16 @@ pub fn register_panic_handler() -> Result<(), String> {
     {
         unsafe {
             // Setup SIGSEGV handler
-            let sigsegv_handler: usize = std::mem::transmute(signal_handler::<{libc::SIGSEGV}> as *const ());
-            libc::signal(libc::SIGSEGV, sigsegv_handler as libc::sighandler_t);
+            let sigsegv_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGSEGV }> as *const ());
+            libc::signal(libc::SIGSEGV, sigsegv_handler);
             
             // Setup SIGBUS handler
-            let sigbus_handler: usize = std::mem::transmute(signal_handler::<{libc::SIGBUS}> as *const ());
-            libc::signal(libc::SIGBUS, sigbus_handler as libc::sighandler_t);
+            let sigbus_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGBUS }> as *const ());
+            libc::signal(libc::SIGBUS, sigbus_handler);
             
             // Setup SIGFPE handler
-            let sigfpe_handler: usize = std::mem::transmute(signal_handler::<{libc::SIGFPE}> as *const ());
-            libc::signal(libc::SIGFPE, sigfpe_handler as libc::sighandler_t);
+            let sigfpe_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGFPE }> as *const ());
+            libc::signal(libc::SIGFPE, sigfpe_handler);
         }
     }
     

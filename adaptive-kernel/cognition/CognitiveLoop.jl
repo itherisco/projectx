@@ -291,8 +291,7 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     state.brain_output = brain_output
     
     # === STEP 8: Decision Generation with Emotional Weighting ===
-    # Apply emotional weighting to decision making
-    emotional_weight = compute_emotional_weight(state.affective_state)
+    # Emotional state now causally modulates proposal confidence in Step 10
     
     # === STEP 9: Online Learning Integration (Connect OnlineLearning to main loop) ===
     # Update learning state based on outcomes and metabolic state
@@ -315,7 +314,7 @@ function cognition_cycle(state::CognitiveState, raw_input::Dict)::ActionProposal
     proposal = generate_action_proposal(
         brain_output,
         state.perception,
-        emotional_weight,
+        state.affective_state,
         state.cycle_count
     )
     
@@ -478,31 +477,34 @@ end
 function generate_action_proposal(
     brain_output::BrainOutput,
     perception::Perception,
-    emotional_weight::Float32,
+    affective_state::AffectiveState,
     cycle_count::UInt64
 )::ActionProposal
     # Select top action from brain output
     action = length(brain_output.proposed_actions) > 0 ? 
               brain_output.proposed_actions[1] : "observe"
     
-    # Adjust confidence with emotional weight
-    adjusted_confidence = brain_output.confidence * (1.0f0 + emotional_weight)
+    # Adjust confidence with emotional modulation (CONNECTED CAUSALLY)
+    modulated_confidence = apply_emotional_modulation(brain_output.confidence, affective_state)
     
     # Simple cost/reward estimation
     predicted_cost = 0.1f0
     predicted_reward = brain_output.value_estimate
     
     # Risk based on uncertainty and emotional state
-    risk = brain_output.uncertainty + emotional_weight * 0.5f0
+    # High arousal/low dominance increases perceived risk
+    arousal_risk = affective_state.arousal * 0.2f0
+    dominance_safety = (1.0f0 - affective_state.dominance) * 0.1f0
+    risk = clamp(brain_output.uncertainty + arousal_risk + dominance_safety, 0.0f0, 1.0f0)
     
-    reasoning = "Cycle $cycle_count: $(brain_output.reasoning) [emotional_weight=$emotional_weight]"
+    reasoning = "Cycle $cycle_count: $(brain_output.reasoning) [affective_valence=$(round(affective_state.valence, digits=2))]"
     
     return ActionProposal(
         action,
-        clamp(adjusted_confidence, 0.0f0, 1.0f0),
+        clamp(modulated_confidence, 0.0f0, 1.0f0),
         predicted_cost,
         predicted_reward,
-        clamp(risk, 0.0f0, 1.0f0),
+        risk,
         reasoning
     )
 end

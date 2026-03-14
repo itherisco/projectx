@@ -412,9 +412,8 @@ impl JWTAuth {
         let claims = self.validate_token(token)?;
         
         if let Ok(mut cache) = self.token_cache.write() {
-            let jti = claims.jti.clone();
-            cache.revoked_tokens.insert(jti.clone(), claims.exp);
-            cache.valid_tokens.remove(&jti);
+            cache.revoked_tokens.insert(claims.jti.clone(), claims.exp);
+            cache.valid_tokens.remove(&claims.jti);
         }
         
         Ok(())

@@ -16,8 +16,10 @@ pub mod panic_handler;
 pub mod memory_protector;
 pub mod emergency_gpio;
 
+pub use memory_protector::enforce_oneiric_isolation;
+
 use heartbeat::{HeartbeatConfig, HeartbeatState};
-use watchdog::{get_watchdog_status, is_watchdog_available, kick_watchdog, WatchdogStatus};
+use watchdog::{get_watchdog_status, kick_watchdog, WatchdogStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
@@ -37,7 +39,7 @@ pub enum HardwareError {
 }
 
 /// Unified hardware status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HardwareStatus {
     /// Watchdog status
     pub watchdog: WatchdogStatus,
@@ -107,7 +109,7 @@ pub fn init_hardware() -> Result<HardwareConfig, HardwareError> {
     }
     
     // Initialize heartbeat
-    let _ = match heartbeat::init_heartbeat() {
+    let heartbeat_res = match heartbeat::init_heartbeat() {
         Ok(config) => {
             log::info!("   ✓ Heartbeat initialized");
             Ok::<HardwareConfig, HardwareError>(HardwareConfig {
@@ -120,7 +122,7 @@ pub fn init_hardware() -> Result<HardwareConfig, HardwareError> {
         Err(e) => {
             log::warn!("   ⚠️ Heartbeat initialization warning: {}", e);
             // Continue in software simulation mode
-            Ok(HardwareConfig::default())
+            Ok::<HardwareConfig, HardwareError>(HardwareConfig::default())
         }
     };
     
@@ -150,7 +152,7 @@ pub fn init_hardware() -> Result<HardwareConfig, HardwareError> {
     }
     
     log::info!("✅ Hardware subsystem initialization complete");
-    Ok(HardwareConfig::default())
+    heartbeat_res
 }
 
 /// Kick the watchdog timer
@@ -166,13 +168,13 @@ pub fn get_hardware_status() -> HardwareStatus {
     HardwareStatus {
         watchdog: get_watchdog_status(),
         heartbeat: heartbeat::get_heartbeat_state(),
-        fully_available: is_watchdog_available() && heartbeat::is_heartbeat_running(),
+        fully_available: is_hardware_available() && heartbeat::is_heartbeat_running(),
     }
 }
 
 /// Check if hardware watchdog is available
 pub fn is_hardware_available() -> bool {
-    is_watchdog_available()
+    watchdog::is_hardware_available()
 }
 
 /// HardwareGuard - RAII wrapper for hardware resources

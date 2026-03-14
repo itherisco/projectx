@@ -734,8 +734,8 @@ function _encrypt_aes256_gcm_rust(plaintext::Vector{UInt8}, key::Vector{UInt8}):
     # Call Rust FFI
     result_len = ccall(
         (:aes_gcm_encrypt, "libitheris"),
-        usize,
-        (Ptr{UInt8}, usize, Ptr{UInt8}, usize, Ptr{UInt8}, Ptr{UInt8}),
+        Csize_t,
+        (Ptr{UInt8}, Csize_t, Ptr{UInt8}, Csize_t, Ptr{UInt8}, Ptr{UInt8}),
         key, length(key),
         plaintext, length(plaintext),
         ciphertext_out, nonce_out
@@ -819,8 +819,8 @@ function _decrypt_aes256_gcm_rust(encrypted::AES256GCMResult, key::Vector{UInt8}
     # Call Rust FFI
     result_len = ccall(
         (:aes_gcm_decrypt, "libitheris"),
-        usize,
-        (Ptr{UInt8}, usize, Ptr{UInt8}, Ptr{UInt8}, usize, Ptr{UInt8}),
+        Csize_t,
+        (Ptr{UInt8}, Csize_t, Ptr{UInt8}, Ptr{UInt8}, Csize_t, Ptr{UInt8}),
         key, length(key),
         encrypted.nonce,
         ciphertext_with_tag, ciphertext_len,

@@ -27,6 +27,7 @@ export
     AgentProposal,
     ConflictResolution,
     run_cognitive_cycle,
+    apply_emotional_modulation!,
     DecisionOutcome,
     SpineConfig,
     # Risk level enum
@@ -407,6 +408,51 @@ end
 # ============================================================================
 
 """
+    apply_emotional_modulation! - Causal emotional modulation of agent proposals
+
+    Implements the core causal link where the Brain's affective state modulates
+    the confidence and perceived value of action proposals.
+
+    SECURITY: Modulation is bounded to ±30% (max 0.3) as per Emotions.jl.
+"""
+function apply_emotional_modulation!(
+    proposals::Vector{AgentProposal},
+    affective_state::Any  # AffectiveState from Emotions.jl
+)
+    # Check if Emotions module is available and has the required function
+    # In practice, this would use compute_value_modulation(affective_state)
+    try
+        # This is a dynamic call to allow module independence
+        modulation = if hasproperty(affective_state, :value_modulation)
+            affective_state.value_modulation
+        else
+            0.0f0 # Neutral if unavailable
+        end
+
+        for i in eachindex(proposals)
+            # Create a new proposal with modulated confidence
+            p = proposals[i]
+            # Modulation increases or decreases confidence bounded by 30%
+            new_confidence = clamp(p.confidence * (1.0 + modulation), 0.0, 1.0)
+
+            # Replace proposal in-place (since AgentProposal is immutable, we reconstruct)
+            proposals[i] = AgentProposal(
+                p.agent_id,
+                p.agent_type,
+                p.decision,
+                new_confidence;
+                reasoning = p.reasoning * " [emotion_mod=$(round(modulation, digits=2))]",
+                weight = p.weight,
+                evidence = p.evidence,
+                alternatives = p.alternatives
+            )
+        end
+    catch e
+        @warn "Failed to apply emotional modulation" error=string(e)
+    end
+end
+
+"""
     run_cognitive_cycle - Execute a complete cognitive cycle through the spine
 """
 function run_cognitive_cycle(
@@ -415,7 +461,8 @@ function run_cognitive_cycle(
     agents::Dict{Symbol, Any},  # agent_type => agent_instance
     kernel::Any,  # Kernel instance for approval
     config::SpineConfig = SpineConfig();
-    goal_graph::Any = nothing  # GoalGraph for hierarchy violation checking
+    goal_graph::Any = nothing,  # GoalGraph for hierarchy violation checking
+    affective_state::Any = nothing # AffectiveState for emotional modulation
 )::DecisionCycle
     
     cycle = DecisionCycle(cycle_number, perception)
@@ -429,6 +476,15 @@ function run_cognitive_cycle(
     # PHASE 2: PARALLEL AGENT PROPOSALS
     # =========================================================================
     cycle.proposals = run_parallel_agent_proposals(agents, perception)
+
+    # === CAUSAL EMOTIONAL INTEGRATION ===
+    # Apply emotional modulation BEFORE conflict resolution and kernel approval
+    # This ensures "feelings" causally influence what the AI decides to do.
+    if affective_state !== nothing
+        apply_emotional_modulation!(cycle.proposals, affective_state)
+        @info "Applied emotional modulation to proposals"
+    end
+
     cycle.proposal_timestamp = now()
     
     @info "Phase 2: Agent proposals generated" num_proposals=length(cycle.proposals)
@@ -509,15 +565,12 @@ function run_cognitive_cycle(
     # =========================================================================
     # PHASE 5: KERNEL APPROVAL (MANDATORY)
     # =========================================================================
-    if config.kernel_approval_required
-        kernel_response = request_kernel_approval(kernel, cycle.committed_decision)
-        cycle.kernel_approved = kernel_response.approved
-        cycle.kernel_rejection_reason = kernel_response.rejection_reason
-        cycle.committed_decision.kernel_approved = kernel_response.approved
-        cycle.committed_decision.kernel_approval_timestamp = now()
-    else
-        cycle.kernel_approved = true
-    end
+    # SECURITY: Hardcoded enforcement - kernel approval can NO LONGER be bypassed
+    kernel_response = request_kernel_approval(kernel, cycle.committed_decision)
+    cycle.kernel_approved = kernel_response.approved
+    cycle.kernel_rejection_reason = kernel_response.rejection_reason
+    cycle.committed_decision.kernel_approved = kernel_response.approved
+    cycle.committed_decision.kernel_approval_timestamp = now()
     
     cycle.kernel_approval_timestamp = now()
     

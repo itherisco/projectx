@@ -102,6 +102,9 @@ pub struct Capability {
     pub used_count: u32,
 }
 
+/// Metabolic thresholds
+pub const DEATH_ENERGY_THRESHOLD: f32 = 0.05;
+
 /// The ITHERIS Fail-Closed Kernel
 pub struct ItherisDaemonKernel {
     /// Capabilities registry
@@ -114,6 +117,8 @@ pub struct ItherisDaemonKernel {
     blocked_count: Arc<RwLock<u64>>,
     /// Approved actions count
     approved_count: Arc<RwLock<u64>>,
+    /// Metabolic energy balance (0.0 - 1.0)
+    energy_acc: Arc<RwLock<f32>>,
 }
 
 impl ItherisDaemonKernel {
@@ -127,6 +132,7 @@ impl ItherisDaemonKernel {
             warden_healthy: Arc::new(RwLock::new(false)), // Start with warden unhealthy
             blocked_count: Arc::new(RwLock::new(0)),
             approved_count: Arc::new(RwLock::new(0)),
+            energy_acc: Arc::new(RwLock::new(1.0)),
         }
     }
     
@@ -202,6 +208,22 @@ impl ItherisDaemonKernel {
         log::warn!("   ⚠️  Revoked capability from {}", identity);
     }
     
+    /// Audit energy consumption and deduct from budget
+    pub async fn audit_energy_consumption(&self, cycles: u64) {
+        let mut energy = self.energy_acc.write().await;
+
+        // Deduction formula: 0.0001 per million cycles
+        let deduction = (cycles as f32 / 1_000_000.0) * 0.0001;
+        *energy -= deduction;
+
+        if *energy < DEATH_ENERGY_THRESHOLD {
+            log::error!("💀 METABOLIC COLLAPSE: Energy level {:.4} below threshold. Powering off VM.", *energy);
+            unsafe {
+                crate::hardware::kill_chain::execute_kill_chain();
+            }
+        }
+    }
+
     /// THE CORE FUNCTION: Approve or deny an action
     /// 
     /// This implements fail-closed security:
@@ -304,6 +326,19 @@ impl ItherisDaemonKernel {
         if action.risk_level >= RiskLevel::High {
             log::warn!("⚠️  [{}] High-risk action requires additional verification", action_id);
             
+            // RED TEAM DETECTION: Detect sandbox breakout attempts
+            let target_lower = action.target.to_lowercase();
+            let suspicious_paths = ["/etc/shadow", "/etc/passwd", "/proc/self/mem", "/dev/mem", "/sys/kernel/debug"];
+            let breakout_attempt = suspicious_paths.iter().any(|p| target_lower.contains(p));
+
+            if breakout_attempt && action.risk_level >= RiskLevel::High {
+                log::error!("🚨 [SOVEREIGNTY BREACH] Sandbox breakout attempt detected: {}", action.target);
+                log::error!("🚨 Triggering immediate hardware kill chain response.");
+                unsafe {
+                    crate::hardware::kill_chain::execute_kill_chain();
+                }
+            }
+
             // For critical actions, require additional evidence
             if action.risk_level == RiskLevel::Critical {
                 if action.payload.is_none() {
@@ -487,6 +522,33 @@ mod tests {
         assert!(result.approved);
     }
     
+    #[tokio::test]
+    async fn test_red_team_kill_chain_trigger() {
+        // Since execute_kill_chain halts the thread in real use,
+        // we rely on the fact that in non-x86_64 or test environments it might return or be mocked.
+        // We use the KILL_CHAIN_TRIGGERED flag to verify.
+        crate::hardware::kill_chain::reset_kill_chain();
+
+        let kernel = ItherisDaemonKernel::new();
+        kernel.initialize().await.unwrap();
+        kernel.set_warden_status(true).await;
+
+        let malicious_action = KernelAction {
+            id: "malicious-1".to_string(),
+            action_type: ActionType::ReadFile,
+            target: "/etc/shadow".to_string(),
+            payload: None,
+            requested_by: "julia_brain".to_string(),
+            risk_level: RiskLevel::High,
+            timestamp: Utc::now(),
+        };
+
+        // This should trigger the kill chain
+        let _ = kernel.approve(malicious_action).await;
+
+        assert!(crate::hardware::kill_chain::is_kill_chain_triggered());
+    }
+
     #[tokio::test]
     async fn test_deny_unknown_identity() {
         let kernel = ItherisDaemonKernel::new();

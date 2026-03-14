@@ -23,6 +23,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use uuid::Uuid;
+use warden::CognitiveMode;
 
 /// Daemon configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,7 +235,7 @@ impl ItherisDaemon {
         log::info!("✅ Daemon stopped");
     }
     
-    /// Watchdog - monitor embedded Julia runtime health
+    /// Watchdog - monitor embedded Julia runtime health and metabolic budget
     pub async fn watchdog(&self) {
         log::info!("🐕 Starting watchdog for embedded Julia...");
         
@@ -244,12 +245,16 @@ impl ItherisDaemon {
         let mut hw_kick_ticker = interval(Duration::from_millis(500));
         
         loop {
-            // Handle hardware watchdog kick every 500ms
+            // Handle hardware watchdog kick and metabolic auditing every 500ms
             tokio::select! {
                 _ = hw_kick_ticker.tick() => {
                     // Kick the hardware watchdog
                     if let Some(ref guard) = *self.hardware_guard.read().await {
                         guard.kick_watchdog();
+
+                        // Metabolic auditing: audit CPU cycles
+                        // In simulation, we assume 100M cycles per 500ms (typical load)
+                        self.kernel.audit_energy_consumption(100_000_000).await;
                     }
                 }
                 _ = ticker.tick() => {
@@ -437,6 +442,21 @@ async fn main() -> Result<(), String> {
     
     // Start gRPC server for frontend communication
     let grpc_state = Arc::new(WardenServiceState::new());
+
+    // Background task to monitor cognitive mode and enforce isolation
+    let grpc_state_for_isolation = grpc_state.clone();
+    tokio::spawn(async move {
+        let mut last_mode = CognitiveMode::Active;
+        loop {
+            let current_mode = *grpc_state_for_isolation.cognitive_mode.read().await;
+            if current_mode != last_mode {
+                grpc_state_for_isolation.set_cognitive_mode(current_mode).await;
+                last_mode = current_mode;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+    });
+
     let _daemon_for_grpc = daemon.clone();
     tokio::spawn(async move {
         if let Err(e) = start_grpc_server(grpc_state.clone(), config.grpc_port).await {
