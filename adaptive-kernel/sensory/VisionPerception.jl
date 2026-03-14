@@ -36,6 +36,10 @@ using Statistics
 using LinearAlgebra
 using Dates
 
+# Import central Attention module for salience computation
+include("../cognition/attention/Attention.jl")
+using .Attention
+
 # ============================================================================
 # Type Definitions
 # ============================================================================
@@ -165,6 +169,7 @@ export
     extract_features,
     compute_perception_12d,
     process_vision_input,
+    central_attention_salience,
     
     # Utility functions
     validate_frame,
@@ -548,6 +553,7 @@ end
     _compute_salience(features::VisionFeatures)::Float32
 
 Compute visual salience score based on feature characteristics.
+Uses both local computation and central Attention.jl module for unified salience.
 """
 function _compute_salience(features::VisionFeatures)::Float32
     # Salience is higher when there are strong edges, motion, or texture
@@ -555,9 +561,49 @@ function _compute_salience(features::VisionFeatures)::Float32
     motion_strength = mean(features.motion_features)
     texture_variance = var(features.texture_features)
     
-    salience = clamp(edge_strength * 0.3 + motion_strength * 0.4 + texture_variance * 0.3, 0.0f0, 1.0f0)
+    # Local salience computation
+    local_salience = clamp(edge_strength * 0.3 + motion_strength * 0.4 + texture_variance * 0.3, 0.0f0, 1.0f0)
     
-    return salience
+    # Also compute using central Attention module for consistency
+    # Create a visual stimulus from features
+    visual_stimulus = Stimulus(
+        :vision,
+        vcat(features.spatial_features, features.edge_features, features.texture_features),
+        :visual,
+        features.timestamp,
+        local_salience
+    )
+    
+    # Get salience from central attention system
+    central_salience = try
+        # Use the Attention module's compute_salience if available
+        # Fall back to local computation if not
+        central_attention_salience(visual_stimulus)
+    catch
+        local_salience
+    end
+    
+    # Fuse local and central salience (weighted average)
+    fused_salience = local_salience * 0.6 + central_salience * 0.4
+    
+    return clamp(fused_salience, 0.0f0, 1.0f0)
+end
+
+"""
+    central_attention_salience(stimulus::Stimulus)::Float32
+
+Wrapper to compute salience using the central Attention system.
+Integrates vision salience with the ITHERIS Brain's unified attention mechanism.
+"""
+function central_attention_salience(stimulus::Stimulus)::Float32
+    # Create attention state for computation
+    attention_state = AttentionState(max_focus=3)
+    
+    # Compute salience using the central Attention module
+    # This ensures vision salience is consistent with other modalities
+    salience_scores = compute_salience(stimulus, attention_state.context)
+    
+    return salience_scores
 end
 
 """

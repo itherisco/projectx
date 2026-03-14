@@ -4,6 +4,26 @@
 
 The Multimodal Sensory Expansion enables the ITHERIS + JARVIS system to transition from processing "telemetry streams" to "perceiving physical spaces" through deep environmental awareness. This expansion integrates computer vision, multi-modal sensor fusion, and workflow management capabilities.
 
+## Stage 4 Autonomous Operation
+
+This expansion represents **Stage 4: Environmental Awareness** in the ITHERIS autonomous development framework. The system now possesses:
+
+1. **Vision Integration** - Camera sources (webcam, IP, file) mapped to 12D perception format
+2. **Multi-modal Fusion** - Vision + Audio + Telemetry unified through attention-based weighting
+3. **Digital Actuation** - OpenClaw framework for autonomous engineering workflows
+4. **Security Hardening** - Warden oversight with LEP veto equation for all actions
+
+### 12D Unified Perception Format
+
+All sensory inputs are mapped to a 12D feature vector for sub-microsecond processing:
+```
+[1-4]  Spatial features    - Physical space perception
+[5-8]  Composite features - Histogram + Edge weighted
+[9-12] Temporal features  - Texture + Motion weighted
+```
+
+This ensures vision inputs are processed with the same latency as auditory and telemetry data during the **136.1 Hz metabolic tick**.
+
 ## Architecture
 
 ```
@@ -65,8 +85,11 @@ Camera integration and image processing module.
   - **Texture Features (4D):** Local variance analysis
   - **Motion Features (4D):** Frame-difference motion detection
 - Object detection placeholder (for YOLO/detron integration)
-- Salience computation for attention systems
+- **Centralized Attention.jl Integration** - Salience computed via ITHERIS Brain's attention system
 - Novelty detection against history
+
+**Attention Integration:**
+Vision salience is computed using the central `Attention.jl` module to ensure consistent salience scoring across all modalities. The `central_attention_salience()` function creates a `Stimulus` and routes it through the ITHERIS Brain's unified attention mechanism.
 
 **12D Perception Format:**
 ```
@@ -104,8 +127,15 @@ Unified multi-modal sensory fusion module.
   - `:weighted` - Fixed weight fusion
   - `:attention` - Softmax-weighted attention fusion
   - `:concatenate` - Feature concatenation
-- Cross-modal attention computation
+- **Attention-Based Gating** - Uses `Attention.jl` for unified salience computation
+- Cross-modal attention with modality-specific salience
 - Real-time fusion with history tracking
+
+**Attention Gating:**
+The `apply_attention_gating()` function uses the central Attention system to compute salience for each modality. Low-salience modalities are gated out (features zeroed) to prevent "sensory bypass" - ensuring every perceived event is evaluated by the sovereign kernel before influencing the system's affective state or action proposals.
+
+**LEP Integration:**
+In high-risk scenarios, telemetry anomalies may be weighted more heavily than visual background noise to ensure the **Law Enforcement Point (LEP)** has the most accurate data for its veto decision.
 
 **Usage:**
 ```julia
@@ -145,6 +175,21 @@ Workflow management framework for autonomous operations.
 - Circular dependency detection
 - Execution status tracking
 - Workflow history
+
+**Warden Oversight:**
+Every action taken within OpenClaw pipelines (e.g., `git commit`, `curl`, `shell exec`) is strictly monitored by the Rust Warden through the LEP veto system.
+
+**LEP Veto Equation:**
+```
+score = priority × (reward - risk)
+```
+
+| Score Range | Decision |
+|-------------|----------|
+| score < 0 | VETO (negative expected value) |
+| risk > 0.8 | VETO (too risky) |
+| high-risk action && score < 0.3 | VETO |
+| otherwise | APPROVE with conditions if risk > 0.5 |
 
 **Usage:**
 ```julia

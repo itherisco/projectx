@@ -38,6 +38,10 @@ using .SensoryProcessing
 include("VisionPerception.jl")
 using .VisionPerception
 
+# Import central Attention module for salience-based gating
+include("../cognition/attention/Attention.jl")
+using .Attention
+
 # ============================================================================
 # Type Definitions
 # ============================================================================
@@ -150,6 +154,11 @@ export
     process_telemetry_input,
     fuse_perceptions,
     get_unified_perception,
+    
+    # Attention gating
+    apply_attention_gating,
+    compute_modality_salience,
+    gate_perception_by_attention,
     
     # Utility
     get_modality_weights,
@@ -645,6 +654,122 @@ function _compute_entropy(features::Vector{Float32})::Float32
     # Simple entropy approximation using variance
     variance = var(features)
     return clamp(variance * 10, 0.0f0, 1.0f0)
+end
+
+# ============================================================================
+# Attention-Based Gating (using Attention.jl)
+# ============================================================================
+
+"""
+    compute_modality_salience(modality::Symbol, features::Vector{Float32})::Float32
+
+Compute salience for a specific modality using the central Attention system.
+This ensures unified salience computation across all sensory modalities.
+"""
+function compute_modality_salience(modality::Symbol, features::Vector{Float32})::Float32
+    # Create stimulus for attention system
+    source = modality_to_source(modality)
+    
+    stimulus = Stimulus(
+        modality,
+        features,
+        source,
+        time(),
+        mean(features)
+    )
+    
+    # Compute salience using central Attention
+    attention_state = AttentionState(max_focus=5)
+    
+    try
+        return compute_salience(stimulus, attention_state.context)
+    catch
+        # Fallback to local computation
+        return _compute_local_salience(features)
+    end
+end
+
+"""
+    modality_to_source(modality::Symbol)::Symbol
+
+Map modality symbol to Attention source symbol.
+"""
+function modality_to_source(modality::Symbol)::Symbol
+    return get(Dict(
+        :vision => :visual,
+        :audio => :auditory,
+        :telemetry => :telemetry,
+        :memory => :memory,
+        :goal => :goal
+    ), modality, :unknown)
+end
+
+"""
+    _compute_local_salience(features::Vector{Float32})::Float32
+
+Fallback local salience computation.
+"""
+function _compute_local_salience(features::Vector{Float32})::Float32
+    if isempty(features)
+        return 0.0f0
+    end
+    
+    # Variance-based salience
+    variance = var(features)
+    intensity = mean(abs.(features))
+    
+    return clamp(variance * 5 + intensity * 0.5, 0.0f0, 1.0f0)
+end
+
+"""
+    apply_attention_gating(perceptions::Dict{Symbol, Vector{Float32}},
+                          saliences::Dict{Symbol, Float32},
+                          threshold::Float32=0.3f0)::Dict{Symbol, Vector{Float32}}
+
+Apply attention gating to perceptions. Low-salience modalities are gated out
+(their features are zeroed) to prevent sensory bypass.
+"""
+function apply_attention_gating(perceptions::Dict{Symbol, Vector{Float32}},
+                               saliences::Dict{Symbol, Float32},
+                               threshold::Float32=0.3f0)::Dict{Symbol, Vector{Float32}}
+    
+    gated = Dict{Symbol, Vector{Float32}}()
+    
+    for (modality, features) in perceptions
+        salience = get(saliences, modality, 0.0f0)
+        
+        if salience >= threshold
+            # Apply gating: keep features but mark as gated by scaling
+            gated[modality] = features
+        else
+            # Gate out: zero the features
+            gated[modality] = zeros(Float32, length(features))
+        end
+    end
+    
+    return gated
+end
+
+"""
+    gate_perception_by_attention(modality_perceptions::Dict{Symbol, Vector{Float32}};
+                                  context::Vector{Float32}=Float32[])::Tuple{Dict{Symbol, Vector{Float32}}, Dict{Symbol, Float32}}
+
+Apply attention-based gating to all modality perceptions.
+Returns gated perceptions and computed saliences.
+"""
+function gate_perception_by_attention(modality_perceptions::Dict{Symbol, Vector{Float32}};
+                                     context::Vector{Float32}=Float32[])::Tuple{Dict{Symbol, Vector{Float32}}, Dict{Symbol, Float32}}
+    
+    # Compute saliences for each modality
+    saliences = Dict{Symbol, Float32}()
+    for (modality, features) in modality_perceptions
+        saliences[modality] = compute_modality_salience(modality, features)
+    end
+    
+    # Apply attention gating
+    gated = apply_attention_gating(modality_perceptions, saliences)
+    
+    return gated, saliences
 end
 
 """

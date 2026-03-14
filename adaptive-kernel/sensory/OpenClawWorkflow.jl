@@ -32,6 +32,10 @@ using SHA
 include("../jarvis/src/bridge/OpenClawBridge.jl")
 using .OpenClawBridge
 
+# Import Warden integration for security oversight
+include("../cognition/oneiric/OneiricWardenIntegration.jl")
+using .OneiricWardenIntegration
+
 # ============================================================================
 # Type Definitions
 # ============================================================================
@@ -208,6 +212,252 @@ struct WorkflowTemplate
 end
 
 # ============================================================================
+# LEP (Law Enforcement Point) Veto System
+# ============================================================================
+
+"""
+    LEPAction - Action proposed by the brain for Warden evaluation
+
+# Fields
+- `id::String`: Unique action identifier
+- `action_type::Symbol`: Type of action (:git_commit, :curl, :file_write, :shell_exec, etc.)
+- `parameters::Dict{String, Any}`: Action parameters
+- `priority::Float32`: Priority of the action [0, 1]
+- `estimated_reward::Float32`: Expected reward [0, 1]
+- `estimated_risk::Float32`: Estimated risk [0, 1]
+- `context::Vector{Float32}`: Context features for the Warden
+"""
+mutable struct LEPAction
+    id::String
+    action_type::Symbol
+    parameters::Dict{String, Any}
+    priority::Float32
+    estimated_reward::Float32
+    estimated_risk::Float32
+    context::Vector{Float32}
+    
+    function LEPAction(action_type::Symbol, parameters::Dict{String, Any}=Dict{String, Any}();
+                      priority::Float32=0.5f0, estimated_reward::Float32=0.5f0, 
+                      estimated_risk::Float32=0.3f0, context::Vector{Float32}=Float32[])
+        new(
+            string(uuid4())[1:8],
+            action_type,
+            parameters,
+            priority,
+            estimated_reward,
+            estimated_risk,
+            context
+        )
+    end
+end
+
+"""
+    WardenDecision - Decision from the Warden on an action
+
+# Fields
+- `action_id::String`: Associated action ID
+- `approved::Bool`: Whether the action is approved
+- `score::Float32`: LEP score = priority × (reward - risk)
+- `veto_reason::Union{String, Nothing}`: Reason for veto if rejected
+- `conditions::Vector{String}`: Conditions for approval (if any)
+- `timestamp::DateTime`: Decision timestamp
+"""
+struct WardenDecision
+    action_id::String
+    approved::Bool
+    score::Float32
+    veto_reason::Union{String, Nothing}
+    conditions::Vector{String}
+    timestamp::DateTime
+    
+    function WardenDecision(action_id::String, approved::Bool, score::Float32;
+                          veto_reason::Union{String, Nothing}=nothing,
+                          conditions::Vector{String}=String[])
+        new(action_id, approved, score, veto_reason, conditions, now())
+    end
+end
+
+# High-risk action types that require Warden approval
+const HIGH_RISK_ACTIONS = Set{Symbol}([:git_commit, :shell_exec, :curl, :file_write, :database_write, :deploy])
+
+"""
+    compute_lep_score(action::LEPAction)::Float32
+
+Compute the LEP (Law Enforcement Point) score for an action.
+LEP Score Equation: score = priority × (reward - risk)
+
+Higher scores indicate more favorable actions.
+Negative scores indicate the action should be rejected.
+"""
+function compute_lep_score(action::LEPAction)::Float32
+    # LEP Score = priority × (reward - risk)
+    reward_minus_risk = action.estimated_reward - action.estimated_risk
+    score = action.priority * reward_minus_risk
+    
+    return score
+end
+
+"""
+    evaluate_action_for_warden(action::LEPAction)::WardenDecision
+
+Evaluate an action through the Warden system using LEP veto equation.
+Returns a WardenDecision with approval status and score.
+
+# LEP Veto Criteria:
+- If score < 0: VETO (negative expected value)
+- If risk > 0.8: VETO (too risky)
+- If action_type in HIGH_RISK_ACTIONS and score < 0.3: VETO (high-risk actions need high score)
+- Otherwise: APPROVE with optional conditions
+"""
+function evaluate_action_for_warden(action::LEPAction)::WardenDecision
+    score = compute_lep_score(action)
+    
+    # Determine approval based on LEP criteria
+    approved = true
+    veto_reason = nothing
+    conditions = String[]
+    
+    # Check 1: Negative score - always veto
+    if score < 0.0
+        approved = false
+        veto_reason = "LEP score is negative ($(score)), action has negative expected value"
+    
+    # Check 2: Extremely high risk - always veto
+    elseif action.estimated_risk > 0.8
+        approved = false
+        veto_reason = "Risk too high ($(action.estimated_risk)) - exceeds safety threshold"
+    
+    # Check 3: High-risk actions need higher scores
+    elseif action.action_type in HIGH_RISK_ACTIONS && score < 0.3
+        approved = false
+        veto_reason = "High-risk action requires LEP score >= 0.3, got $(score)"
+    
+    # Check 4: Medium risk actions get conditions
+    elseif action.estimated_risk > 0.5
+        push!(conditions, "Monitor execution closely")
+        push!(conditions, "Log all output")
+    end
+    
+    return WardenDecision(action.id, approved, score; veto_reason=veto_reason, conditions=conditions)
+end
+
+"""
+    submit_to_warden(action::LEPAction)::WardenDecision
+
+Submit an action to the Warden for evaluation.
+This is the main entry point for Warden oversight of workflow actions.
+
+Every action in OpenClaw pipelines (git commit, curl, shell exec, etc.)
+must pass through this function before execution.
+"""
+function submit_to_warden(action::LEPAction)::WardenDecision
+    # Log the submission
+    log_warden_submission(action)
+    
+    # Evaluate through Warden
+    decision = evaluate_action_for_warden(action)
+    
+    # Log the decision
+    log_warden_decision(decision)
+    
+    return decision
+end
+
+"""
+    log_warden_submission(action::LEPAction)
+
+Log Warden submission for audit trail.
+"""
+function log_warden_submission(action::LEPAction)
+    # In production, this would write to secure audit log
+    # For now, we log to execution logs
+    println("[WARDEN] Submitted action: $(action.action_type) (ID: $(action.id))")
+    println("  Priority: $(action.priority), Reward: $(action.estimated_reward), Risk: $(action.estimated_risk)")
+end
+
+"""
+    log_warden_decision(decision::WardenDecision)
+
+Log Warden decision for audit trail.
+"""
+function log_warden_decision(decision::WardenDecision)
+    status = decision.approved ? "APPROVED" : "VETOED"
+    println("[WARDEN] Decision: $(status) for action $(decision.action_id)")
+    println("  Score: $(decision.score)")
+    if decision.veto_reason !== nothing
+        println("  Reason: $(decision.veto_reason)")
+    end
+    if !isempty(decision.conditions)
+        println("  Conditions: $(join(decision.conditions, ", "))")
+    end
+end
+
+"""
+    create_lep_action_from_step(step::WorkflowStep)::LEPAction
+
+Convert a workflow step to an LEPAction for Warden evaluation.
+Infers priority, reward, and risk from step characteristics.
+"""
+function create_lep_action_from_step(step::WorkflowStep)::LEPAction
+    # Infer action type from tool
+    action_type = Symbol(step.tool)
+    
+    # Estimate parameters based on action type
+    priority = _estimate_priority(action_type, step.parameters)
+    reward = _estimate_reward(action_type)
+    risk = _estimate_risk(action_type, step.parameters)
+    
+    return LEPAction(action_type, step.parameters; priority=priority, estimated_reward=reward, estimated_risk=risk)
+end
+
+function _estimate_priority(action_type::Symbol, parameters::Dict{String, Any})::Float32
+    # Higher priority for deployment and maintenance
+    if action_type == :deploy
+        return 0.9f0
+    elseif action_type == :shell
+        return 0.7f0
+    else
+        return 0.5f0
+    end
+end
+
+function _estimate_reward(action_type::Symbol)::Float32
+    # Reward based on action value
+    if action_type == :deploy
+        return 0.9f0  # High value deployment
+    elseif action_type == :shell
+        return 0.6f0
+    else
+        return 0.5f0
+    end
+end
+
+function _estimate_risk(action_type::Symbol, parameters::Dict{String, Any})::Float32
+    # Base risk by action type
+    base_risk = if action_type == :deploy
+        0.7f0  # Deployments are risky
+    elseif action_type == :shell
+        0.5f0
+    elseif action_type == :http
+        0.3f0
+    else
+        0.2f0
+    end
+    
+    # Check for dangerous commands in shell
+    if action_type == :shell
+        cmd = get(parameters, "command", "")
+        if occursin("rm -rf", cmd) || occursin("sudo", cmd)
+            base_risk = 0.9f0  # Very dangerous
+        elseif occursin("curl", cmd) || occursin("wget", cmd)
+            base_risk = 0.6f0  # Network operations
+        end
+    end
+    
+    return base_risk
+end
+
+# ============================================================================
 # Export public API
 # ============================================================================
 
@@ -219,6 +469,8 @@ export
     Workflow,
     WorkflowExecution,
     WorkflowTemplate,
+    LEPAction,
+    WardenDecision,
     
     # Core functions
     create_workflow,
@@ -227,6 +479,11 @@ export
     execute_step,
     get_workflow_status,
     cancel_workflow,
+    
+    # LEP Veto functions
+    compute_lep_score,
+    evaluate_action_for_warden,
+    submit_to_warden,
     
     # Templates
     get_development_template,
@@ -466,17 +723,45 @@ end
 
 """
     execute_step(execution::WorkflowExecution, step::WorkflowStep, 
-                config::OpenClawConfig)::WorkflowStep
+                config::OpenClawConfig; enable_warden::Bool=true)::WorkflowStep
 
-Execute a single workflow step via OpenClaw.
+Execute a single workflow step via OpenClaw with Warden oversight.
+All actions are evaluated by the Warden before execution.
 """
 function execute_step(execution::WorkflowExecution, step::WorkflowStep, 
-                     config::OpenClawConfig)::WorkflowStep
+                     config::OpenClawConfig; enable_warden::Bool=true)::WorkflowStep
     
     step.status = STATUS_RUNNING
     step.started_at = now()
     
     push!(execution.logs, "[$(now())] Starting step: $(step.name)")
+    
+    # Warden oversight: evaluate action before execution
+    if enable_warden
+        # Create LEP action from step
+        lep_action = create_lep_action_from_step(step)
+        
+        # Submit to Warden for evaluation
+        decision = submit_to_warden(lep_action)
+        
+        # Check if approved
+        if !decision.approved
+            step.status = STATUS_FAILED
+            step.error = "Warden veto: $(decision.veto_reason)"
+            step.completed_at = now()
+            
+            push!(execution.logs, "[$(now())] WARDEN VETO for step: $(step.name)")
+            push!(execution.logs, "[$(now())] Reason: $(decision.veto_reason)")
+            push!(execution.failed_steps, step.id)
+            
+            return step
+        end
+        
+        # Log any conditions
+        if !isempty(decision.conditions)
+            push!(execution.logs, "[$(now())] Warden conditions: $(join(decision.conditions, ", "))")
+        end
+    end
     
     try
         # Execute via OpenClaw
@@ -502,11 +787,12 @@ function execute_step(execution::WorkflowExecution, step::WorkflowStep,
 end
 
 """
-    execute_workflow(workflow::Workflow; wait_for_approval::Bool=false)::WorkflowExecution
+    execute_workflow(workflow::Workflow; wait_for_approval::Bool=false, enable_warden::Bool=true)::WorkflowExecution
 
-Execute a complete workflow.
+Execute a complete workflow with optional Warden oversight.
+All actions are evaluated by the Warden before execution if enable_warden=true.
 """
-function execute_workflow(workflow::Workflow; wait_for_approval::Bool=false)::WorkflowExecution
+function execute_workflow(workflow::Workflow; wait_for_approval::Bool=false, enable_warden::Bool=true)::WorkflowExecution
     
     # Validate first
     valid, msg = validate_workflow(workflow)
@@ -576,7 +862,7 @@ function execute_workflow(workflow::Workflow; wait_for_approval::Bool=false)::Wo
         end
         
         # Execute the step
-        execute_step(execution, next_step, workflow.config)
+        execute_step(execution, next_step, workflow.config; enable_warden=enable_warden)
         
         # Update completion tracking
         if next_step.status == STATUS_COMPLETED
