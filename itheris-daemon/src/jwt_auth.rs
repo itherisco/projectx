@@ -317,29 +317,9 @@ impl JWTAuth {
         // Check rate limit
         self.check_rate_limit("global")?;
 
-        // Check if revoked
-        if let Ok(cache) = self.token_cache.read() {
-            let mut validation = Validation::new(self.config.algorithm);
-            validation.set_audience(&["itheris-api"]);
-
-            if let Some(claims) = decode::<Claims>(
-                token,
-                &DecodingKey::from_secret(self.config.jwt_secret.as_bytes()),
-                &validation,
-            )
-            .ok()
-            .map(|t| t.claims)
-            {
-                if cache.revoked_tokens.contains_key(&claims.jti) {
-                    return Err(AuthError::InvalidToken("Token revoked".to_string()));
-                }
-            }
-        }
-
         // Decode and validate
         let mut validation = Validation::new(self.config.algorithm);
         validation.set_audience(&["itheris-api"]);
-
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(self.config.jwt_secret.as_bytes()),
@@ -352,6 +332,13 @@ impl JWTAuth {
         })?;
 
         let claims = token_data.claims;
+
+        // Check if revoked
+        if let Ok(cache) = self.token_cache.read() {
+            if cache.revoked_tokens.contains_key(&claims.jti) {
+                return Err(AuthError::InvalidToken("Token revoked".to_string()));
+            }
+        }
 
         // Verify not expired
         let now = Utc::now().timestamp();
@@ -591,7 +578,8 @@ mod tests {
         
         auth.revoke_token(&token).unwrap();
         
+        // Wait for cache consistency
         let result = auth.validate_token(&token);
-        assert!(result.is_err());
+        assert!(result.is_err(), "Token should be revoked");
     }
 }

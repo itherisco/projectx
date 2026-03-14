@@ -242,13 +242,13 @@ pub fn register_panic_handler() -> Result<(), String> {
     log::info!("🛡️ Registering panic handler...");
     
     // Register the panic hook
-    std::panic::set_hook(Box::new(panic_handler_impl));
+    std::panic::set_hook(Box::new(|info| {
+        panic_handler_impl(info);
+    }));
     
     // Register signal handlers (Unix only)
     #[cfg(unix)]
     {
-        use std::mem::transmute;
-        
         unsafe {
             // Setup SIGSEGV handler
             let sigsegv_handler: libc::sighandler_t = transmute(signal_handler::<{ libc::SIGSEGV }> as *const ());
@@ -272,7 +272,7 @@ pub fn register_panic_handler() -> Result<(), String> {
 
 /// Signal handler for critical signals
 #[cfg(unix)]
-unsafe fn signal_handler<const SIG: libc::c_int>(signum: libc::c_int) {
+unsafe fn signal_handler<const SIG: i32>(_signum: i32) {
     // Create crash info from signal
     let signal_name = match SIG {
         libc::SIGSEGV => "SIGSEGV",
@@ -300,7 +300,7 @@ unsafe fn signal_handler<const SIG: libc::c_int>(signum: libc::c_int) {
     std::thread::sleep(std::time::Duration::from_millis(100));
     
     // Exit with error code
-    libc::exit(1);
+    std::process::exit(1);
 }
 
 /// Check if panic handler is registered

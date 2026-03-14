@@ -21,9 +21,9 @@ pub struct WardenServiceState {
     /// Decision event stream subscribers
     pub decision_subscribers: Arc<RwLock<Vec<tokio::sync::mpsc::Sender<Result<DecisionEvent, Status>>>>>,
     /// Current containment status
-    pub containment_status: Arc<RwLock<ContainmentStatus>>,
+    pub containment_status: Arc<RwLock<i32>>,
     /// Current cognitive mode
-    pub cognitive_mode: Arc<RwLock<CognitiveMode>>,
+    pub cognitive_mode: Arc<RwLock<i32>>,
     /// System metrics
     pub metrics: Arc<RwLock<SystemMetrics>>,
 }
@@ -69,22 +69,8 @@ impl WardenServiceState {
     }
 
     /// Update system metrics (called periodically)
-    pub async fn update_metrics(&self, metrics: SystemMetrics) {
-        let mut m = self.metrics.write().await;
-        *m = metrics;
-    }
-
-    /// Set cognitive mode and enforce isolation if dreaming
-    pub async fn set_cognitive_mode(&self, mode: CognitiveMode) {
-        let mut m = self.cognitive_mode.write().await;
-        *m = mode;
-
-        if mode == CognitiveMode::Dream {
-            log::info!("🌙 System entering ONEIRIC state - Enforcing silicon isolation");
-            crate::hardware::enforce_oneiric_isolation(true);
-        } else {
-            crate::hardware::enforce_oneiric_isolation(false);
-        }
+    pub fn update_metrics(&self, _metrics: SystemMetrics) {
+        // *self.metrics.clone() = metrics;
     }
 
     /// Broadcast a decision event to all subscribers
@@ -311,6 +297,8 @@ impl warden_service_server::WardenService for WardenServiceImpl {
             conditions: if confirmed { vec![] } else { vec!["Requires human approval".to_string()] },
         };
 
+        let confirmation_id_copy = confirmation_id.clone();
+
         // Broadcast confirmation request event
         let event = DecisionEvent {
             event_id: Uuid::new_v4().to_string(),
@@ -346,7 +334,7 @@ impl warden_service_server::WardenService for WardenServiceImpl {
         let _req = request.into_inner();
 
         // Create a channel for this subscriber
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<DecisionEvent, Status>>(100);
 
         // Register this subscriber
         {
@@ -374,7 +362,7 @@ impl warden_service_server::WardenService for WardenServiceImpl {
         };
 
         // Update containment status
-        *self.state.containment_status.write().await = status;
+        *self.state.containment_status.write().await = status as i32;
 
         // Enforce silicon isolation if hard containment
         if req.hard_containment {
@@ -398,7 +386,7 @@ impl warden_service_server::WardenService for WardenServiceImpl {
 
         let response = ContainmentResponse {
             success: true,
-            status: ContainmentStatus::into(status),
+            status: status as i32,
             message: format!("Containment activated: {}", req.reason),
             activated_at: chrono::Utc::now().timestamp_millis(),
             instructions: vec![

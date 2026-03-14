@@ -71,7 +71,7 @@ pub enum TaskStatus {
 }
 
 /// Task definition
-#[derive(Debug, Clone, Serialize, Deserialize, Ord, Eq, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Task {
     /// Unique task ID
     pub id: String,
@@ -228,6 +228,29 @@ pub struct TaskOrchestrator {
     rate_limiter: TaskRateLimiter,
     /// Task counter
     task_counter: u64,
+}
+
+impl Eq for Task {}
+
+impl PartialOrd for Task {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Task {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Higher priority comes first in BinaryHeap
+        match self.priority.cmp(&other.priority) {
+            std::cmp::Ordering::Equal => {
+                match self.created_at.cmp(&other.created_at) {
+                    std::cmp::Ordering::Equal => self.id.cmp(&other.id).reverse(),
+                    ord => ord.reverse(),
+                }
+            }
+            ord => ord,
+        }
+    }
 }
 
 impl TaskOrchestrator {

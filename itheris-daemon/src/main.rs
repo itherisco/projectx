@@ -3,17 +3,13 @@
 //! Manages the Julia brain with embedded jlrs runtime,
 //! crash recovery with watchdog timers, and systemd service support.
 
-mod kernel;
-mod secure_boot;
-mod julia_runtime;
-mod types;
-mod isolation;
-mod warden;
-mod hardware;
-mod grpc;
 
 use chrono::Utc;
-use grpc::{start_grpc_server, WardenServiceState};
+use itheris_daemon::grpc::{start_grpc_server, WardenServiceState};
+use itheris_daemon::hardware;
+use itheris_daemon::kernel;
+use itheris_daemon::julia_runtime;
+use itheris_daemon::secure_boot;
 use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
 use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
@@ -186,6 +182,7 @@ impl ItherisDaemon {
     }
     
     /// Spawn Julia brain subprocess
+    #[allow(dead_code)]
     async fn spawn_julia_brain(&self) -> Result<(), String> {
         log::info!("🧠 Spawning Julia brain...");
         

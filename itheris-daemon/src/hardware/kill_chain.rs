@@ -69,7 +69,6 @@ pub unsafe fn execute_kill_chain() {
     unsafe {
         use std::arch::asm;
         // Read current CR3, then write it back to flush TLB
-        // In modern Rust, we use the new asm! macro
         asm!(
             "mov rax, cr3",
             "mov cr3, rax",

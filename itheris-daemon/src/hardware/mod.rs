@@ -23,7 +23,7 @@ use watchdog::{get_watchdog_status, kick_watchdog, WatchdogStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 
 /// Hardware initialization errors
 #[derive(Error, Debug)]

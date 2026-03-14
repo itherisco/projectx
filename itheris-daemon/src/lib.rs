@@ -49,6 +49,15 @@ pub mod ffi; // FFI bridge for Julia interop
 pub mod shared_memory; // Shared memory ring buffer for IPC
 use crate::shared_memory::create_shared_memory_ipc;
 pub mod emergency; // Emergency halt and seal mechanism (Phase 6)
+pub mod kernel;
+pub mod secure_boot;
+pub mod julia_runtime;
+pub mod types;
+pub mod isolation;
+pub mod warden;
+pub mod hardware;
+pub mod grpc;
+pub mod sovereignty_gate;
 
 // Re-export commonly used types
 pub use secrets::{SecretsManager, SecretsError};

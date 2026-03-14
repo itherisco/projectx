@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration as StdDuration, Instant};
 use thiserror::Error;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 
 /// Watchdog device path
 const WATCHDOG_DEVICE: &str = "/dev/watchdog";

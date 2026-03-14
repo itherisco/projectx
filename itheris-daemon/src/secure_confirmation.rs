@@ -405,6 +405,7 @@ impl SecureConfirmationGate {
 
         let confirmation = self.pending.get_mut(token).unwrap();
         // Mark as confirmed
+        let confirmation = self.pending.get_mut(token).unwrap();
         confirmation.status = ConfirmationStatus::Confirmed;
         self.rate_limiter.reset(token);
         self.stats.confirmed += 1;
@@ -420,12 +421,15 @@ impl SecureConfirmationGate {
 
     /// Deny an action
     pub fn deny(&mut self, token: &str) -> Result<ConfirmationResult, ConfirmationError> {
-        let confirmation = self
-            .pending
-            .get_mut(token)
-            .ok_or_else(|| ConfirmationError::TokenNotFound(token.to_string()))?;
+        let (status, expires_at) = {
+            let confirmation = self
+                .pending
+                .get_mut(token)
+                .ok_or_else(|| ConfirmationError::TokenNotFound(token.to_string()))?;
 
-        confirmation.status = ConfirmationStatus::Denied;
+            confirmation.status = ConfirmationStatus::Denied;
+            (confirmation.status.clone(), confirmation.expires_at)
+        };
         self.rate_limiter.reset(token);
         self.stats.denied += 1;
 
@@ -434,7 +438,7 @@ impl SecureConfirmationGate {
             confirmed: false,
             token: Some(token.to_string()),
             reason: "Action denied".to_string(),
-            expires_at: confirmation.expires_at,
+            expires_at,
         })
     }
 
