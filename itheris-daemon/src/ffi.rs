@@ -680,11 +680,14 @@ pub extern "C" fn generate_keypair(
         pk_slice.copy_from_slice(verifying_key.as_bytes());
     }
 
-    // Write private key (64 bytes - secret key + public key)
+    // Write private key (64 bytes - includes public key)
+    let mut keypair_bytes = [0u8; 64];
+    keypair_bytes[..32].copy_from_slice(&signing_key.to_bytes());
+    keypair_bytes[32..].copy_from_slice(verifying_key.as_bytes());
+
     unsafe {
         let sk_slice = std::slice::from_raw_parts_mut(private_key_out, 64);
-        sk_slice[..32].copy_from_slice(&signing_key.to_bytes());
-        sk_slice[32..64].copy_from_slice(verifying_key.as_bytes());
+        sk_slice.copy_from_slice(&keypair_bytes);
     }
 
     log::debug!("[FFI] generate_keypair: keypair generated");
@@ -765,13 +768,13 @@ pub extern "C" fn kernel_ready() -> i32 {
 // These provide C ABI entry points that Julia can call
 
 use crate::secrets;
-use crate::jwt_auth::{self, Role};
-use crate::flow_integrity::{self, RiskLevel as FlowRiskLevel};
-use crate::risk_classifier::{self, RiskLevel};
-use crate::secure_confirmation::{self, RiskLevel as ConfirmRiskLevel};
-use crate::task_orchestrator::{self, TaskPriority};
+use crate::jwt_auth;
+use crate::flow_integrity;
+use crate::risk_classifier;
+use crate::secure_confirmation;
+use crate::task_orchestrator;
 use crate::safe_shell;
-use crate::safe_http::{self, HttpMethod};
+use crate::safe_http;
 
 // ============================================================================
 // Secrets Manager FFI

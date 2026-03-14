@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
+use itheris::shared_memory;
 
 
 /// Memory protection errors
@@ -310,6 +311,30 @@ pub fn protect_all_julia_memory() {
             } else {
                 log::debug!("Protected Julia region {:x}-{:x}", region.start, region.end);
             }
+        }
+    }
+}
+
+/// Enforce Oneiric Isolation by revoking write/execute permissions on the shared memory region
+/// This is the silicon-enforced "EPT poisoning" that prevents Julia from actuating during dreams.
+pub fn enforce_oneiric_isolation(enable: bool) {
+    let addr = shared_memory::IPC_MAPPED_ADDR.load(std::sync::atomic::Ordering::SeqCst);
+    if addr == 0 {
+        log::warn!("⚠️ Oneiric Isolation: Shared memory not mapped, skipping silicon enforcement.");
+        return;
+    }
+
+    let prot = if enable {
+        log::info!("🌙 ENFORCING ONEIRIC ISOLATION: Shared memory set to RO_NOEXEC");
+        libc::PROT_READ
+    } else {
+        log::info!("☀ EXITING ONEIRIC ISOLATION: Restoring RW permissions");
+        libc::PROT_READ | libc::PROT_WRITE
+    };
+
+    unsafe {
+        if libc::mprotect(addr as *mut c_void, shared_memory::SHM_SIZE, prot) != 0 {
+            log::error!("❌ FAILED to enforce Oneiric Isolation: {}", std::io::Error::last_os_error());
         }
     }
 }

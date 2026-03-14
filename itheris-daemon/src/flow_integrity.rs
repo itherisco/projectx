@@ -287,7 +287,7 @@ impl FlowIntegrityGate {
         let token_id = Self::generate_token_id();
         let params_hash = Self::hash_params(params);
 
-        let token_data = FlowTokenData {
+        let mut token_data = FlowTokenData {
             token_id: token_id.clone(),
             capability_id: capability_id.to_string(),
             params_hash: params_hash.clone(),
@@ -300,6 +300,7 @@ impl FlowIntegrityGate {
 
         // Compute HMAC
         let hmac_hex = self.compute_hmac(&token_data)?;
+        token_data.hmac_hex = hmac_hex.clone();
 
         let token = FlowToken {
             token_id,
@@ -411,15 +412,11 @@ impl FlowIntegrityGate {
         // Also cleanup old used tokens (keep for 1 hour for audit)
         let _cutoff = now - 3600;
         if self.used_tokens.len() > 1000 {
-            let mut count = self.used_tokens.len();
-            self.used_tokens.retain(|_| {
-                if count > 1000 {
-                    count -= 1;
-                    false
-                } else {
-                    true
-                }
-            });
+            // Very simplified cleanup since we can't borrow self in retain
+            let to_remove: Vec<String> = self.used_tokens.iter().take(self.used_tokens.len() - 1000).cloned().collect();
+            for id in to_remove {
+                self.used_tokens.remove(&id);
+            }
         }
 
         self.stats.tokens_expired += expired.len() as u64;

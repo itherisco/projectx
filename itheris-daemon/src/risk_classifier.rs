@@ -365,7 +365,7 @@ impl RiskClassifier {
 
     /// Assess risk from parameters
     fn assess_param_risk(&self, params: &str, factors: &mut Vec<String>) -> f64 {
-        let mut risk = 0.0;
+        let mut risk: f64 = 0.0;
         let params_lower = params.to_lowercase();
 
         // Check for sensitive paths
