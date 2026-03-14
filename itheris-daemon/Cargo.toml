@@ -86,7 +86,6 @@ tokio-stream = { version = "0.1", features = ["net"] }
 
 # Tower for gRPC service utilities
 tower = "0.4"
-tokio-stream = { version = "0.1.18", features = ["net"] }
 
 
 # scallop = "0.2"  # For Linux seccomp (optional)

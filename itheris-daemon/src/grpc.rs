@@ -62,8 +62,8 @@ impl WardenServiceState {
         WardenServiceState {
             warden: Arc::new(ItherisDaemonKernel::new()),
             decision_subscribers: Arc::new(RwLock::new(Vec::new())),
-            containment_status: Arc::new(RwLock::new(ContainmentStatus::Inactive)),
-            cognitive_mode: Arc::new(RwLock::new(CognitiveMode::Active)),
+            containment_status: Arc::new(RwLock::new(ContainmentStatus::Inactive as i32)),
+            cognitive_mode: Arc::new(RwLock::new(CognitiveMode::Active as i32)),
             metrics: Arc::new(RwLock::new(SystemMetrics::default())),
         }
     }

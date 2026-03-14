@@ -54,6 +54,22 @@ kernel_approval_bypass_override = false
 input_sanitizer_strict = true
 prompt_injection_block = true
 
+# LEP (Law Enforcement Point) Configuration
+# These values cannot be bypassed - they are hardcoded in the Rust security layer
+[lep]
+# LEP Veto Equation: score = priority × (reward - risk)
+# Negative scores automatically veto the action
+priority_weight = 1.0
+reward_weight = 1.0
+risk_weight = 1.0
+
+# Score threshold below which actions are vetoed (0.0 = fail-closed)
+veto_threshold = 0.0
+
+# Hard limit: any risk estimate above this triggers automatic veto
+# This is the "unbendable" constitutional boundary
+max_risk_threshold = 0.01
+
 # Encryption settings
 encryption_algorithm = "AES-256-GCM"  # Not XOR
 

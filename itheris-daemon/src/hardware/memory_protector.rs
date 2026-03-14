@@ -8,8 +8,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::ffi::c_void;
 use thiserror::Error;
-use itheris::shared_memory;
+use crate::shared_memory;
 
 
 /// Memory protection errors
