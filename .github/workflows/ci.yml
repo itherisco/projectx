@@ -28,10 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, nightly]
-        exclude:
-          - rust: nightly
-            # Only test stable by default, nightly on schedule
+        rust: [stable]
     
     steps:
     - name: Checkout code
@@ -43,45 +40,38 @@ jobs:
         sudo apt-get install -y libzmq3-dev pkg-config libssl-dev
     
     - name: Setup Rust ${{ matrix.rust }}
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
     
     - name: Cache Cargo
       uses: Swatinem/rust-cache@v2
       with:
-        workspaces: "Itheris -> target, jarvis_runtime -> target"
+        workspaces: "itheris-daemon -> target, tui -> target"
     
-    - name: Build Itheris (Rust)
-      working-directory: Itheris/Brain
+    - name: Build itheris-daemon
+      working-directory: itheris-daemon
       run: |
-        echo "Building Itheris library..."
-        cargo build --verbose --lib
-        cargo build --verbose --release --lib
-      continue-on-error: ${{ matrix.rust == 'nightly' }}
-    
-    - name: Build jarvis_runtime
-      working-directory: jarvis_runtime
-      run: |
-        echo "Building jarvis_runtime..."
-        cargo build --verbose --lib
+        echo "Building itheris-daemon..."
         cargo build --verbose --release
-      continue-on-error: ${{ matrix.rust == 'nightly' }}
+    
+    - name: Build TUI
+      working-directory: tui
+      run: |
+        echo "Building itheris-tui..."
+        cargo build --verbose --release
     
     - name: Run Rust tests
-      working-directory: Itheris/Brain
-      run: cargo test --lib || true
-      continue-on-error: true
+      working-directory: itheris-daemon
+      run: cargo test --release -- --test-threads=1
     
     - name: Upload Rust artifacts
       uses: actions/upload-artifact@v4
       with:
         name: rust-artifacts-${{ matrix.rust }}
         path: |
-          Itheris/Brain/target/debug/libitheris*
-          Itheris/Brain/target/release/libitheris*
-          jarvis_runtime/target/debug/libjarvis_runtime*
-          jarvis_runtime/target/release/libjarvis_runtime*
+          itheris-daemon/target/release/itheris-daemon
+          tui/target/release/itheris-tui
         retention-days: 7
 
   # ===== JULIA BUILD =====
@@ -91,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia: ['1.9', '1.10', '1.11']
+        julia: ['1.10', '1.11']
     
     steps:
     - name: Checkout code
@@ -118,11 +108,11 @@ jobs:
         println("Compiling Julia modules...")
         
         # Load and compile main modules
-        using Kernel
-        using Brain
-        using Cognition
-        using Memory
-        using Resilience
+        include("kernel/Kernel.jl")
+        include("brain/Brain.jl")
+        include("cognition/Cognition.jl")
+        include("memory/Memory.jl")
+        include("resilience/Resilience.jl")
         
         println("All modules compiled successfully!")
         '
@@ -174,21 +164,6 @@ jobs:
         # Check for common issues
         find adaptive-kernel -name "*.jl" -exec grep -l "println" {} \; | head -10 || true
     
-    - name: Run Blue linter
-      run: |
-        cd adaptive-kernel
-        julia --project=. -e '
-        using Pkg
-        try
-            Pkg.add("Blue")
-            using Blue
-            println("Blue linter check complete")
-        catch e
-            println("Blue not available, skipping: ", e)
-        end
-        ' || true
-      continue-on-error: true
-    
     - name: Upload lint results
       uses: actions/upload-artifact@v4
       if: always()
@@ -196,7 +171,6 @@ jobs:
         name: lint-results
         path: |
           .juliafmt.log
-          .blue.log
         retention-days: 7
 
   # ===== STATIC ANALYSIS =====
@@ -241,7 +215,7 @@ jobs:
     - name: Run CodeQL analysis
       uses: github/codeql-action/init@v3
       with:
-        languages: julia
+        languages: rust, javascript-typescript, python
         queries: +security-and-quality
     
     - name: Upload static analysis results
@@ -261,7 +235,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia: ['1.9', '1.10', '1.11']
+        julia: ['1.10', '1.11']
     
     steps:
     - name: Checkout code

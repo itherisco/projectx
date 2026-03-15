@@ -51,7 +51,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Run Trivy vulnerability scanner ( filesystem)
+    - name: Run Trivy vulnerability scanner (filesystem)
       uses: aquasecurity/trivy-action@master
       with:
         scan-type: 'fs'
@@ -121,30 +121,20 @@ jobs:
       uses: returntocorp/semgrep-action@v1
       with:
         config: 'auto'
-        uploadSarif: true
     
-    - name: Run CodeQL for Julia
+    - name: Run CodeQL for Rust, Python and JavaScript
       uses: github/codeql-action/init@v3
       with:
-        languages: julia
+        languages: rust, python, javascript-typescript
         queries: +security-and-quality
     
     - name: Perform CodeQL analysis
       uses: github/codeql-action/analyze@v3
-      with:
-        category: "/language:julia"
     
     - name: Run Clippy for Rust
-      working-directory: Itheris/Brain
+      working-directory: itheris-daemon
       run: |
-        cargo clippy --all-targets --all-features -- -D warnings || true
-      continue-on-error: true
-    
-    - name: Run Clippy for jarvis_runtime
-      working-directory: jarvis_runtime
-      run: |
-        cargo clippy --all-targets --all-features -- -D warnings || true
-      continue-on-error: true
+        cargo clippy --all-targets --all-features -- -D warnings > clippy_results.txt 2>&1 || true
     
     - name: Upload code security results
       uses: actions/upload-artifact@v4
@@ -153,7 +143,7 @@ jobs:
         name: code-security-scan-results
         path: |
           **/*.sarif
-          **/clippy*.txt
+          **/clippy_results.txt
         retention-days: 90
 
   # ===== SECURITY PENTEST =====
@@ -474,7 +464,7 @@ jobs:
       run: |
         echo "## Security Pipeline Failed" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "The security pipeline has detected issues. Please review the results." >> $GITHUB_STEP_SUMMARY
+        echo "The security pipeline has detected issues. Please review the logs and fix any issues." >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Action Items" >> $GITHUB_STEP_SUMMARY
         echo "- Review dependency vulnerabilities" >> $GITHUB_STEP_SUMMARY

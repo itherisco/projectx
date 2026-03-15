@@ -252,12 +252,6 @@ pub fn get_current_process_regions() -> Vec<MemoryRegion> {
         .collect()
 }
 
-// mprotect constants (matching libc)
-const PROT_NONE: i32 = 0;
-const PROT_READ: i32 = 1;
-const PROT_WRITE: i32 = 2;
-const PROT_EXEC: i32 = 4;
-
 /// Call mprotect to set memory protection
 /// 
 /// # Safety
