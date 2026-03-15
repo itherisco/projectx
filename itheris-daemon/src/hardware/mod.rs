@@ -18,7 +18,7 @@ pub mod emergency_gpio;
 
 pub use memory_protector::enforce_oneiric_isolation;
 
-use heartbeat::{HeartbeatConfig, HeartbeatState};
+use heartbeat::HeartbeatState;
 use watchdog::{get_watchdog_status, kick_watchdog, WatchdogStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

@@ -274,7 +274,7 @@ impl SafeShell {
 
     /// Execute with timeout
     pub fn execute_with_timeout(&self, command: &str) -> Result<ShellResult, SafeShellError> {
-        let timeout = Duration::from_secs(self.config.timeout_secs);
+        let _timeout = Duration::from_secs(self.config.timeout_secs);
 
         // Use std::thread::spawn for timeout (simpler than async)
         let command = command.to_string();

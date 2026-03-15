@@ -21,13 +21,13 @@ use aes_gcm::{
 };
 use argon2::{
     password_hash::{rand_core::RngCore, SaltString},
-    Argon2, PasswordHasher, PasswordVerifier,
+    Argon2, PasswordHasher,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256, Sha512};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -183,9 +183,11 @@ impl SecretsManager {
             SecretsError::KeyDerivationFailed("No hash output".to_string())
         })?;
 
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&hash_bytes.as_bytes()[..32]);
-        Ok(key)
+        hash_bytes
+            .as_bytes()
+            .get(..32)
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| SecretsError::KeyDerivationFailed("Invalid key length".to_string()))
     }
 
     /// Unlock the vault with passphrase
@@ -454,7 +456,7 @@ pub fn init() {
 
 /// Unlock the global secrets manager
 pub fn unlock_global(passphrase: &str, salt: Option<&[u8]>) -> Result<String, SecretsError> {
-    SECRETS_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.unlock(passphrase, salt)
+    SECRETS_MANAGER.write().map_err(|_e| SecretsError::VaultLocked)?.unlock(passphrase, salt)
 }
 
 /// Lock the global secrets manager
@@ -466,12 +468,12 @@ pub fn lock_global() {
 
 /// Store a secret in the global manager
 pub fn store_global(key: &str, value: &str) -> Result<(), SecretsError> {
-    SECRETS_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.store(key, value)
+    SECRETS_MANAGER.write().map_err(|_e| SecretsError::VaultLocked)?.store(key, value)
 }
 
 /// Get a secret from the global manager
 pub fn get_global(key: &str) -> Result<String, SecretsError> {
-    SECRETS_MANAGER.write().map_err(|e| SecretsError::VaultLocked)?.get(key)
+    SECRETS_MANAGER.write().map_err(|_e| SecretsError::VaultLocked)?.get(key)
 }
 
 /// Check if global manager is unlocked

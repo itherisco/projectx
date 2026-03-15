@@ -5,7 +5,6 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration as StdDuration, Instant};

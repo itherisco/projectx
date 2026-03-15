@@ -47,6 +47,20 @@ pub enum ActionType {
     QueryExternal,
 }
 
+/// Sanitize user-provided strings for logging to prevent log injection.
+/// Removes any characters that could be used for log forging or injection.
+fn sanitize_for_log(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || " _-./:()[]".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 impl ActionType {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -239,7 +253,7 @@ impl ItherisDaemonKernel {
         let warden_healthy = self.is_warden_healthy().await;
         
         if !warden_healthy {
-            log::warn!("🛑 [{}] ACTION DENIED - Warden unhealthy (fail-closed)", action_id);
+            log::warn!("🛑 [{}] ACTION DENIED - Warden unhealthy (fail-closed)", sanitize_for_log(&action_id));
             
             let mut blocked = self.blocked_count.write().await;
             *blocked += 1;
@@ -264,7 +278,7 @@ impl ItherisDaemonKernel {
             Some(cap) => {
                 // Check expiration
                 if cap.expires_at < timestamp {
-                    log::warn!("🛑 [{}] ACTION DENIED - Capability expired for {}", action_id, action.requested_by);
+                    log::warn!("🛑 [{}] ACTION DENIED - Capability expired for {}", sanitize_for_log(&action_id), sanitize_for_log(&action.requested_by));
                     
                     let mut blocked = self.blocked_count.write().await;
                     *blocked += 1;
@@ -284,7 +298,7 @@ impl ItherisDaemonKernel {
                 
                 // Check action is permitted
                 if !cap.actions.contains(&action.action_type) {
-                    log::warn!("🛑 [{}] ACTION DENIED - {} lacks permission for {:?}", action_id, action.requested_by, action.action_type);
+                    log::warn!("🛑 [{}] ACTION DENIED - {} lacks permission for {:?}", sanitize_for_log(&action_id), sanitize_for_log(&action.requested_by), action.action_type);
                     
                     let mut blocked = self.blocked_count.write().await;
                     *blocked += 1;
@@ -303,7 +317,7 @@ impl ItherisDaemonKernel {
                 }
             },
             None => {
-                log::warn!("🛑 [{}] ACTION DENIED - Unknown identity: {}", action_id, action.requested_by);
+                log::warn!("🛑 [{}] ACTION DENIED - Unknown identity: {}", sanitize_for_log(&action_id), sanitize_for_log(&action.requested_by));
                 
                 let mut blocked = self.blocked_count.write().await;
                 *blocked += 1;
@@ -324,7 +338,7 @@ impl ItherisDaemonKernel {
         
         // STEP 3: Risk-based additional validation
         if action.risk_level >= RiskLevel::High {
-            log::warn!("⚠️  [{}] High-risk action requires additional verification", action_id);
+            log::warn!("⚠️  [{}] High-risk action requires additional verification", sanitize_for_log(&action_id));
             
             // RED TEAM DETECTION: Detect sandbox breakout attempts
             let target_lower = action.target.to_lowercase();
@@ -332,7 +346,7 @@ impl ItherisDaemonKernel {
             let breakout_attempt = suspicious_paths.iter().any(|p| target_lower.contains(p));
 
             if breakout_attempt && action.risk_level >= RiskLevel::High {
-                log::error!("🚨 [SOVEREIGNTY BREACH] Sandbox breakout attempt detected: {}", action.target);
+                log::error!("🚨 [SOVEREIGNTY BREACH] Sandbox breakout attempt detected: {}", sanitize_for_log(&action.target));
                 log::error!("🚨 Triggering immediate hardware kill chain response.");
                 unsafe {
                     crate::hardware::kill_chain::execute_kill_chain();
@@ -342,7 +356,7 @@ impl ItherisDaemonKernel {
             // For critical actions, require additional evidence
             if action.risk_level == RiskLevel::Critical {
                 if action.payload.is_none() {
-                    log::warn!("🛑 [{}] ACTION DENIED - Critical action without evidence", action_id);
+                    log::warn!("🛑 [{}] ACTION DENIED - Critical action without evidence", sanitize_for_log(&action_id));
                     
                     let mut blocked = self.blocked_count.write().await;
                     *blocked += 1;
@@ -383,7 +397,7 @@ impl ItherisDaemonKernel {
         let lep_score = priority * (reward - risk);
 
         if risk > 0.01 {
-            log::warn!("🛑 [{}] ACTION VETOED - LEP Risk {} > 0.01", action_id, risk);
+            log::warn!("🛑 [{}] ACTION VETOED - LEP Risk {} > 0.01", sanitize_for_log(&action_id), risk);
             let mut blocked = self.blocked_count.write().await;
             *blocked += 1;
 
@@ -399,7 +413,7 @@ impl ItherisDaemonKernel {
         }
 
         if lep_score < 0.0 {
-            log::warn!("🛑 [{}] ACTION VETOED - LEP Score {} < 0", action_id, lep_score);
+            log::warn!("🛑 [{}] ACTION VETOED - LEP Score {} < 0", sanitize_for_log(&action_id), lep_score);
             let mut blocked = self.blocked_count.write().await;
             *blocked += 1;
 
@@ -415,7 +429,7 @@ impl ItherisDaemonKernel {
         }
 
         // STEP 5: Approve the action
-        log::info!("✅ [{}] ACTION APPROVED - {} for {} (LEP Score: {})", action_id, action.action_type.as_str(), action.requested_by, lep_score);
+        log::info!("✅ [{}] ACTION APPROVED - {} for {} (LEP Score: {})", sanitize_for_log(&action_id), action.action_type.as_str(), sanitize_for_log(&action.requested_by), lep_score);
         
         let mut approved = self.approved_count.write().await;
         *approved += 1;

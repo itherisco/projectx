@@ -297,7 +297,7 @@ impl warden_service_server::WardenService for WardenServiceImpl {
             conditions: if confirmed { vec![] } else { vec!["Requires human approval".to_string()] },
         };
 
-        let confirmation_id_copy = confirmation_id.clone();
+        let _confirmation_id_copy = confirmation_id.clone();
 
         // Broadcast confirmation request event
         let event = DecisionEvent {

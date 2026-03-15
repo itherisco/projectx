@@ -10,7 +10,12 @@ using LinearAlgebra
 using Statistics
 
 # ITHERIS Neural Brain Integration
-using ..ITHERISCore  # infer(), learn!(), initialize_brain()
+include("itheris_core/Core.jl")
+using .ITHERISCore  # infer(), learn!(), initialize_brain()
+
+# Secure Confirmation Gate
+include(joinpath(@__DIR__, "..", "kernel", "trust", "SecureConfirmationGate.jl"))
+using .SecureConfirmationGate
 
 # Input Sanitization - SECURITY BOUNDARY for LLM interaction paths
 # This module implements fail-closed sanitization before Brain access
@@ -18,7 +23,7 @@ include(joinpath(@__DIR__, "..", "cognition", "security", "InputSanitizer.jl"))
 using ..cognition.security.InputSanitizer
 
 # Trust and Confirmation (P0 Security - require explicit approval for fallback)
-# Note: SecureConfirmationGate integration happens at higher levels (Kernel)
+# Note: ConfirmationGate integration happens at higher levels (Kernel)
 # Brain uses fallback_approval_token field in BrainConfig for security checks
 
 # RiskLevel enum for security classification
@@ -240,7 +245,8 @@ end
 """
     BrainConfig - Configuration for brain module
     
-    SECURITY: fallback_to_heuristic requires EXPLICIT human approval via SecureConfirmationGate
+    SECURITY: fallback_to_heuristic requires EXPLICIT human approval via ConfirmationGate
+    SECURITY: fallback_to_heuristic requires EXPLICIT human approval via ConfirmationGate
     - Even if fallback_to_heuristic=true is set in config, runtime approval is REQUIRED
     - This prevents silent bypass of brain verification
 """
@@ -283,7 +289,7 @@ end
     Returns approval token if granted, nothing if denied/pending.
     This is the ONLY way to enable heuristic fallback - fail-closed by default.
     
-    NOTE: This function is typically called from Kernel's SecureConfirmationGate.
+    NOTE: This function is typically called from Kernel's ConfirmationGate.
     The Kernel level handles the actual human confirmation UI/flow.
 """
 function require_fallback_approval(
@@ -292,7 +298,7 @@ function require_fallback_approval(
 )::Union{String, Nothing}
     # This is a stub - the actual implementation with human confirmation
     # should be called from Kernel. This function exists for API completeness.
-    @warn "require_fallback_approval: Should be called via Kernel's SecureConfirmationGate"
+    @warn "require_fallback_approval: Should be called via Kernel's ConfirmationGate"
     return nothing  # Fail-closed: no token returned by default
 end
 

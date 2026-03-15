@@ -15,7 +15,7 @@
 //! - **Fail-Closed**: Authentication disabled = DENY ALL (not bypass)
 //! - **Audit**: All auth events logged immutably
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::Engine;
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use jsonwebtoken::{
@@ -23,7 +23,7 @@ use jsonwebtoken::{
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256, Sha384};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration as StdDuration, Instant};

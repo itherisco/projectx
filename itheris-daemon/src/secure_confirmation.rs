@@ -15,16 +15,15 @@
 
 use aes_gcm::aead::OsRng;
 use rand_core::RngCore;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::time::{Duration as StdDuration, Instant};
+use std::time::Instant;
 use thiserror::Error;
-use uuid::Uuid;
 
 // HMAC type
 type HmacSha256 = Hmac<Sha256>;
@@ -299,7 +298,7 @@ impl SecureConfirmationGate {
         &mut self,
         request: &ConfirmationRequest,
     ) -> Result<ConfirmationResult, ConfirmationError> {
-        let secret = self.secret.ok_or(ConfirmationError::GateLocked(
+        let _secret = self.secret.ok_or(ConfirmationError::GateLocked(
             "Confirmation gate not initialized".to_string(),
         ))?;
 
@@ -403,7 +402,7 @@ impl SecureConfirmationGate {
             ));
         }
 
-        let confirmation = self.pending.get_mut(token).unwrap();
+        let _confirmation = self.pending.get_mut(token).unwrap();
         // Mark as confirmed
         let confirmation = self.pending.get_mut(token).unwrap();
         confirmation.status = ConfirmationStatus::Confirmed;
@@ -421,7 +420,7 @@ impl SecureConfirmationGate {
 
     /// Deny an action
     pub fn deny(&mut self, token: &str) -> Result<ConfirmationResult, ConfirmationError> {
-        let (status, expires_at) = {
+        let (_status, expires_at) = {
             let confirmation = self
                 .pending
                 .get_mut(token)
@@ -544,8 +543,9 @@ mod tests {
     #[test]
     fn test_confirmation() {
         let mut gate = SecureConfirmationGate::new();
-        let mut secret = [0u8; 32];
-        secret.copy_from_slice(&[1u8; 32]);
+        let mut secret_vec = vec![0u8; 32];
+        OsRng.fill_bytes(&mut secret_vec);
+        let secret: [u8; 32] = secret_vec.try_into().unwrap();
         gate.initialize(&secret);
 
         let request = ConfirmationRequest {
@@ -567,8 +567,9 @@ mod tests {
     #[test]
     fn test_deny() {
         let mut gate = SecureConfirmationGate::new();
-        let mut secret = [0u8; 32];
-        secret.copy_from_slice(&[1u8; 32]);
+        let mut secret_vec = vec![0u8; 32];
+        OsRng.fill_bytes(&mut secret_vec);
+        let secret: [u8; 32] = secret_vec.try_into().unwrap();
         gate.initialize(&secret);
 
         let request = ConfirmationRequest {
