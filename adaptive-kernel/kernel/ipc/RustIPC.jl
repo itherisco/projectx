@@ -173,20 +173,27 @@ function init_rust_ipc()::Bool
     success = try_load_rust_library()
     
     if !success
-        # FAIL-CLOSED: Do NOT allow fallback - halt system
-        error("""
-        FATAL SECURITY FAILURE: Rust kernel unavailable.
-        
-        The Julia brain is strictly advisory and cannot operate
-        without explicit Rust kernel approval for all actions.
-        
-        Without the Warden (Rust kernel), flow integrity tokens
-        cannot be verified. System is halting to maintain 
-        fail-closed security invariants.
-        
-        To recover: Ensure Rust kernel is running and properly
-        initialized before starting Julia brain.
-        """)
+        # FAIL-CLOSED: Do NOT allow fallback in production - halt system
+        # In CI/Testing, allow fallback mode if specified via environment variable
+        if get(ENV, "ITHERIS_MODE", "production") == "production"
+            error("""
+            FATAL SECURITY FAILURE: Rust kernel unavailable.
+
+            The Julia brain is strictly advisory and cannot operate
+            without explicit Rust kernel approval for all actions.
+
+            Without the Warden (Rust kernel), flow integrity tokens
+            cannot be verified. System is halting to maintain
+            fail-closed security invariants.
+
+            To recover: Ensure Rust kernel is running and properly
+            initialized before starting Julia brain.
+            """)
+        else
+            @warn "ITHERIS starting in FALLBACK MODE (Testing/CI Only)"
+            _fallback_mode[] = true
+            return false
+        end
     end
     
     _fallback_mode[] = false

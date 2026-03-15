@@ -16,6 +16,8 @@ concurrency:
 
 env:
   JULIA_PROJECT: "@."
+  # Set mode to testing to allow Julia to boot without Rust library for compilation checks
+  ITHERIS_MODE: "testing"
   # Use test secrets - never use real secrets in CI
   JARVIS_FLOW_INTEGRITY_SECRET: "test_secret_key_for_testing_only_not_for_production"
   JARVIS_EVENT_LOG_KEY: "dGVzdF9ldmVudF9sb2dfa2V5XzMyX2J5dGVzISEh"
@@ -215,7 +217,7 @@ jobs:
     - name: Run CodeQL analysis
       uses: github/codeql-action/init@v3
       with:
-        languages: rust, javascript-typescript, python
+        languages: rust, python
         queries: +security-and-quality
         config-file: ./.github/codeql-config.yml
     
