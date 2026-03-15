@@ -2244,6 +2244,8 @@ export init_rust_ipc, is_brain_available, require_rust_brain, should_use_fallbac
 
 export _verify_ipcentry_size  # For testing/verification
 
+export detect_platform, get_platform_shm_path, supports_native_shm, get_shm_size, validate_shm_region, validate_shm_region!
+
 # ============================================================================
 # Module Initialization
 # ============================================================================
