@@ -543,8 +543,9 @@ mod tests {
     #[test]
     fn test_confirmation() {
         let mut gate = SecureConfirmationGate::new();
-        let mut secret = [0u8; 32];
-        OsRng.fill_bytes(&mut secret);
+        let mut secret_vec = vec![0u8; 32];
+        OsRng.fill_bytes(&mut secret_vec);
+        let secret: [u8; 32] = secret_vec.try_into().unwrap();
         gate.initialize(&secret);
 
         let request = ConfirmationRequest {
@@ -566,8 +567,9 @@ mod tests {
     #[test]
     fn test_deny() {
         let mut gate = SecureConfirmationGate::new();
-        let mut secret = [0u8; 32];
-        OsRng.fill_bytes(&mut secret);
+        let mut secret_vec = vec![0u8; 32];
+        OsRng.fill_bytes(&mut secret_vec);
+        let secret: [u8; 32] = secret_vec.try_into().unwrap();
         gate.initialize(&secret);
 
         let request = ConfirmationRequest {

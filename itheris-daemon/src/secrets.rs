@@ -183,9 +183,11 @@ impl SecretsManager {
             SecretsError::KeyDerivationFailed("No hash output".to_string())
         })?;
 
-        let mut derived_bytes = [0u8; 32];
-        derived_bytes.copy_from_slice(&hash_bytes.as_bytes()[..32]);
-        Ok(derived_bytes)
+        hash_bytes
+            .as_bytes()
+            .get(..32)
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| SecretsError::KeyDerivationFailed("Invalid key length".to_string()))
     }
 
     /// Unlock the vault with passphrase

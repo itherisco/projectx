@@ -47,9 +47,18 @@ pub enum ActionType {
     QueryExternal,
 }
 
-/// Sanitize user-provided strings for logging to prevent log injection
+/// Sanitize user-provided strings for logging to prevent log injection.
+/// Removes any characters that could be used for log forging or injection.
 fn sanitize_for_log(s: &str) -> String {
-    s.replace('\n', "\\n").replace('\r', "\\r")
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || " _-./:()[]".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 impl ActionType {
