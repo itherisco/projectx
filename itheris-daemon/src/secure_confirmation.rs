@@ -544,7 +544,7 @@ mod tests {
     fn test_confirmation() {
         let mut gate = SecureConfirmationGate::new();
         let mut secret = [0u8; 32];
-        secret.copy_from_slice(&[1u8; 32]);
+        OsRng.fill_bytes(&mut secret);
         gate.initialize(&secret);
 
         let request = ConfirmationRequest {
@@ -567,7 +567,7 @@ mod tests {
     fn test_deny() {
         let mut gate = SecureConfirmationGate::new();
         let mut secret = [0u8; 32];
-        secret.copy_from_slice(&[1u8; 32]);
+        OsRng.fill_bytes(&mut secret);
         gate.initialize(&secret);
 
         let request = ConfirmationRequest {

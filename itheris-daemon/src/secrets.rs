@@ -183,9 +183,9 @@ impl SecretsManager {
             SecretsError::KeyDerivationFailed("No hash output".to_string())
         })?;
 
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&hash_bytes.as_bytes()[..32]);
-        Ok(key)
+        let mut derived_bytes = [0u8; 32];
+        derived_bytes.copy_from_slice(&hash_bytes.as_bytes()[..32]);
+        Ok(derived_bytes)
     }
 
     /// Unlock the vault with passphrase
