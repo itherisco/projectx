@@ -13,14 +13,13 @@
 //! - **Budget Enforcement**: Tasks limited by metabolic budget
 //! - **Audit Trail**: All tasks logged
 
-use crate::jwt_auth::{Claims, Role, JWTAuth, AuthConfig};
-use chrono::{Duration, Utc};
+use crate::jwt_auth::{Role, JWTAuth};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::RwLock;
 use std::time::{Duration as StdDuration, Instant};
 use thiserror::Error;
-use uuid::Uuid;
 
 /// Task errors
 #[derive(Error, Debug)]

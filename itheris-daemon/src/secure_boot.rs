@@ -10,7 +10,6 @@ use sha2::{Sha256, Digest};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use thiserror::Error;
 use crate::shared_memory;
 use chrono::{DateTime, Utc};
@@ -121,9 +120,9 @@ impl SimulatedTpm {
 
 /// Secure boot manager
 pub struct SecureBootManager {
-    tpm: SimulatedTpm,
-    boot_log: Vec<BootStageResult>,
-    base_path: String,
+    pub tpm: SimulatedTpm,
+    pub boot_log: Vec<BootStageResult>,
+    pub base_path: String,
 }
 
 impl SecureBootManager {
@@ -238,214 +237,7 @@ impl SecureBootManager {
         }
     }
     
-    /// Stage 1: Boot verification (SHA256 measurement)
-    async fn verify_stage1_boot(&mut self) -> Result<BootStageResult, SecureBootError> {
-        log::info!("📋 Stage 1: Boot Verification...");
-        
-        // Measure boot components
-        let boot_components = vec![
-            format!("{}/src/main.rs", self.base_path),
-            format!("{}/src/kernel.rs", self.base_path),
-            format!("{}/src/secure_boot.rs", self.base_path),
-        ];
-        
-        let mut measurement_data = Vec::new();
-        for component in &boot_components {
-            if Path::new(component).exists() {
-                if let Ok(content) = fs::read(component) {
-                    measurement_data.extend_from_slice(&content);
-                }
-            }
-        }
-        
-        // Calculate SHA256 hash
-        let mut hasher = Sha256::new();
-        hasher.update(&measurement_data);
-        let hash = hex::encode(hasher.finalize());
-        
-        // Extend TPM PCR 0
-        self.tpm.extend_pcr(0, &measurement_data);
-        
-        let result = BootStageResult {
-            stage: 1,
-            name: "Boot Verification".to_string(),
-            verified: true,
-            measurement: hash.clone(),
-            timestamp: Utc::now(),
-            details: format!("Boot measurement: {} (PCR0 extended)", &hash[..16]),
-        };
-        
-        log::info!("   ✓ Stage 1 complete: {}", result.details);
-        Ok(result)
-    }
     
-    /// Stage 2: Kernel integrity check
-    async fn verify_stage2_kernel(&mut self) -> Result<BootStageResult, SecureBootError> {
-        log::info!("📋 Stage 2: Kernel Integrity Check...");
-        
-        // Check for kernel.rs and verify it compiles
-        let kernel_path = format!("{}/src/kernel.rs", self.base_path);
-        let kernel_exists = Path::new(&kernel_path).exists();
-        
-        if !kernel_exists {
-            return Err(SecureBootError::StageVerificationFailed(
-                2, 
-                "Kernel source not found".to_string()
-            ));
-        }
-        
-        // Read and hash kernel
-        let kernel_content = fs::read(&kernel_path)
-            .map_err(|e| SecureBootError::IntegrityError(e.to_string()))?;
-        
-        let mut hasher = Sha256::new();
-        hasher.update(&kernel_content);
-        let hash = hex::encode(hasher.finalize());
-        
-        // Extend TPM PCR 1
-        self.tpm.extend_pcr(1, &kernel_content);
-        
-        // Verify expected functions exist
-        let kernel_str = String::from_utf8_lossy(&kernel_content);
-        let has_approve = kernel_str.contains("approve");
-        let has_deny = kernel_str.contains("deny");
-        
-        let result = BootStageResult {
-            stage: 2,
-            name: "Kernel Integrity".to_string(),
-            verified: has_approve && has_deny,
-            measurement: hash.clone(),
-            timestamp: Utc::now(),
-            details: format!(
-                "Kernel verified (approve: {}, deny: {}): {}", 
-                has_approve, has_deny, &hash[..16]
-            ),
-        };
-        
-        if !result.verified {
-            return Err(SecureBootError::StageVerificationFailed(2, "Kernel missing required functions".to_string()));
-        }
-        
-        log::info!("   ✓ Stage 2 complete: {}", result.details);
-        Ok(result)
-    }
-    
-    /// Stage 3: Julia brain verification
-    async fn verify_stage3_julia_brain(&mut self) -> Result<BootStageResult, SecureBootError> {
-        log::info!("📋 Stage 3: Julia Brain Verification...");
-        
-        // Check adaptive-kernel exists
-        let julia_brain_path = "adaptive-kernel";
-        
-        if !Path::new(julia_brain_path).exists() {
-            return Err(SecureBootError::StageVerificationFailed(
-                3,
-                "Julia brain not found".to_string()
-            ));
-        }
-        
-        // Verify key Julia files
-        let required_files = vec![
-            "adaptive-kernel/Project.toml",
-            "adaptive-kernel/run.jl",
-            "adaptive-kernel/kernel/Kernel.jl",
-        ];
-        
-        let mut measurement_data = Vec::new();
-        for file_path in &required_files {
-            if let Ok(content) = fs::read(file_path) {
-                measurement_data.extend_from_slice(&content);
-            }
-        }
-        
-        let mut hasher = Sha256::new();
-        hasher.update(&measurement_data);
-        let hash = hex::encode(hasher.finalize());
-        
-        // Extend TPM PCR 2
-        self.tpm.extend_pcr(2, &measurement_data);
-        
-        let result = BootStageResult {
-            stage: 3,
-            name: "Julia Brain Verification".to_string(),
-            verified: true,
-            measurement: hash.clone(),
-            timestamp: Utc::now(),
-            details: format!("Julia brain verified: {}", &hash[..16]),
-        };
-        
-        log::info!("   ✓ Stage 3 complete: {}", result.details);
-        Ok(result)
-    }
-    
-    /// Stage 4: Capability registry validation
-    async fn verify_stage4_capabilities(&mut self) -> Result<BootStageResult, SecureBootError> {
-        log::info!("📋 Stage 4: Capability Registry Validation...");
-        
-        // Check capability registry
-        let registry_path = "adaptive-kernel/registry/capability_registry.json";
-        
-        let (verified, details) = if Path::new(registry_path).exists() {
-            let content = fs::read_to_string(registry_path)
-                .map_err(|e| SecureBootError::CapabilityRegistryError(e.to_string()))?;
-            
-            // Validate JSON structure
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(json) => {
-                    let has_capabilities = json.get("capabilities").is_some();
-                    let has_version = json.get("version").is_some();
-                    
-                    if has_capabilities && has_version {
-                        let mut hasher = Sha256::new();
-                        hasher.update(content.as_bytes());
-                        let hash = hex::encode(hasher.finalize());
-                        
-                        // Extend TPM PCR 7 (secure boot PCR)
-                        self.tpm.extend_pcr(7, content.as_bytes());
-                        
-                        (true, format!("Registry valid: {}", &hash[..16]))
-                    } else {
-                        (false, "Registry missing required fields".to_string())
-                    }
-                },
-                Err(e) => (false, format!("Invalid JSON: {}", e)),
-            }
-        } else {
-            // Create default capability registry if not exists
-            let default_registry = serde_json::json!({
-                "version": "1.0.0",
-                "capabilities": [
-                    "observe_cpu",
-                    "observe_filesystem", 
-                    "safe_shell",
-                    "safe_http_request"
-                ]
-            });
-            
-            (true, "Default registry initialized".to_string())
-        };
-        
-        let result = BootStageResult {
-            stage: 4,
-            name: "Capability Registry".to_string(),
-            verified,
-            measurement: self.tpm.read_pcr(7).unwrap_or_default(),
-            timestamp: Utc::now(),
-            details,
-        };
-        
-        if !result.verified {
-            return Err(SecureBootError::StageVerificationFailed(4, result.details.clone()));
-        }
-        
-        log::info!("   ✓ Stage 4 complete: {}", result.details);
-        Ok(result)
-    }
-    
-    /// Get boot log
-    pub fn get_boot_log(&self) -> &Vec<BootStageResult> {
-        &self.boot_log
-    }
     
     /// Get TPM state
     pub fn get_tpm_state(&self) -> &SimulatedTpm {

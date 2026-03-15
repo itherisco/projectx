@@ -10,7 +10,8 @@ using LinearAlgebra
 using Statistics
 
 # ITHERIS Neural Brain Integration
-using ..ITHERISCore  # infer(), learn!(), initialize_brain()
+include("itheris_core/Core.jl")
+using .ITHERISCore  # infer(), learn!(), initialize_brain()
 
 # Input Sanitization - SECURITY BOUNDARY for LLM interaction paths
 # This module implements fail-closed sanitization before Brain access

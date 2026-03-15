@@ -11,12 +11,12 @@
 //!
 //! ## Usage
 //!
-//! ```rust
-//! use isolation::{IsolationManager, IsolationConfig};
+//! ```no_run
+//! use itheris::isolation::{IsolationManager, IsolationConfig};
 //!
 //! let config = IsolationConfig::default();
-//! let manager = IsolationManager::new(config)?;
-//! manager.apply_isolation()?;
+//! let mut manager = IsolationManager::new(config);
+//! manager.initialize().unwrap();
 //! ```
 
 use chrono::{DateTime, Utc};
@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use thiserror::Error;
 
 // ============================================================================
@@ -557,7 +556,7 @@ pub struct IsolationAudit {
 /// Initialize isolation (called from Julia)
 #[no_mangle]
 pub extern "C" fn isolation_init(cpu_limit: f64, memory_gb: u32) -> i32 {
-    let config = IsolationConfig {
+    let _config = IsolationConfig {
         enable_seccomp: true,
         enable_cgroup: true,
         enable_memory_guard: true,

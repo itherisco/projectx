@@ -10,9 +10,8 @@
 //! - get_kernel_status - Get kernel status
 
 use crate::shared_memory::{
-    FFI_IPC_Message, IPCEntryType, IPCMessage, IPC_MAGIC, IPC_VERSION,
-    MAX_PAYLOAD_SIZE, SHM_PATH, SHM_SIZE, RING_BUFFER_ENTRIES,
-    SharedMemoryIPCRef, create_shared_memory_ipc,
+    IPCEntryType, IPCMessage,
+    MAX_PAYLOAD_SIZE, create_shared_memory_ipc,
 };
 use ed25519_dalek::{
     Signer, SigningKey, Verifier, VerifyingKey, Signature, SIGNATURE_LENGTH, SECRET_KEY_LENGTH,
@@ -20,7 +19,7 @@ use ed25519_dalek::{
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
-use rand_core::{OsRng, RngCore};
+use rand_core::RngCore;
 
 /// Kernel initialization state
 static KERNEL_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -344,7 +343,7 @@ pub extern "C" fn recv_message(
 /// - -2 if buffer full
 #[no_mangle]
 pub extern "C" fn send_message_nb(
-    msg_type: u8,
+    _msg_type: u8,
     payload: *const u8,
     payload_size: usize,
 ) -> i32 {
@@ -380,7 +379,7 @@ pub extern "C" fn send_message_nb(
 pub extern "C" fn recv_message_nb(
     msg_type: *mut u8,
     payload: *mut u8,
-    max_payload_size: usize,
+    _max_payload_size: usize,
     actual_size: *mut usize,
 ) -> i32 {
     // Check initialization
@@ -772,7 +771,6 @@ use crate::jwt_auth;
 use crate::flow_integrity;
 use crate::risk_classifier;
 use crate::secure_confirmation;
-use crate::task_orchestrator;
 use crate::safe_shell;
 use crate::safe_http;
 
@@ -948,7 +946,7 @@ pub extern "C" fn aes_gcm_decrypt(
     plaintext_out: *mut u8,
 ) -> usize {
     use aes_gcm::{
-        aead::{Aead, KeyInit, OsRng},
+        aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
     use std::ptr;

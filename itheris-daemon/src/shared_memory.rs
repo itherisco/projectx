@@ -11,7 +11,6 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
@@ -532,7 +531,7 @@ pub extern "C" fn shm_send_to_kernel(
         _ => return -1,
     };
     
-    let message = IPCMessage::new(entry_type, payload_vec);
+    let _message = IPCMessage::new(entry_type, payload_vec);
     
     // This would need access to a global or passed IPC instance
     // For now, return success
@@ -542,10 +541,10 @@ pub extern "C" fn shm_send_to_kernel(
 /// Receive message from kernel (C ABI)
 #[no_mangle]
 pub extern "C" fn shm_recv_from_kernel(
-    msg_type: *mut u8,
-    payload: *mut u8,
-    max_payload_size: usize,
-    actual_size: *mut usize,
+    _msg_type: *mut u8,
+    _payload: *mut u8,
+    _max_payload_size: usize,
+    _actual_size: *mut usize,
 ) -> i32 {
     // This would need access to a global or passed IPC instance
     // For now, return no data available

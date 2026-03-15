@@ -13,7 +13,6 @@
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use std::path::PathBuf;
 use thiserror::Error;
 
 #[cfg(feature = "jlrs")]

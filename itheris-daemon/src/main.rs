@@ -11,18 +11,16 @@ use itheris::kernel;
 use itheris::julia_runtime;
 use itheris::secure_boot;
 use hardware::{init_hardware_guard, HardwareGuard, get_hardware_status};
-use kernel::{ActionType, ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats, RiskLevel};
+use kernel::{ApprovalResult, ItherisDaemonKernel, KernelAction, KernelStats};
 use julia_runtime::{init_julia_runtime, JuliaConfig, get_julia_runtime};
 use secure_boot::{BootStageResult, SecureBootManager};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use uuid::Uuid;
 use itheris::warden::CognitiveMode;
 
 /// Daemon configuration
@@ -194,7 +192,7 @@ impl ItherisDaemon {
             return Err(format!("Julia brain not found at: {}", run_path));
         }
         
-        let mut child = Command::new(&self.config.julia_path)
+        let child = Command::new(&self.config.julia_path)
             .arg("--project=".to_string() + kernel_path)
             .arg(&run_path)
             .stdout(Stdio::piped())
@@ -329,7 +327,7 @@ impl ItherisDaemon {
         let kernel_stats = self.kernel.get_stats().await;
         
         // Get boot stages
-        let boot_stages = self.secure_boot.read().await.get_boot_log().clone();
+        let boot_stages = self.secure_boot.read().await.boot_log.clone();
         
         // Calculate uptime
         let uptime = if let Some(start) = *self.start_time.read().await {

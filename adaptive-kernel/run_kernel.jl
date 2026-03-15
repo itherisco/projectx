@@ -4,9 +4,9 @@
 using JSON
 using Dates
 
-include("adaptive-kernel/kernel/Kernel.jl")
-include("adaptive-kernel/persistence/Persistence.jl")
-include("adaptive-kernel/kernel/ipc/RustIPC.jl")
+include("kernel/Kernel.jl")
+include("persistence/Persistence.jl")
+include("kernel/ipc/RustIPC.jl")
 
 using .Kernel
 using .Persistence
