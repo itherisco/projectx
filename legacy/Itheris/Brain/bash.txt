@@ -1,2 +1,0 @@
-cargo new sovereign_hub
-cd sovereign_hub

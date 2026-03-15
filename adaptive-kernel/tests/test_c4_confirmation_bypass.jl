@@ -18,6 +18,7 @@ using JSON
 
 # Include the secure confirmation gate
 include(joinpath(@__DIR__, "..", "kernel", "trust", "SecureConfirmationGate.jl"))
+using .SecureConfirmationGate
 
 println("\n" * "="^70)
 println("C4: CONFIRMATION GATE BYPASS - SECURITY VERIFICATION")
@@ -25,7 +26,7 @@ println("="^70)
 
 # Create gate with known secret for testing
 test_key = sha256("test_secret_key_for_c4")
-gate = SecureConfirmationGate(
+gate = ConfirmationGate(
     UInt64(30), 
     auto_deny_on_timeout=true,
     secret_key=test_key,
@@ -115,7 +116,7 @@ println("\n[TEST 5] Expired Token Attack - MUST FAIL")
 println("-"^50)
 
 # Create gate with very short timeout
-short_gate = SecureConfirmationGate(
+short_gate = ConfirmationGate(
     UInt64(0),  # Immediate timeout
     auto_deny_on_timeout=true,
     secret_key=test_key
@@ -142,7 +143,7 @@ end
 println("\n[TEST 6] Rate Limiting - DoS Prevention")
 println("-"^50)
 
-rate_gate = SecureConfirmationGate(
+rate_gate = ConfirmationGate(
     UInt64(30),
     auto_deny_on_timeout=true,
     secret_key=test_key,

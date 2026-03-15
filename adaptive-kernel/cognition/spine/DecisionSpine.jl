@@ -10,8 +10,9 @@ using JSON
 using Statistics
 using Parameters  # For @with_kw macro
 
-# Import Kernel for SecureConfirmationGate integration
-# Note: This will be available through parent module imports
+# Import SecureConfirmationGate integration
+include(joinpath(@__DIR__, "..", "..", "kernel", "trust", "SecureConfirmationGate.jl"))
+using .SecureConfirmationGate
 
 # Types are defined in this module - no parent module dependency needed
 
@@ -314,7 +315,7 @@ struct CommittedDecision
     kernel_approved::Bool
     kernel_approval_timestamp::Union{DateTime, Nothing}
     
-    # SecureConfirmationGate: Cryptographic confirmation token (P0 C4)
+    # ConfirmationGate: Cryptographic confirmation token (P0 C4)
     # Required for MEDIUM+ risk actions - provides sovereign veto
     confirmation_token::Union{String, Nothing}
     confirmation_required::Bool
@@ -372,7 +373,9 @@ mutable struct DecisionCycle
     kernel_approval_timestamp::Union{DateTime, Nothing}
     kernel_rejection_reason::Union{String, Nothing}
     
-    # Phase 5.5: SecureConfirmationGate (P0 C4 - sovereign veto for high-risk)
+    # Phase 5.5: ConfirmationGate (P0 C4 - sovereign veto for high-risk)
+    # After LEP calculates risk-reward score, ConfirmationGate provides sovereign veto
+    # Phase 5.5: ConfirmationGate (P0 C4 - sovereign veto for high-risk)
     # After LEP calculates risk-reward, confirmation gate provides sovereign veto
     confirmation_required::Bool
     confirmation_token::Union{String, Nothing}
@@ -600,7 +603,7 @@ function run_cognitive_cycle(
     cycle.confirmation_required = risk_level >= MEDIUM
     
     if cycle.confirmation_required
-        # Request confirmation from SecureConfirmationGate
+        # Request confirmation from ConfirmationGate
         confirmation_result = request_confirmation(
             kernel, 
             cycle.committed_decision,
@@ -624,7 +627,7 @@ function run_cognitive_cycle(
             return cycle
         end
         
-        @info "Phase 5.5: SecureConfirmationGate approved" token=cycle.confirmation_token[1:16]*"..."
+        @info "Phase 5.5: ConfirmationGate approved" token=cycle.confirmation_token[1:16]*"..."
     else
         # No confirmation needed for LOW risk actions
         cycle.confirmation_token = nothing
@@ -732,13 +735,13 @@ function log_immutable_entry!(cycle::DecisionCycle)
             "decision" => cycle.committed_decision.decision,
             "agent_influence" => cycle.committed_decision.agent_influence,
             "kernel_approved" => cycle.committed_decision.kernel_approved,
-            # SecureConfirmationGate fields
+            # ConfirmationGate fields
             "confirmation_token" => cycle.committed_decision.confirmation_token,
             "confirmation_required" => cycle.committed_decision.confirmation_required
         ) : nothing,
         "kernel_approved" => cycle.kernel_approved,
         "kernel_rejection_reason" => cycle.kernel_rejection_reason,
-        # SecureConfirmationGate (Phase 5.5)
+        # ConfirmationGate (Phase 5.5)
         "confirmation_required" => cycle.confirmation_required,
         "confirmation_token" => cycle.confirmation_token,
         "confirmation_timestamp" => cycle.confirmation_timestamp !== nothing ? string(cycle.confirmation_timestamp) : nothing,
@@ -800,9 +803,9 @@ struct ConfirmationResult
 end
 
 """
-    request_confirmation - Request confirmation from SecureConfirmationGate
+    request_confirmation - Request confirmation from ConfirmationGate
     
-    This is the integration point with the Kernel's SecureConfirmationGate.
+    This is the integration point with the Kernel's ConfirmationGate.
     For MEDIUM+ risk actions, this provides the sovereign veto.
 """
 function request_confirmation(
@@ -833,7 +836,7 @@ function request_confirmation(
         "cycle" => string(Dates.now())
     )
     
-    # Request confirmation from SecureConfirmationGate
+    # Request confirmation from ConfirmationGate
     try
         token = SecureConfirmationGate.require_confirmation(
             gate,

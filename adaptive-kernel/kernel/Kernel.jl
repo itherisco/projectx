@@ -42,6 +42,7 @@ using .FlowIntegrity
 # Import SecureConfirmationGate for user confirmation (P0 C4 - confirmation bypass fix)
 # Note: SecureConfirmationGate.jl is included directly, not as a module
 include(joinpath(@__DIR__, "trust", "SecureConfirmationGate.jl"))
+using .SecureConfirmationGate
 
 # Import Resilience module for circuit breaker protection
 include(joinpath(@__DIR__, "..", "resilience", "Resilience.jl"))
@@ -303,7 +304,7 @@ mutable struct KernelState
     
     # SecureConfirmationGate: User confirmation gate for high-risk actions (P0 C4)
     # Provides sovereign veto for MEDIUM+ risk actions
-    confirmation_gate::Union{SecureConfirmationGate, Nothing}
+    confirmation_gate::Union{SecureConfirmationGate.ConfirmationGate, Nothing}
     
     # RustIPC: Connection to Rust brain process  
     ipc_connection::Union{RustIPC.KernelConnection, Nothing}
@@ -332,7 +333,7 @@ mutable struct KernelState
             nothing,  # SystemObserver initialized separately
             SelfModel.SelfModelCore(),  # Initialize SelfModel for dynamic confidence
             FlowIntegrityGate(),  # FlowIntegrity gate (enabled for Sovereign AI)
-            SecureConfirmationGate(),  # SecureConfirmationGate for user confirmation (P0 C4)
+            SecureConfirmationGate.ConfirmationGate(),  # SecureConfirmationGate for user confirmation (P0 C4)
             nothing,  # RustIPC connection initialized separately
             false,  # brain_verification_enabled: starts disabled until verified
             Dict{String, Any}[],  # fallback_audit_log

@@ -1,5 +1,5 @@
 """
-    SecureConfirmationGate - Cryptographically Secure Confirmation System
+    ConfirmationGateSystem - Cryptographically Secure Confirmation System
     
     P0 REMEDIATION: C4 - Confirmation Gate Bypass
     
@@ -32,6 +32,7 @@
 module SecureConfirmationGate
 
 using SHA
+using UUIDs
 using Random
 using JSON
 
@@ -298,7 +299,7 @@ struct PendingSecureAction
 end
 
 """
-    SecureConfirmationGate - User confirmation with cryptographic verification
+    ConfirmationGate - User confirmation with cryptographic verification
     
     Extended with WDT-aligned timeout mechanisms for C4 security requirements:
     - Policy-driven timeouts based on risk level
@@ -306,7 +307,7 @@ end
     - Metabolic-aware polling for energy conservation
     - WDT heartbeat integration
 """
-mutable struct SecureConfirmationGate
+mutable struct ConfirmationGate
     pending_confirmations::Dict{String, PendingSecureAction}
     timeout::UInt64
     auto_deny_on_timeout::Bool
@@ -333,7 +334,7 @@ mutable struct SecureConfirmationGate
     # Callback for WDT heartbeat kick (set by Kernel)
     wdt_kick_callback::Union{Function, Nothing}
     
-    function SecureConfirmationGate(
+    function ConfirmationGate(
         timeout::UInt64=UInt64(30); 
         auto_deny_on_timeout::Bool=true,
         secret_key::Union{Vector{UInt8}, Nothing}=nothing,
@@ -442,7 +443,7 @@ Timeouts (WDT-aligned):
 - MEDIUM: 120s
 - LOW: 300s
 """
-function get_timeout_for_risk_level(gate::SecureConfirmationGate, risk_level::RiskLevel)::UInt64
+function get_timeout_for_risk_level(gate::ConfirmationGate, risk_level::RiskLevel)::UInt64
     # First check if we have risk-level specific timeouts configured
     if haskey(gate.timeout_by_risk, risk_level)
         return gate.timeout_by_risk[risk_level]
@@ -470,7 +471,7 @@ Poll intervals:
 - LOW: 5.0s (low power mode)
 - READ_ONLY: 10.0s
 """
-function get_poll_interval_for_risk_level(gate::SecureConfirmationGate, risk_level::RiskLevel)::Float64
+function get_poll_interval_for_risk_level(gate::ConfirmationGate, risk_level::RiskLevel)::Float64
     if haskey(METABOLIC_POLL_MAP, risk_level)
         return METABOLIC_POLL_MAP[risk_level]
     end
@@ -491,7 +492,7 @@ The function:
 2. Calls the fail_closed_callback if configured (to cut GPIO/MQTT)
 3. Logs the isolation event for forensic analysis
 """
-function trigger_fail_closed_isolation(gate::SecureConfirmationGate, pending::PendingSecureAction)
+function trigger_fail_closed_isolation(gate::ConfirmationGate, pending::PendingSecureAction)
     current_time = floor(UInt64, time())
     
     # Log the critical security event
@@ -548,7 +549,7 @@ When a CRITICAL action times out, we need to reset the WDT to prevent
 the hardware from rebooting. This is called after triggering fail-closed
 isolation to ensure the system remains stable.
 """
-function _trigger_wdt_reset(gate::SecureConfirmationGate)
+function _trigger_wdt_reset(gate::ConfirmationGate)
     if gate.wdt_kick_callback !== nothing
         try
             gate.wdt_kick_callback()
@@ -572,7 +573,7 @@ end
 Kick the WDT heartbeat to prevent hardware timeout.
 This should be called periodically during confirmation waiting periods.
 """
-function kick_wdt_heartbeat(gate::SecureConfirmationGate)::Bool
+function kick_wdt_heartbeat(gate::ConfirmationGate)::Bool
     if gate.wdt_heartbeat === nothing
         return false
     end
@@ -601,7 +602,7 @@ end
 Check if WDT heartbeat is healthy. Returns false if WDT threshold exceeded.
 This should be called to verify the WDT is still being kicked properly.
 """
-function check_wdt_health(gate::SecureConfirmationGate)::Bool
+function check_wdt_health(gate::ConfirmationGate)::Bool
     if gate.wdt_heartbeat === nothing
         return true  # No WDT to check
     end
@@ -624,7 +625,7 @@ Set the callback function that will be called when fail-closed isolation is trig
 The callback should accept a PendingSecureAction parameter and handle cutting
 the actuation path (GPIO/MQTT).
 """
-function set_fail_closed_callback(gate::SecureConfirmationGate, callback::Function)
+function set_fail_closed_callback(gate::ConfirmationGate, callback::Function)
     gate.fail_closed_callback = callback
 end
 
@@ -634,7 +635,7 @@ end
 Set the callback function that will be called to kick the WDT.
 This callback should trigger the hardware WDT reset mechanism.
 """
-function set_wdt_kick_callback(gate::SecureConfirmationGate, callback::Function)
+function set_wdt_kick_callback(gate::ConfirmationGate, callback::Function)
     gate.wdt_kick_callback = callback
 end
 
@@ -688,7 +689,7 @@ end
 """
     _sign_token - Sign a token with HMAC-SHA256
 """
-function _sign_token(gate::SecureConfirmationGate, token::SecureToken)::SecureToken
+function _sign_token(gate::ConfirmationGate, token::SecureToken)::SecureToken
     # Create signature over: token_bytes | created_at | expires_at | purpose
     data = vcat(
         token.token,
@@ -712,7 +713,7 @@ end
     _verify_signature - Verify token signature (FAIL-CLOSED)
     Note: This verifies the signature using the EXISTING token from pending_confirmations
 """
-function _verify_signature(gate::SecureConfirmationGate, stored_token::SecureToken)::Bool
+function _verify_signature(gate::ConfirmationGate, stored_token::SecureToken)::Bool
     # FAIL-CLOSED: Any anomaly returns false
     
     # Check expiration first (fail-fast)
@@ -783,7 +784,7 @@ end
 """
     _check_rate_limit - Rate limiting for confirmation attempts (FAIL-CLOSED)
 """
-function _check_rate_limit(gate::SecureConfirmationGate, token_str::String)::Bool
+function _check_rate_limit(gate::ConfirmationGate, token_str::String)::Bool
     # Simple rate limiting: max 5 failed attempts per token
     attempts = get(gate.confirmation_attempts, token_str, 0)
     
@@ -814,7 +815,7 @@ Returns nothing if rate limit exceeded or system overloaded.
 FAIL-CLOSED: Any error returns nothing
 """
 function require_confirmation(
-    gate::SecureConfirmationGate, 
+    gate::ConfirmationGate,
     proposal_id::String, 
     capability_id::String, 
     params::Dict{String, Any}, 
@@ -894,7 +895,7 @@ Verifies token signature AND optionally verifies params integrity.
 FAIL-CLOSED: Any anomaly returns false
 """
 function confirm_action(
-    gate::SecureConfirmationGate, 
+    gate::ConfirmationGate,
     token_str::String,
     params_hash::Union{Vector{UInt8}, Nothing}=nothing
 )::Bool
@@ -978,7 +979,7 @@ end
     deny_action(gate::SecureConfirmationGate, token_str::String)::Bool
 Deny a pending action.
 """
-function deny_action(gate::SecureConfirmationGate, token_str::String)::Bool
+function deny_action(gate::ConfirmationGate, token_str::String)::Bool
     if haskey(gate.pending_confirmations, token_str)
         pending = gate.pending_confirmations[token_str]
         
@@ -1005,7 +1006,7 @@ end
     check_pending_timeout(gate::SecureConfirmationGate)::Vector{String}
 Check for timed-out confirmations and return IDs to auto-deny
 """
-function check_pending_timeout(gate::SecureConfirmationGate)::Vector{String}
+function check_pending_timeout(gate::ConfirmationGate)::Vector{String}
     timed_out = String[]
     current_time = floor(UInt64, time())
     
@@ -1063,7 +1064,7 @@ end
     is_pending(gate::SecureConfirmationGate, token_str::String)::Bool
 Check if a confirmation is still pending (validates token format)
 """
-function is_pending(gate::SecureConfirmationGate, token_str::String)::Bool
+function is_pending(gate::ConfirmationGate, token_str::String)::Bool
     # Verify token format first (fail-closed)
     token_bytes = _string_to_token(token_str)
     token_bytes === nothing && return false
@@ -1076,7 +1077,7 @@ end
     get_pending_count(gate::SecureConfirmationGate)::UInt64
 Get count of pending confirmations
 """
-function get_pending_count(gate::SecureConfirmationGate)::UInt64
+function get_pending_count(gate::ConfirmationGate)::UInt64
     return UInt64(length(gate.pending_confirmations))
 end
 
@@ -1092,8 +1093,8 @@ end
 # ============================================================================
 
 # Export for module inclusion
-export SecureConfirmationGate, SecureToken, PendingSecureAction, WDTHeartbeat
-export SecureConfirmationGate, require_confirmation, confirm_action, deny_action
+export ConfirmationGate, SecureToken, PendingSecureAction, WDTHeartbeat
+export require_confirmation, confirm_action, deny_action
 export is_pending, get_pending_count, check_pending_timeout
 export _generate_secure_token, _generate_secure_key, _get_rust_entropy
 

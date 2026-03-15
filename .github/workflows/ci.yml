@@ -217,6 +217,7 @@ jobs:
       with:
         languages: rust, javascript-typescript, python
         queries: +security-and-quality
+        config-file: ./.github/codeql-config.yml
     
     - name: Upload static analysis results
       uses: actions/upload-artifact@v4
